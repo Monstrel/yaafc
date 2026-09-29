@@ -1,0 +1,325 @@
+import { cauldronStats, evaluate } from './cauldron'
+import {
+  ADVANCED_ATHANOR,
+  ADVANCED_CAULDRON,
+  ATHANOR,
+  CATALYSTS,
+  HEAT,
+  NURSERY,
+  NUTRIENTS,
+  gameRecipes,
+  itemName,
+  items,
+  itemsByKey,
+  machinesByKey,
+  machinesForCraftType,
+  seeds,
+  type GameRecipe,
+  type Machine,
+  type Stack,
+} from './gameData'
+import type { SavedRecipe } from './types'
+import type { Modifiers } from './upgrades'
+
+export type ProcessKind = 'recipe' | 'cauldron' | 'nursery' | 'fuel' | 'fertilizer'
+
+/**
+ * One way of turning inputs into outputs, normalised to a single craft.
+ * Heat and nutrients appear as pseudo-item inputs so the solver balances them like any item.
+ */
+export interface Process {
+  id: string
+  kind: ProcessKind
+  label: string
+  /** Main product: the item this process is offered as a producer for. */
+  product: string
+  /** Guaranteed side outputs (not fail products); the process is also offered as their producer. */
+  secondary: string[]
+  machine: Machine | null
+  /** Machines able to run this process (for the machine picker). */
+  machineOptions: Machine[]
+  /** Seconds per craft on the chosen machine at Factory Efficiency level 0. */
+  seconds: number
+  inputs: Stack[]
+  /** Expected outputs per craft (fail chances averaged in). */
+  outputs: Stack[]
+  alternate: boolean
+  notes: string[]
+  /** Catalysts applied (item keys), when running on an Advanced Athanor. */
+  catalysts: string[]
+  /** Whether this process can take catalysts on its current machine. */
+  acceptsCatalysts: boolean
+}
+
+export interface ProcessContext {
+  saved: SavedRecipe[]
+  /** Chosen machine per process id. */
+  machines: Record<string, string>
+  mods: Modifiers
+  /** Fertilizer item feeding nurseries (sets their growth speed). */
+  fertilizer: string | null
+  /** Catalysts loaded per process id (Advanced Athanor). */
+  catalysts?: Record<string, string[]>
+}
+
+function merge(stacks: Stack[]): Stack[] {
+  const map = new Map<string, number>()
+  for (const s of stacks) if (s.count) map.set(s.item, (map.get(s.item) ?? 0) + s.count)
+  return [...map].map(([item, count]) => ({ item, count }))
+}
+
+function pickMachine(id: string, options: Machine[], ctx: ProcessContext): Machine | null {
+  return options.find((m) => m.key === ctx.machines[id]) ?? options[0] ?? null
+}
+
+/**
+ * Items moved by one full craft. A recipe runs `batch` steps of `time` seconds; each step moves
+ * `count` of every ingredient and product. Bundle items (negative max stack, e.g. a Log = 200 plank
+ * fractions, a Jupiter = 300 fractions) are counted in fractions by the recipe, so divide by the
+ * bundle size: 1 Log → 200 Planks, and 1,200 Planks + 1,800 Gears + 600 Pulleys → 1 Jupiter.
+ */
+function perCraft(s: Stack, batch: number): number {
+  const stack = itemsByKey.get(s.item)?.maxStack ?? 1
+  return (s.count * batch) / (stack < 0 ? -stack : 1)
+}
+
+function recipeProcess(r: GameRecipe, ctx: ProcessContext): Process {
+  const id = `recipe:${r.key}`
+  const isCauldron = r.craftType === 'Cauldron'
+  const options = machinesForCraftType.get(r.craftType) ?? []
+  const machine = pickMachine(id, options, ctx)
+  const notes: string[] = []
+
+  const baseSeconds = r.time * r.batch
+  const seconds = baseSeconds / (machine?.speed ?? 1)
+
+  let yieldMultiplier = machine?.outputMultiplier ?? 1
+  if (r.craftType === 'Extract') yieldMultiplier *= ctx.mods.extractor
+  if (r.craftType === 'Distill' || r.craftType === 'AdDistill') yieldMultiplier *= ctx.mods.alembic
+
+  // Catalysts only work in the Advanced Athanor, on recipes with a charge cost.
+  const acceptsCatalysts = machine?.key === ADVANCED_ATHANOR && r.catalystCost > 0
+  const catalysts = acceptsCatalysts
+    ? CATALYSTS.filter((c) => (ctx.catalysts?.[id] ?? []).includes(c.key))
+    : []
+  const has = (effect: string) => catalysts.some((c) => c.effect === effect)
+
+  // Outcome of each craft: index 0 = main product, k = fail product k.
+  const products = [r.output, ...r.fail.map((f) => f.product)]
+  const chances = outcomeChances(r, has('unstable'), has('resonant'))
+  const outputMultiplier = has('fertile') ? 2 : 1
+  const outputs: Stack[] = []
+  products.forEach((p, k) => {
+    if (p && chances[k]) outputs.push({ item: p.item, count: perCraft(p, r.batch) * chances[k] * outputMultiplier })
+  })
+  if (r.side) outputs.push({ item: r.side.item, count: perCraft(r.side, r.batch) * outputMultiplier })
+  if (products.length > 1) notes.push(describeOutcomes(r, chances, catalysts.length > 0))
+
+  const inputs: Stack[] = has('eternal') ? [] : r.inputs.map((s) => ({ item: s.item, count: perCraft(s, r.batch) }))
+  for (const c of catalysts) inputs.push({ item: c.key, count: r.catalystCost / c.charges })
+  if (catalysts.length) {
+    const effects = catalysts.map((c) => c.effect[0].toUpperCase() + c.effect.slice(1)).join(' + ')
+    const extras = [has('fertile') ? 'output ×2' : '', has('eternal') ? 'no materials used' : ''].filter(Boolean)
+    const charges = `${r.catalystCost} charge${r.catalystCost === 1 ? '' : 's'} per craft from each`
+    notes.push(`${effects}: ${[...extras, charges].join(' · ')}`)
+  }
+
+  // Athanor recipes on the Advanced Athanor keep the standard Athanor's heat (building description).
+  const heatMachine =
+    machine?.key === ADVANCED_ATHANOR && r.craftType === 'Athanor' ? machinesByKey.get(ATHANOR) : machine
+  const heatPerSecond = isCauldron
+    ? cauldronStats(itemsByKey.get(r.output.item)?.cauldronTarget ?? 0).heatPerSecond
+    : (heatMachine?.heatCost ?? 0)
+  if (heatPerSecond > 0) inputs.push({ item: HEAT, count: heatPerSecond * seconds })
+
+  return {
+    id,
+    kind: 'recipe',
+    label: `${itemName(r.output.item)}${r.alternate ? ' (alt)' : ''}`,
+    product: r.output.item,
+    secondary: r.side ? [r.side.item] : [],
+    machine,
+    machineOptions: options,
+    seconds,
+    inputs: merge(inputs),
+    outputs: merge(outputs.map((o) => ({ ...o, count: o.count * yieldMultiplier }))),
+    alternate: r.alternate,
+    notes,
+    catalysts: catalysts.map((c) => c.key),
+    acceptsCatalysts,
+  }
+}
+
+/**
+ * Chance of each outcome per craft (index 0 = main product, k = fail product k).
+ * The recipe's product sequence cycles through outcomes (e.g. Steel [1,1,1,0] = 75% fail);
+ * Unstable swaps in the unstable sequence; Resonant yields every product each craft.
+ */
+function outcomeChances(r: GameRecipe, unstable: boolean, resonant: boolean): number[] {
+  const n = r.fail.length + 1
+  if (resonant) return Array.from({ length: n }, () => 1)
+  const sequence = unstable && r.unstableSequence.length ? r.unstableSequence : r.productSequence
+  if (sequence.length) {
+    const chances = Array.from({ length: n }, () => 0)
+    for (const k of sequence) if (k < n) chances[k] += 1 / sequence.length
+    return chances
+  }
+  const failRate = r.fail.reduce((sum, f) => sum + f.rate, 0)
+  return [1 - failRate, ...r.fail.map((f) => f.rate)]
+}
+
+function describeOutcomes(r: GameRecipe, chances: number[], catalysed: boolean): string {
+  const names = [r.output.item, ...r.fail.map((f) => f.product?.item ?? '')]
+  const parts = chances
+    .map((c, k) => (c > 0 ? `${Math.round(c * 100)}% ${itemName(names[k])}` : ''))
+    .filter(Boolean)
+  return `${parts.join(' · ')}${catalysed ? '' : ' (averaged, no catalyst)'}`
+}
+
+export function savedRecipeProcess(s: SavedRecipe): Process | null {
+  const result = evaluate(s.mode, s.inputs)
+  if (!result) return null
+  const machine = machinesByKey.get(s.mode === 'normal' ? 'Cauldron' : ADVANCED_CAULDRON) ?? null
+  const stats = cauldronStats(result.output.cauldronTarget)
+  const notes = result.output.key !== s.output ? [`Game data changed: this mix now makes ${result.output.name}`] : []
+  return {
+    id: `cauldron:${s.id}`,
+    kind: 'cauldron',
+    label: s.name || `${result.output.name} ← ${s.inputs.map(itemName).join(' + ')}`,
+    product: result.output.key,
+    secondary: [],
+    machine,
+    machineOptions: machine ? [machine] : [],
+    seconds: stats.seconds,
+    inputs: merge([...s.inputs.map((item) => ({ item, count: 1 })), { item: HEAT, count: stats.heatPerSecond * stats.seconds }]),
+    outputs: [{ item: result.output.key, count: 1 }],
+    alternate: false,
+    notes,
+    catalysts: [],
+    acceptsCatalysts: false,
+  }
+}
+
+function nurseryProcesses(ctx: ProcessContext): Process[] {
+  const machine = machinesByKey.get(NURSERY) ?? null
+  const fert = ctx.fertilizer ? itemsByKey.get(ctx.fertilizer) : undefined
+  const speed = fert?.nutrientSpeed || 1
+  const result: Process[] = []
+  for (const s of seeds) {
+    if (!s.plant || !itemsByKey.has(s.plant) || s.nutrientCost <= 0) continue
+    // One nutrient "charge" grows one plant (and its side product in proportion).
+    const sidePerPlant = s.side && s.count ? s.sideCount / s.count : 0
+    const nutrients = s.nutrientCost * (1 + sidePerPlant)
+    const outputs: Stack[] = [{ item: s.plant, count: 1 }]
+    if (s.side && sidePerPlant) outputs.push({ item: s.side, count: sidePerPlant })
+    result.push({
+      id: `nursery:${s.seed}`,
+      kind: 'nursery',
+      label: `${itemName(s.plant)} (nursery)`,
+      product: s.plant,
+      secondary: s.side && sidePerPlant ? [s.side] : [],
+      machine,
+      machineOptions: machine ? [machine] : [],
+      seconds: nutrients / speed,
+      inputs: [{ item: NUTRIENTS, count: nutrients }],
+      outputs,
+      alternate: false,
+      catalysts: [],
+      acceptsCatalysts: false,
+      notes: [`Growth speed from ${fert?.name ?? 'fertilizer'} (${speed} nutrients/s)`],
+    })
+  }
+  return result
+}
+
+function fuelProcesses(mods: Modifiers): Process[] {
+  return items
+    .filter((i) => i.heatValue > 0)
+    .map((i) => ({
+      id: `fuel:${i.key}`,
+      kind: 'fuel' as const,
+      label: `Burn ${i.name}`,
+      product: HEAT,
+      secondary: [],
+      machine: null,
+      machineOptions: [],
+      seconds: 0,
+      inputs: [{ item: i.key, count: 1 }],
+      outputs: [{ item: HEAT, count: i.heatValue * mods.fuel }],
+      alternate: false,
+      notes: [],
+      catalysts: [],
+      acceptsCatalysts: false,
+    }))
+}
+
+function fertilizerProcesses(mods: Modifiers): Process[] {
+  return items
+    .filter((i) => i.nutrientValue > 0)
+    .map((i) => ({
+      id: `fert:${i.key}`,
+      kind: 'fertilizer' as const,
+      label: `Fertilize with ${i.name}`,
+      product: NUTRIENTS,
+      secondary: [],
+      machine: null,
+      machineOptions: [],
+      seconds: 0,
+      inputs: [{ item: i.key, count: 1 }],
+      outputs: [{ item: NUTRIENTS, count: i.nutrientValue * mods.fertilizer }],
+      alternate: false,
+      notes: [],
+      catalysts: [],
+      acceptsCatalysts: false,
+    }))
+}
+
+export interface ProcessCatalog {
+  byId: Map<string, Process>
+  /** Producer options per product item, game recipes first, then saved cauldron recipes. */
+  byProduct: Map<string, Process[]>
+}
+
+export function buildCatalog(ctx: ProcessContext): ProcessCatalog {
+  const all: Process[] = [
+    ...gameRecipes.filter((r) => !r.hidden).map((r) => recipeProcess(r, ctx)),
+    ...nurseryProcesses(ctx),
+    ...ctx.saved.map(savedRecipeProcess).filter((p): p is Process => !!p),
+    ...fuelProcesses(ctx.mods),
+    ...fertilizerProcesses(ctx.mods),
+  ]
+  const byId = new Map(all.map((p) => [p.id, p]))
+  const byProduct = new Map<string, Process[]>()
+  for (const p of all) byProduct.set(p.product, [...(byProduct.get(p.product) ?? []), p])
+  // Multi-output processes are also offered for their side products, after the main producers.
+  for (const p of all) for (const item of p.secondary) byProduct.set(item, [...(byProduct.get(item) ?? []), p])
+  return { byId, byProduct }
+}
+
+/**
+ * Default producer: the standard game recipe, else a nursery (preferred over seed plots),
+ * else an alternate recipe, else a saved cauldron recipe, else import.
+ */
+export function defaultProducer(catalog: ProcessCatalog, item: string): string {
+  if (item === HEAT) return catalog.byId.has('fuel:Steam') ? 'fuel:Steam' : (catalog.byProduct.get(HEAT)?.[0]?.id ?? 'import')
+  if (item === NUTRIENTS) return catalog.byProduct.get(NUTRIENTS)?.[0]?.id ?? 'import'
+  const all = catalog.byProduct.get(item) ?? []
+  const options = all.filter((p) => p.product === item)
+  const pick =
+    options.find((p) => p.kind === 'recipe' && !p.alternate && p.machine?.key !== 'SeedPlot') ??
+    options.find((p) => p.kind === 'nursery') ??
+    options.find((p) => p.kind === 'recipe') ??
+    options.find((p) => p.kind === 'cauldron') ??
+    // Only made as a side product (e.g. Gentian Nectar from the Gentian nursery).
+    all.find((p) => p.kind === 'nursery' || (p.kind === 'recipe' && p.machine?.key !== 'SeedPlot')) ??
+    all[0]
+  return pick?.id ?? 'import'
+}
+
+/** Label for a producer option: ★ marks saved cauldron recipes. */
+export function processLabel(p: Process, forItem?: string): string {
+  const prefix = p.kind === 'cauldron' ? '★ ' : ''
+  const machine = p.machine ? ` · ${p.machine.name}` : ''
+  const side = forItem && forItem !== p.product ? ' (by-product)' : ''
+  return `${prefix}${p.label}${p.kind === 'recipe' || p.kind === 'nursery' ? machine : ''}${side}`
+}
