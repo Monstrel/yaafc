@@ -148,8 +148,7 @@ export default function App() {
       )}
 
       <footer className="app-footer">
-        Game data extracted from your Alchemy Factory install (Steam build {gameVersion.steamBuildId ?? '?'}, {gameVersion.pakDate ?? '?'}).
-        Cauldron craft time/heat use a curve fitted to the game&apos;s fixed cauldron recipes.
+        Game data extracted from Alchemy Factory Steam build {gameVersion.steamBuildId ?? '?'} ({gameVersion.pakDate ?? '?'}).
       </footer>
     </div>
   )
