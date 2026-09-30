@@ -4,6 +4,7 @@ import { IngredientFilter } from '../components/IngredientFilter'
 import { ItemPicker } from '../components/ItemPicker'
 import { cauldronStats, evaluate, findRecipes, recipeSignature, type CauldronMode, type CauldronResult } from '../lib/cauldron'
 import { cauldronIngredients, cauldronTargets, itemsByKey } from '../lib/gameData'
+import { diagnoseNoResults, type FinderQuery } from '../lib/diagnose'
 import { fmt, fmtSeconds } from '../lib/format'
 import {
   allowedIngredients,
@@ -105,105 +106,144 @@ export function CauldronPage({ saved, onToggleSave, planGroups }: Props) {
         </div>
       </section>
 
-      <section className="panel">
-        <h2>Find recipes</h2>
-        <div className="filters">
-          <label>
-            Target
-            <ItemPicker
-              value={target}
-              options={cauldronTargets}
-              detail={(it) => fmt(it.cauldronTarget)}
-              onChange={(k) => { setTarget(k); setPage(0) }}
-            />
-          </label>
-          <label>
-            Must include
-            <ItemPicker
-              value={mustInclude}
-              options={cauldronIngredients}
-              allowClear
-              placeholder="Any ingredient"
-              onChange={(k) => { setMustInclude(k); setPage(0) }}
-            />
-          </label>
-          <label>
-            Sort by
-            <select value={sort} onChange={(e) => setSort(e.target.value as 'offset' | 'cost')}>
-              <option value="cost">Cheapest ingredients</option>
-              <option value="offset">Closest to target value</option>
-            </select>
-          </label>
-        </div>
+      <div className="finder-layout">
+        <aside className="panel finder-side">
+          <IngredientFilter
+            prefs={prefs}
+            groups={groups}
+            onChange={(p) => {
+              setPrefs(p)
+              setPage(0)
+            }}
+          />
+        </aside>
+        <section className="panel">
+          <h2>Find recipes</h2>
+          <div className="filters">
+            <label>
+              Target
+              <ItemPicker
+                value={target}
+                options={cauldronTargets}
+                detail={(it) => fmt(it.cauldronTarget)}
+                onChange={(k) => { setTarget(k); setPage(0) }}
+              />
+            </label>
+            <label>
+              Must include
+              <ItemPicker
+                value={mustInclude}
+                options={cauldronIngredients}
+                allowClear
+                placeholder="Any ingredient"
+                onChange={(k) => { setMustInclude(k); setPage(0) }}
+              />
+            </label>
+            <label>
+              Sort by
+              <select value={sort} onChange={(e) => setSort(e.target.value as 'offset' | 'cost')}>
+                <option value="cost">Cheapest ingredients</option>
+                <option value="offset">Closest to target value</option>
+              </select>
+            </label>
+          </div>
 
-        <IngredientFilter
-          prefs={prefs}
-          groups={groups}
-          onChange={(p) => {
-            setPrefs(p)
-            setPage(0)
-          }}
-        />
 
-        {targetItem && stats && (
-          <p className="hint">
-            {targetItem.name}: target value {fmt(targetItem.cauldronTarget)} · {fmtSeconds(stats.seconds)} per craft ·{' '}
-            {fmt(stats.heatPerSecond)} P/s · {found.length.toLocaleString()} recipes
-          </p>
-        )}
+          {targetItem && stats && (
+            <p className="hint">
+              {targetItem.name}: target value {fmt(targetItem.cauldronTarget)} · {fmtSeconds(stats.seconds)} per craft ·{' '}
+              {fmt(stats.heatPerSecond)} P/s · {found.length.toLocaleString()} recipes
+            </p>
+          )}
 
-        {found.length > 0 && (
-          <>
-            <table className="recipes">
-              <thead>
-                <tr>
-                  <th />
-                  <th>Ingredients</th>
-                  <th className="num">Value</th>
-                  <th className="num">Offset</th>
-                </tr>
-              </thead>
-              <tbody>
-                {found.slice(page * PAGE, (page + 1) * PAGE).map((r) => {
-                  const sig = recipeSignature(r.mode, r.inputs)
-                  const isSaved = savedSignatures.has(sig)
-                  return (
-                    <tr key={sig}>
-                      <td>
-                        <StarButton saved={isSaved} onClick={() => onToggleSave(r.mode, r.inputs, r.result.output.key)} />
-                      </td>
-                      <td><div className="ingredients">
+          {found.length > 0 && (
+            <>
+              <table className="recipes">
+                <thead>
+                  <tr>
+                    <th />
+                    <th colSpan={slots}>Ingredients</th>
+                    <th className="num">Value</th>
+                    <th className="num">Offset</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {found.slice(page * PAGE, (page + 1) * PAGE).map((r) => {
+                    const sig = recipeSignature(r.mode, r.inputs)
+                    const isSaved = savedSignatures.has(sig)
+                    return (
+                      <tr key={sig}>
+                        <td>
+                          <StarButton saved={isSaved} onClick={() => onToggleSave(r.mode, r.inputs, r.result.output.key)} />
+                        </td>
                         {r.inputs.map((k, i) => (
-                          <span key={i} className={preferred.has(k) ? 'preferred-ingredient' : ''}>
+                          <td key={i} className={preferred.has(k) ? 'ingredient preferred-ingredient' : 'ingredient'}>
                             <ItemLabel item={k} />
-                          </span>
+                          </td>
                         ))}
-                      </div></td>
-                      <td className="num">{fmt(r.result.value)}</td>
-                      <td className={`num ${r.result.offset >= 0 ? 'over' : 'under'}`}>
-                        {r.result.offset >= 0 ? '+' : ''}
-                        {fmt(r.result.offset)}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-            <div className="pager">
-              <button disabled={page === 0} onClick={() => setPage(page - 1)}>
-                ‹ Prev
-              </button>
-              <span>
-                {page + 1} / {Math.ceil(found.length / PAGE)}
-              </span>
-              <button disabled={(page + 1) * PAGE >= found.length} onClick={() => setPage(page + 1)}>
-                Next ›
-              </button>
-            </div>
-          </>
-        )}
-        {target && found.length === 0 && <p className="hint">No recipes found with these filters.</p>}
-      </section>
+                        <td className="num">{fmt(r.result.value)}</td>
+                        <td className={`num ${r.result.offset >= 0 ? 'over' : 'under'}`}>
+                          {r.result.offset >= 0 ? '+' : ''}
+                          {fmt(r.result.offset)}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+              <div className="pager">
+                <button disabled={page === 0} onClick={() => setPage(page - 1)}>
+                  ‹ Prev
+                </button>
+                <span>
+                  {page + 1} / {Math.ceil(found.length / PAGE)}
+                </span>
+                <button disabled={(page + 1) * PAGE >= found.length} onClick={() => setPage(page + 1)}>
+                  Next ›
+                </button>
+              </div>
+            </>
+          )}
+          {target && found.length === 0 && (
+            <NoResults
+              target={target}
+              mode={mode}
+              prefs={prefs}
+              mustInclude={mustInclude}
+              onApply={(q) => {
+                setMode(q.mode)
+                setPrefs(q.prefs)
+                setMustInclude(q.mustInclude)
+                setPage(0)
+              }}
+            />
+          )}
+        </section>
+      </div>
+    </div>
+  )
+}
+
+/** Why the search came back empty, with one-click fixes. */
+function NoResults({ target, mode, prefs, mustInclude, onApply }: FinderQuery & { onApply: (q: FinderQuery) => void }) {
+  const { reason, fixes } = useMemo(
+    () => diagnoseNoResults({ target, mode, prefs, mustInclude }),
+    [target, mode, prefs, mustInclude],
+  )
+  return (
+    <div className="no-results">
+      <p>
+        <strong>No recipes found.</strong> {reason}
+      </p>
+      {fixes.length > 0 && (
+        <div className="fixes">
+          {fixes.map((f) => (
+            <button type="button" key={f.label} className="compact-button" onClick={() => onApply(f.query)}>
+              {f.label} <span className="hint-inline">· {f.count.toLocaleString()} recipes</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

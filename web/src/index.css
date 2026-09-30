@@ -519,10 +519,26 @@ td {
   font-variant-numeric: tabular-nums;
 }
 
-table.recipes .ingredients {
+table.recipes td.ingredient {
+  padding-right: 18px;
+}
+
+.no-results {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--amber);
+  border-radius: var(--radius);
+}
+
+.no-results p {
+  margin: 0;
+}
+
+.no-results .fixes {
   display: flex;
-  gap: 14px;
   flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
 }
 
 td.over {
@@ -1069,130 +1085,271 @@ tr.kind-loop .item-label .name {
 
 /* ---------- ingredient preferences ---------- */
 
-.ingredient-filter {
-  margin: 12px 0;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 8px 12px;
+.finder-layout {
+  display: grid;
+  grid-template-columns: 460px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
 }
 
-.filter-toggle {
+.finder-side {
+  position: sticky;
+  top: 12px;
+  max-height: calc(100vh - 24px);
+  display: flex;
+  flex-direction: column;
+}
+
+@media (max-width: 1100px) {
+  .finder-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .finder-side {
+    position: static;
+    max-height: none;
+  }
+
+  .finder-side .pref-scroll {
+    max-height: 520px;
+  }
+}
+
+.ingredient-filter {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.filter-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.filter-head .hint-inline {
+  font-weight: 400;
+}
+
+.filter-body {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.filter-body > .check {
+  margin: 0;
+}
+
+.pref-key {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.filter-toolbar {
+  margin: 10px 0 6px;
+  align-items: center;
+}
+
+.filter-search {
+  flex: 1;
+  min-width: 0;
+  margin-right: 2px;
+}
+
+.filter-toolbar .compact-button {
+  white-space: nowrap;
+}
+
+.pref-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+}
+
+.pref-tree td {
+  padding: 3px 6px;
+}
+
+/* Name column takes the leftover width and truncates rather than wrapping. */
+.pref-tree td:first-child {
+  max-width: 0;
+  width: 100%;
+}
+
+.pref-tree .tree-cell {
+  min-width: 0;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.pref-tree tr.pref-group td {
+  background: var(--panel-2);
+}
+
+.pref-tree .group-name {
   border: none;
   background: transparent;
   padding: 2px 0;
   font-weight: 600;
-}
-
-.filter-body {
-  margin-top: 8px;
-}
-
-.filter-options {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.filter-options .check {
-  margin: 0;
-}
-
-.group-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 540px), 1fr));
-  column-gap: 24px;
-  margin: 10px 0;
-}
-
-.group-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 5px 0;
-  border-bottom: 1px solid var(--border);
-  flex-wrap: wrap;
-}
-
-.group-name {
-  flex: 1 1 160px;
-}
-
-.group-state {
-  display: flex;
-  gap: 6px;
-}
-
-.group-actions {
-  display: flex;
-  gap: 4px;
-}
-
-.tag.pref {
-  border-color: var(--green);
-  color: var(--green);
-}
-
-.tag.avoid {
-  border-color: var(--red);
-  color: var(--red);
-}
-
-.filter-search {
-  width: min(320px, 100%);
-}
-
-.tile-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 4px;
-  max-height: 340px;
-  overflow-y: auto;
-}
-
-.tile {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 6px;
   text-align: left;
-  font-size: 12px;
-  background: var(--panel);
-}
-
-.tile-name {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.tile.prefer {
-  border-color: var(--green);
-  background: color-mix(in srgb, var(--green) 14%, var(--panel));
+.pref-tree .pref-group button:disabled {
+  opacity: 1;
+  cursor: default;
 }
 
-.tile.avoid {
-  border-color: var(--red);
-  opacity: 0.55;
+.pref-tree .pref-group .fold:disabled {
+  opacity: 0.4;
 }
 
-.tile.avoid .tile-name {
-  text-decoration: line-through;
+.pref-tree .fold {
+  flex-shrink: 0;
 }
 
-.tile-mark {
-  margin-left: auto;
+.group-icon {
+  position: relative;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+}
+
+.group-icon img {
+  display: block;
+}
+
+.group-badge {
+  position: absolute;
+  right: -5px;
+  bottom: -3px;
+  padding: 0 2px;
+  font-size: 9px;
   font-weight: 700;
+  line-height: 1.2;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
 }
 
-.tile.prefer .tile-mark {
+.group-count {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.count-pref,
+.count-avoid {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.count-pref {
   color: var(--green);
 }
 
-.tile.avoid .tile-mark {
+.count-avoid {
   color: var(--red);
+}
+
+.pref-tree .item-label {
+  min-width: 0;
+}
+
+.pref-tree .item-label .name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pref-controls {
+  white-space: nowrap;
+  text-align: right;
+}
+
+.pref-controls > * {
+  vertical-align: middle;
+}
+
+.only-button {
+  padding: 2px 8px;
+  font-size: 12px;
+  margin-right: 6px;
+  color: var(--muted);
+}
+
+.pref-item.avoid .item-label {
+  opacity: 0.55;
+}
+
+.pref-item.avoid .item-label .name {
+  text-decoration: line-through;
+}
+
+.pref-item.prefer .item-label .name {
+  color: var(--green);
+}
+
+.pref-toggle {
+  display: inline-flex;
+}
+
+.pref-toggle button {
+  width: 26px;
+  height: 24px;
+  padding: 0;
+  font-size: 13px;
+  line-height: 1;
+  border-radius: 0;
+  color: var(--muted);
+}
+
+.pref-toggle button + button {
+  margin-left: -1px;
+}
+
+.pref-toggle button:first-child {
+  border-radius: 6px 0 0 6px;
+}
+
+.pref-toggle button:last-child {
+  border-radius: 0 6px 6px 0;
+}
+
+.pref-toggle button:hover:not(:disabled) {
+  position: relative;
+  z-index: 2;
+}
+
+/* Neutral is the default, so its pressed state stays quiet; prefer/avoid stand out. */
+.pref-toggle button[aria-pressed='true'] {
+  color: var(--text);
+  background: var(--panel);
+}
+
+.pref-toggle button.opt-prefer[aria-pressed='true'] {
+  position: relative;
+  z-index: 1;
+  color: var(--green);
+  border-color: var(--green);
+  background: color-mix(in srgb, var(--green) 16%, var(--panel));
+}
+
+.pref-toggle button.opt-avoid[aria-pressed='true'] {
+  position: relative;
+  z-index: 1;
+  color: var(--red);
+  border-color: var(--red);
+  background: color-mix(in srgb, var(--red) 16%, var(--panel));
 }
 
 .preferred-ingredient .item-label .name {

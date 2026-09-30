@@ -4,6 +4,7 @@ import { NUTRIENTS, baseInputKey, cauldronIngredients, gameRecipes, items, items
 import { buildCatalog, defaultProducer, paradoxSeconds } from './processes'
 import { busLines } from './baseInputs'
 import { allowedIngredients, builtinGroups, emptyPrefs, onlyGroup, preferredCount, setPrefs } from './itemGroups'
+import { countRecipes, diagnoseNoResults, type FinderQuery } from './diagnose'
 import { checkLogistics, checkProcess } from './logistics'
 import { solvePlan, type PlanResult } from './solver'
 import { buildTree, type TreeNode } from './tree'
@@ -558,5 +559,42 @@ describe('upgrade levels (DT_Improvements)', () => {
       expect(upgradeLevel({ [u.key]: -2 }, u)).toBe(0)
       expect(upgradeLevel({ [u.key]: 2.7 }, u)).toBe(2)
     }
+  })
+})
+
+describe('empty recipe search diagnosis', () => {
+  const base: FinderQuery = { target: 'Diamond1', mode: 'normal', prefs: emptyPrefs, mustInclude: null }
+
+  it('flags a must-include ingredient that is avoided, and un-avoiding it finds recipes', () => {
+    const q = { ...base, prefs: setPrefs(emptyPrefs, ['Chamomile'], 'avoid'), mustInclude: 'Chamomile' }
+    expect(countRecipes(q)).toBe(0)
+    const d = diagnoseNoResults(q)
+    expect(d.reason).toMatch(/avoided/)
+    expect(d.fixes[0].label).toBe('Make Chamomile neutral')
+    expect(d.fixes[0].count).toBe(countRecipes(d.fixes[0].query))
+    expect(d.fixes[0].count).toBeGreaterThan(0)
+  })
+
+  it('flags "only preferred" with nothing preferred', () => {
+    const q = { ...base, prefs: { ...emptyPrefs, onlyPreferred: true } }
+    expect(countRecipes(q)).toBe(0)
+    const d = diagnoseNoResults(q)
+    expect(d.reason).toMatch(/no ingredients are preferred/)
+    expect(d.fixes.map((f) => f.label)).toEqual(['Turn off "Only use preferred"'])
+  })
+
+  it('flags the target as its own must-include ingredient', () => {
+    const d = diagnoseNoResults({ ...base, mustInclude: 'Diamond1' })
+    expect(d.reason).toMatch(/own product/)
+    expect(d.fixes[0].query.mustInclude).toBeNull()
+  })
+
+  it('offers only fixes that find something', () => {
+    const q = { ...base, prefs: { ...setPrefs(emptyPrefs, ['Chamomile'], 'prefer'), onlyPreferred: true } }
+    expect(countRecipes(q)).toBe(0)
+    const d = diagnoseNoResults(q)
+    expect(d.reason).toMatch(/none of them fit/)
+    expect(d.fixes.length).toBeGreaterThan(0)
+    for (const f of d.fixes) expect(f.count).toBeGreaterThan(0)
   })
 })
