@@ -6,13 +6,14 @@ import { gameVersion } from './lib/gameData'
 import { emptyPlan, newId, readBackup, useBackup, usePersistentState } from './lib/store'
 import type { Plan, SavedRecipe } from './lib/types'
 import { CauldronPage } from './pages/CauldronPage'
+import { HomePage } from './pages/HomePage'
 import { PlannerPage } from './pages/PlannerPage'
 import { SavedPage } from './pages/SavedPage'
 
-type Tab = 'cauldron' | 'saved' | 'planner'
+type Tab = 'home' | 'cauldron' | 'saved' | 'planner'
 
 export default function App() {
-  const [tab, setTab] = usePersistentState<Tab>('tab', 'cauldron')
+  const [tab, setTab] = usePersistentState<Tab>('tab', 'home')
   const [saved, setSaved] = usePersistentState<SavedRecipe[]>('saved-recipes', [])
   const [plans, setPlans] = usePersistentState<Plan[]>('plans', () => [emptyPlan('My factory')])
   const [activePlanId, setActivePlanId] = usePersistentState<string>('active-plan', '')
@@ -76,6 +77,9 @@ export default function App() {
           <h1>Yet Another Alchemy Factory Calculator</h1>
         </div>
         <nav className="tabs" role="tablist">
+          <button role="tab" aria-selected={tab === 'home'} onClick={() => setTab('home')}>
+            Home
+          </button>
           <button role="tab" aria-selected={tab === 'cauldron'} onClick={() => setTab('cauldron')}>
             Cauldron
           </button>
@@ -113,6 +117,7 @@ export default function App() {
         </div>
       )}
 
+      {tab === 'home' && <HomePage onNavigate={setTab} />}
       {tab === 'cauldron' && <CauldronPage saved={saved} onToggleSave={toggleSave} planGroups={activePlanGroups} />}
       {tab === 'saved' && (
         <SavedPage
