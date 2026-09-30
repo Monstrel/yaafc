@@ -73,7 +73,7 @@ export default function App() {
           <span className="logo" aria-hidden>
             ⚗
           </span>
-          <h1>Alchemy Calculator</h1>
+          <h1>Yet Another Alchemy Factory Calculator</h1>
         </div>
         <nav className="tabs" role="tablist">
           <button role="tab" aria-selected={tab === 'cauldron'} onClick={() => setTab('cauldron')}>
