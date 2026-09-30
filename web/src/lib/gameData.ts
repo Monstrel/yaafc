@@ -84,6 +84,9 @@ export interface UpgradeEffect {
 export interface UpgradeSeries {
   key: string
   name: string
+  /** Column in the in-game skill tree (left to right), or null for series not in it. */
+  column: number | null
+  icon: string | null
   levels: UpgradeEffect[][]
   /** The last level (∞ in game) can be bought again, re-applying its effects each time. */
   unlimited: boolean

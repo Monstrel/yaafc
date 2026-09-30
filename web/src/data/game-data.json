@@ -3,7 +3,7 @@
     "steamBuildId": "25321648",
     "pakDate": "2026-09-15"
   },
-  "extractedAt": "2026-09-30 20:57:56Z",
+  "extractedAt": "2026-09-30 21:22:54Z",
   "items": [
     {
       "key": "PortalSigil",
@@ -9462,6 +9462,8 @@
     {
       "key": "Bag",
       "name": "Inventory Expansion",
+      "column": null,
+      "icon": "upgrade_Bag.png",
       "levels": [
         [
           {
@@ -9512,6 +9514,8 @@
     {
       "key": "Conveyer",
       "name": "Logistics Efficiency",
+      "column": -1,
+      "icon": "upgrade_Conveyer.png",
       "levels": [
         [
           {
@@ -9676,6 +9680,8 @@
     {
       "key": "FuelEfficiency",
       "name": "Fuel Efficiency",
+      "column": 3,
+      "icon": "upgrade_FuelEfficiency.png",
       "levels": [
         [
           {
@@ -9775,6 +9781,8 @@
     {
       "key": "ActionSpeed",
       "name": "Inventory Expansion",
+      "column": null,
+      "icon": "upgrade_ActionSpeed.png",
       "levels": [
         [
           {
@@ -9811,6 +9819,8 @@
     {
       "key": "FactorySpeed",
       "name": "Factory Efficiency",
+      "column": 1,
+      "icon": "upgrade_FactorySpeed.png",
       "levels": [
         [
           {
@@ -9975,6 +9985,8 @@
     {
       "key": "FertilizeEfficiency",
       "name": "Fertilizer Efficiency",
+      "column": 4,
+      "icon": "upgrade_FertilizeEfficiency.png",
       "levels": [
         [
           {
@@ -10074,6 +10086,8 @@
     {
       "key": "AlchemySkill",
       "name": "Alchemy Skill",
+      "column": 2,
+      "icon": "upgrade_AlchemySkill.png",
       "levels": [
         [
           {
@@ -10238,6 +10252,8 @@
     {
       "key": "ThrowingEfficiency",
       "name": "Throwing Efficiency",
+      "column": 0,
+      "icon": "upgrade_ThrowingEfficiency.png",
       "levels": [
         [
           {
@@ -10402,6 +10418,8 @@
     {
       "key": "BargainingSkill",
       "name": "Sales Ability",
+      "column": 5,
+      "icon": "upgrade_BargainingSkill.png",
       "levels": [
         [
           {
@@ -10501,6 +10519,8 @@
     {
       "key": "QuestSkill",
       "name": "Customer Management",
+      "column": 6,
+      "icon": "upgrade_QuestSkill.png",
       "levels": [
         [
           {
@@ -10615,6 +10635,8 @@
     {
       "key": "AltarEfficiency",
       "name": "Relic Knowledge",
+      "column": 7,
+      "icon": "upgrade_AltarEfficiency.png",
       "levels": [
         [
           {
@@ -10714,6 +10736,8 @@
     {
       "key": "RestockSpeed",
       "name": "Sales Ability",
+      "column": null,
+      "icon": "upgrade_RestockSpeed.png",
       "levels": [
         [
           {
@@ -10750,6 +10774,8 @@
     {
       "key": "SleepTime",
       "name": "Sales Ability",
+      "column": null,
+      "icon": "upgrade_SleepTime.png",
       "levels": [
         [
           {
@@ -10786,6 +10812,8 @@
     {
       "key": "UnlockBlueprintTool",
       "name": "Sales Ability",
+      "column": null,
+      "icon": "upgrade_UnlockBlueprintTool.png",
       "levels": [
         [
           {
@@ -10801,6 +10829,8 @@
     {
       "key": "BlueprintCostMoney",
       "name": "Sales Ability",
+      "column": null,
+      "icon": "upgrade_BlueprintCostMoney.png",
       "levels": [
         [
           {
@@ -10816,6 +10846,8 @@
     {
       "key": "GeneralGoodsProfit",
       "name": "Sales Ability",
+      "column": null,
+      "icon": "upgrade_GeneralGoodsProfit.png",
       "levels": [
         [
           {
@@ -10884,6 +10916,8 @@
     {
       "key": "PotionProfit",
       "name": "Sales Ability",
+      "column": null,
+      "icon": "upgrade_PotionProfit.png",
       "levels": [
         [
           {
@@ -10952,6 +10986,8 @@
     {
       "key": "LiquidProfit",
       "name": "Sales Ability",
+      "column": null,
+      "icon": "upgrade_LiquidProfit.png",
       "levels": [
         [
           {
@@ -11020,6 +11056,8 @@
     {
       "key": "JewelProfit",
       "name": "Sales Ability",
+      "column": null,
+      "icon": "upgrade_JewelProfit.png",
       "levels": [
         [
           {
@@ -11088,6 +11126,8 @@
     {
       "key": "RelicProfit",
       "name": "Sales Ability",
+      "column": null,
+      "icon": "upgrade_RelicProfit.png",
       "levels": [
         [
           {
@@ -11156,6 +11196,8 @@
     {
       "key": "StoreProfit",
       "name": "Sales Ability",
+      "column": null,
+      "icon": "upgrade_StoreProfit.png",
       "levels": [
         [
           {
@@ -11212,6 +11254,8 @@
     {
       "key": "ContractProfit",
       "name": "Sales Ability",
+      "column": null,
+      "icon": "upgrade_ContractProfit.png",
       "levels": [
         [
           {

@@ -5,14 +5,23 @@ import { Money } from '../components/Money'
 import { ProducerSelect } from '../components/ProducerSelect'
 import { ProductionTree } from '../components/ProductionTree'
 import { busLines, type BusLine, type BusUse } from '../lib/baseInputs'
-import { HEAT, NUTRIENTS, itemName, items, itemsByKey } from '../lib/gameData'
+import { HEAT, NUTRIENTS, iconUrl, itemName, items, itemsByKey } from '../lib/gameData'
 import { fmt } from '../lib/format'
 import { checkLogistics, type LogisticsCheck } from '../lib/logistics'
 import { usePlanModel } from '../lib/planModel'
 import type { ResolvedTarget } from '../lib/solver'
 import { buildTree } from '../lib/tree'
 import type { Plan, PlanTarget, SavedRecipe } from '../lib/types'
-import { MAX_COIN_STACK, PLANNER_UPGRADES, maxLevel, upgradeLevel } from '../lib/upgrades'
+import { MAX_COIN_STACK, PLANNER_UPGRADES, maxLevel, upgradeLevel, type Modifiers } from '../lib/upgrades'
+
+/** What each planner upgrade series currently does, shown under its name. */
+const UPGRADE_EFFECTS: Record<string, (m: Modifiers) => string> = {
+  Conveyer: (m) => `${fmt(m.beltSpeed)} items/min per belt`,
+  FactorySpeed: (m) => `×${fmt(m.factorySpeed)} crafting speed`,
+  AlchemySkill: (m) => `×${fmt(m.extractor)} Extractor & Alembic output`,
+  FuelEfficiency: (m) => `×${fmt(m.fuel)} heat per fuel`,
+  FertilizeEfficiency: (m) => `×${fmt(m.fertilizer)} nutrients per fertilizer`,
+}
 
 interface Props {
   plans: Plan[]
@@ -151,7 +160,11 @@ export function PlannerPage({ plans, plan, saved, onSelectPlan, onUpdatePlan, on
                     : undefined
                 }
               >
-                <span>{u.name}</span>
+                {u.icon && <img className="upgrade-icon" src={iconUrl(u.icon)!} width={32} height={32} alt="" />}
+                <span className="upgrade-name">
+                  {u.name}
+                  <span className="upgrade-effect">{UPGRADE_EFFECTS[u.key]?.(mods)}</span>
+                </span>
                 <input
                   type="number"
                   min={0}
@@ -183,10 +196,6 @@ export function PlannerPage({ plans, plan, saved, onSelectPlan, onUpdatePlan, on
                 />
               </label>
             )}
-            <p className="hint">
-              Speed ×{fmt(mods.factorySpeed)} · fuel ×{fmt(mods.fuel)} · fertilizer ×{fmt(mods.fertilizer)} · extractor/alembic
-              yield ×{fmt(mods.extractor)}
-            </p>
           </section>
         </aside>
 

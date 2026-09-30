@@ -3,10 +3,11 @@ import { attributeBase, upgrades, type UpgradeEffect, type UpgradeSeries } from 
 /** Player's level per improvement series key (e.g. FactorySpeed: 14). */
 export type UpgradeLevels = Record<string, number>
 
-/** Series shown in the planner, in display order. */
+/** Series shown in the planner, in the game's skill-tree order (Logistics, Factory, Alchemy, Fuel, Fertilizer). */
 export const PLANNER_UPGRADES = ['FactorySpeed', 'Conveyer', 'FuelEfficiency', 'FertilizeEfficiency', 'AlchemySkill']
   .map((key) => upgrades.find((u) => u.key === key))
   .filter((u): u is UpgradeSeries => !!u)
+  .sort((a, b) => (a.column ?? Infinity) - (b.column ?? Infinity))
 
 /**
  * Highest level in a series. The last table level (13, shown as ∞ in game) can be bought repeatedly; the game

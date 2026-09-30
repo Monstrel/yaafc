@@ -545,6 +545,10 @@ describe('upgrade levels (DT_Improvements)', () => {
     expect(at('FuelEfficiency', 1e9).fuel).toBeCloseTo(1 + (130 + (1e9 - 13) * 10) / 100) // no per-level loop
   })
 
+  it('lists planner upgrades in the in-game skill-tree order', () => {
+    expect(PLANNER_UPGRADES.map((u) => u.key)).toEqual(['Conveyer', 'FactorySpeed', 'AlchemySkill', 'FuelEfficiency', 'FertilizeEfficiency'])
+  })
+
   it('caps levels per series', () => {
     const caps = Object.fromEntries(PLANNER_UPGRADES.map((u) => [u.key, maxLevel(u)]))
     expect(caps).toEqual({ FactorySpeed: 92, Conveyer: 92, FuelEfficiency: Infinity, FertilizeEfficiency: Infinity, AlchemySkill: Infinity })

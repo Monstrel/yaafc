@@ -121,7 +121,7 @@ static class Exporter
             ["recipes"] = recipes,
             ["buildings"] = buildings,
             ["seeds"] = seeds,
-            ["upgrades"] = Upgrades(provider, strings),
+            ["upgrades"] = Upgrades(provider, strings, iconDir),
             ["attributes"] = new JObject(Rows(provider, AttributesTable)
                 .Select(r => new JProperty(r.Key, r.Row["BaseValue"]))),
         };
@@ -162,11 +162,14 @@ static class Exporter
     /// An IsUnlimited last level (∞ in game) is bought as "stacks", each applying its effects; every purchase,
     /// the first included, is a stack. ABeltTDGameStateBase::AllocateSkills caps stacks at MaxUnlimitedLevel
     /// only when it's > 0, so 0 means uncapped.
-    static JArray Upgrades(DefaultFileProvider provider, Localization strings)
+    /// `column` is the series' SlotPosition.X in the skill tree, for listing upgrades in the game's order;
+    /// `icon` is the first level's (levels 1–12 share it; the ∞ level has a "_2" variant).
+    static JArray Upgrades(DefaultFileProvider provider, Localization strings, string iconDir)
     {
-        var unlimited = Rows(provider, UpgradePointsTable)
-            .Where(r => r.Row["IsUnlimited"]!.Value<bool>())
-            .ToDictionary(r => r.Key, r => r.Row["MaxUnlimitedLevel"]!.Value<int>());
+        var points = Rows(provider, UpgradePointsTable).ToDictionary(r => r.Key, r => r.Row);
+        var unlimited = points
+            .Where(p => p.Value["IsUnlimited"]!.Value<bool>())
+            .ToDictionary(p => p.Key, p => p.Value["MaxUnlimitedLevel"]!.Value<int>());
 
         var series = new Dictionary<string, JObject>();
         foreach (var (key, row) in Rows(provider, ImprovementsTable))
@@ -178,6 +181,8 @@ static class Exporter
                 {
                     ["key"] = name,
                     ["name"] = strings.Resolve(row["DisplayName"]) ?? name,
+                    ["column"] = points.TryGetValue(key, out var point) ? point["SlotPosition"]!["X"] : null,
+                    ["icon"] = ExportIcon(provider, row["DisplayIcon"], iconDir, "upgrade_" + name),
                     ["levels"] = new JArray(),
                     ["unlimited"] = false,
                     ["unlimitedMax"] = 0,
