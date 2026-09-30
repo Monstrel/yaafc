@@ -12,7 +12,7 @@ import { usePlanModel } from '../lib/planModel'
 import type { ResolvedTarget } from '../lib/solver'
 import { buildTree } from '../lib/tree'
 import type { Plan, PlanTarget, SavedRecipe } from '../lib/types'
-import { MAX_COIN_STACK, PLANNER_UPGRADES, maxLevel } from '../lib/upgrades'
+import { MAX_COIN_STACK, PLANNER_UPGRADES, maxLevel, upgradeLevel } from '../lib/upgrades'
 
 interface Props {
   plans: Plan[]
@@ -141,17 +141,26 @@ export function PlannerPage({ plans, plan, saved, onSelectPlan, onUpdatePlan, on
           <section className="panel">
             <h2>Upgrades</h2>
             {PLANNER_UPGRADES.map((u) => (
-              <label className="upgrade-row" key={u.key}>
+              <label
+                className="upgrade-row"
+                key={u.key}
+                title={
+                  u.unlimited
+                    ? `Level ${u.levels.length} is the ∞ node; each level above it is one more purchase of it` +
+                      (Number.isFinite(maxLevel(u)) ? ` (up to ${maxLevel(u)})` : '')
+                    : undefined
+                }
+              >
                 <span>{u.name}</span>
                 <input
                   type="number"
                   min={0}
-                  max={maxLevel(u)}
-                  value={plan.upgrades[u.key] ?? 0}
+                  max={Number.isFinite(maxLevel(u)) ? maxLevel(u) : undefined}
+                  value={upgradeLevel(plan.upgrades, u)}
                   onChange={(e) =>
                     onUpdatePlan((p) => ({
                       ...p,
-                      upgrades: { ...p.upgrades, [u.key]: Math.min(maxLevel(u), Math.max(0, Number(e.target.value) || 0)) },
+                      upgrades: { ...p.upgrades, [u.key]: upgradeLevel({ [u.key]: Number(e.target.value) || 0 }, u) },
                     }))
                   }
                 />

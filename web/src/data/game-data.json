@@ -3,7 +3,7 @@
     "steamBuildId": "25321648",
     "pakDate": "2026-09-15"
   },
-  "extractedAt": "2026-09-29 19:13:20Z",
+  "extractedAt": "2026-09-30 20:57:56Z",
   "items": [
     {
       "key": "PortalSigil",
@@ -9506,6 +9506,7 @@
           }
         ]
       ],
+      "unlimited": false,
       "unlimitedMax": 0
     },
     {
@@ -9669,6 +9670,7 @@
           }
         ]
       ],
+      "unlimited": true,
       "unlimitedMax": 80
     },
     {
@@ -9767,6 +9769,7 @@
           }
         ]
       ],
+      "unlimited": true,
       "unlimitedMax": 0
     },
     {
@@ -9802,6 +9805,7 @@
           }
         ]
       ],
+      "unlimited": false,
       "unlimitedMax": 0
     },
     {
@@ -9965,6 +9969,7 @@
           }
         ]
       ],
+      "unlimited": true,
       "unlimitedMax": 80
     },
     {
@@ -10063,6 +10068,7 @@
           }
         ]
       ],
+      "unlimited": true,
       "unlimitedMax": 0
     },
     {
@@ -10226,6 +10232,7 @@
           }
         ]
       ],
+      "unlimited": true,
       "unlimitedMax": 0
     },
     {
@@ -10389,6 +10396,7 @@
           }
         ]
       ],
+      "unlimited": true,
       "unlimitedMax": 80
     },
     {
@@ -10487,6 +10495,7 @@
           }
         ]
       ],
+      "unlimited": true,
       "unlimitedMax": 0
     },
     {
@@ -10600,6 +10609,7 @@
           }
         ]
       ],
+      "unlimited": true,
       "unlimitedMax": 0
     },
     {
@@ -10698,6 +10708,7 @@
           }
         ]
       ],
+      "unlimited": true,
       "unlimitedMax": 0
     },
     {
@@ -10733,6 +10744,7 @@
           }
         ]
       ],
+      "unlimited": false,
       "unlimitedMax": 0
     },
     {
@@ -10768,6 +10780,7 @@
           }
         ]
       ],
+      "unlimited": false,
       "unlimitedMax": 0
     },
     {
@@ -10782,6 +10795,7 @@
           }
         ]
       ],
+      "unlimited": false,
       "unlimitedMax": 0
     },
     {
@@ -10796,6 +10810,7 @@
           }
         ]
       ],
+      "unlimited": false,
       "unlimitedMax": 0
     },
     {
@@ -10863,6 +10878,7 @@
           }
         ]
       ],
+      "unlimited": false,
       "unlimitedMax": 0
     },
     {
@@ -10930,6 +10946,7 @@
           }
         ]
       ],
+      "unlimited": false,
       "unlimitedMax": 0
     },
     {
@@ -10997,6 +11014,7 @@
           }
         ]
       ],
+      "unlimited": false,
       "unlimitedMax": 0
     },
     {
@@ -11064,6 +11082,7 @@
           }
         ]
       ],
+      "unlimited": false,
       "unlimitedMax": 0
     },
     {
@@ -11131,6 +11150,7 @@
           }
         ]
       ],
+      "unlimited": false,
       "unlimitedMax": 0
     },
     {
@@ -11186,6 +11206,7 @@
           }
         ]
       ],
+      "unlimited": false,
       "unlimitedMax": 0
     },
     {
@@ -11253,6 +11274,7 @@
           }
         ]
       ],
+      "unlimited": false,
       "unlimitedMax": 0
     }
   ],

@@ -159,6 +159,9 @@ static class Exporter
     }
 
     /// Improvement series (FactorySpeed1..13 etc.) grouped into per-level effect lists.
+    /// An IsUnlimited last level (∞ in game) is bought as "stacks", each applying its effects; every purchase,
+    /// the first included, is a stack. ABeltTDGameStateBase::AllocateSkills caps stacks at MaxUnlimitedLevel
+    /// only when it's > 0, so 0 means uncapped.
     static JArray Upgrades(DefaultFileProvider provider, Localization strings)
     {
         var unlimited = Rows(provider, UpgradePointsTable)
@@ -176,6 +179,7 @@ static class Exporter
                     ["key"] = name,
                     ["name"] = strings.Resolve(row["DisplayName"]) ?? name,
                     ["levels"] = new JArray(),
+                    ["unlimited"] = false,
                     ["unlimitedMax"] = 0,
                 };
             ((JArray)s["levels"]!).Add(new JArray(row["Effects"]!.Select(e => new JObject
@@ -184,7 +188,11 @@ static class Exporter
                 ["op"] = Enum(e["ModificationType"]),
                 ["value"] = e["ModValue"],
             })));
-            if (unlimited.TryGetValue(key, out var max)) s["unlimitedMax"] = max;
+            if (unlimited.TryGetValue(key, out var max))
+            {
+                s["unlimited"] = true;
+                s["unlimitedMax"] = max;
+            }
         }
         return new JArray(series.Values);
     }

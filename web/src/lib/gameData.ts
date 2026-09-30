@@ -85,6 +85,9 @@ export interface UpgradeSeries {
   key: string
   name: string
   levels: UpgradeEffect[][]
+  /** The last level (∞ in game) can be bought again, re-applying its effects each time. */
+  unlimited: boolean
+  /** Cap on purchases of the last level, the first included; 0 means uncapped. */
   unlimitedMax: number
 }
 

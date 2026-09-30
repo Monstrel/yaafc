@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { cauldronStats, evaluateAdvanced, evaluateNormal, findRecipes } from './cauldron'
-import { NUTRIENTS, baseInputKey, cauldronIngredients, gameRecipes, items, itemsByKey } from './gameData'
+import { NUTRIENTS, baseInputKey, cauldronIngredients, gameRecipes, items, itemsByKey, upgrades } from './gameData'
 import { buildCatalog, defaultProducer, paradoxSeconds } from './processes'
 import { busLines } from './baseInputs'
 import { allowedIngredients, builtinGroups, emptyPrefs, onlyGroup, preferredCount, setPrefs } from './itemGroups'
@@ -8,7 +8,7 @@ import { checkLogistics, checkProcess } from './logistics'
 import { solvePlan, type PlanResult } from './solver'
 import { buildTree, type TreeNode } from './tree'
 import type { Plan, SavedRecipe } from './types'
-import { modifiers } from './upgrades'
+import { PLANNER_UPGRADES, maxLevel, modifiers, upgradeLevel } from './upgrades'
 
 const round1 = (x: number) => Math.round(x * 10) / 10
 
@@ -511,5 +511,48 @@ describe('Paradox Crucible (any item → Oblivion Essence)', () => {
     const gear = root.children.find((c) => c.item === 'SteelGear')!
     expect(gear.rate).toBeCloseTo(10)
     expect(gear.kind).toBe('produce')
+  })
+})
+
+describe('upgrade levels (DT_Improvements)', () => {
+  const at = (key: string, level: number) => modifiers({ [key]: level })
+
+  it('level 13 is a smaller final step for Factory and Logistics Efficiency', () => {
+    expect(at('FactorySpeed', 12).factorySpeed).toBeCloseTo(4) // 12 × 25%
+    expect(at('FactorySpeed', 13).factorySpeed).toBeCloseTo(4.05) // + 5%
+    expect(at('Conveyer', 12).beltSpeed).toBe(240) // 60 + 12 × 15
+    expect(at('Conveyer', 13).beltSpeed).toBe(243) // + 3
+  })
+
+  it('Fuel, Fertilizer and Alchemy Skill follow their tables to 13', () => {
+    expect(at('FuelEfficiency', 13).fuel).toBeCloseTo(2.3) // 13 × 10%
+    expect(at('FertilizeEfficiency', 13).fertilizer).toBeCloseTo(2.3)
+    expect(at('AlchemySkill', 13).extractor).toBeCloseTo(2.1) // 2×6 + 6×8 + 5×10 = 110%
+    expect(at('AlchemySkill', 13).alembic).toBeCloseTo(2.1)
+  })
+
+  it('buys level 13 up to 80 times in all for Factory and Logistics Efficiency', () => {
+    expect(at('FactorySpeed', 14).factorySpeed).toBeCloseTo(4.1)
+    expect(at('FactorySpeed', 92).factorySpeed).toBeCloseTo(8) // 4 + 80 × 5%
+    expect(at('Conveyer', 92).beltSpeed).toBe(480) // 240 + 80 × 3
+    expect(at('FactorySpeed', 200).factorySpeed).toBeCloseTo(8) // capped
+  })
+
+  it('repeats level 13 without limit for Fuel, Fertilizer and Alchemy Skill (MaxUnlimitedLevel 0)', () => {
+    expect(at('FuelEfficiency', 20).fuel).toBeCloseTo(3) // 2.3 + 7 × 10%
+    expect(at('FertilizeEfficiency', 20).fertilizer).toBeCloseTo(3)
+    expect(at('AlchemySkill', 20).extractor).toBeCloseTo(2.8) // 2.1 + 7 × 10%
+    expect(at('FuelEfficiency', 1e9).fuel).toBeCloseTo(1 + (130 + (1e9 - 13) * 10) / 100) // no per-level loop
+  })
+
+  it('caps levels per series', () => {
+    const caps = Object.fromEntries(PLANNER_UPGRADES.map((u) => [u.key, maxLevel(u)]))
+    expect(caps).toEqual({ FactorySpeed: 92, Conveyer: 92, FuelEfficiency: Infinity, FertilizeEfficiency: Infinity, AlchemySkill: Infinity })
+    expect(maxLevel(upgrades.find((u) => u.key === 'Bag')!)).toBe(6) // not repeatable
+    for (const u of PLANNER_UPGRADES) {
+      expect(upgradeLevel({ [u.key]: 1000 }, u)).toBe(Math.min(1000, maxLevel(u)))
+      expect(upgradeLevel({ [u.key]: -2 }, u)).toBe(0)
+      expect(upgradeLevel({ [u.key]: 2.7 }, u)).toBe(2)
+    }
   })
 })
