@@ -283,6 +283,14 @@ h2 {
 
 /* ---------- picker ---------- */
 
+/* Producer dropdown with an optional input picker (Paradox Crucible). */
+.producer-select {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
 .picker {
   position: relative;
   min-width: 200px;

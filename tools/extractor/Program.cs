@@ -9,6 +9,7 @@ using Newtonsoft.Json;
 //   Extractor list [regex]              list game files (optionally filtered)
 //   Extractor dump <regex> <outDir>     export matching packages to JSON
 //   Extractor strings [regex]           search the English text
+//   Extractor schema [regex]            print native class/struct properties from the mappings
 //   Extractor export [webDir]           write game-data.json + icons for the web app
 var mode = args.Length > 0 ? args[0] : "list";
 var paksDir = Environment.GetEnvironmentVariable("AF_PAKS")
@@ -23,6 +24,7 @@ var provider = new DefaultFileProvider(paksDir, SearchOption.TopDirectoryOnly,
 var mappingsPath = Environment.GetEnvironmentVariable("AF_MAPPINGS")
     ?? Path.Combine(FindProjectDir(), "mappings", "Mappings.usmap");
 provider.MappingsContainer = new FileUsmapTypeMappingsProvider(mappingsPath);
+provider.ReadScriptData = mode == "dump"; // Blueprint bytecode (e.g. formulas in UI widgets)
 provider.Initialize();
 provider.Mount();
 var strings = new Localization(provider, "en");
@@ -32,6 +34,19 @@ if (mode == "strings")
     var filterText = new Regex(args.Length > 1 ? args[1] : ".", RegexOptions.IgnoreCase);
     foreach (var (ns, key, text) in strings.All().Where(e => filterText.IsMatch(e.Key) || filterText.IsMatch(e.Text)))
         Console.WriteLine($"{ns}/{key}: {text.ReplaceLineEndings(" ")}");
+    return;
+}
+
+if (mode == "schema")
+{
+    // Property layout of native classes/structs (from the usmap), e.g. for C++-only components.
+    var filterSchema = new Regex(args.Length > 1 ? args[1] : ".", RegexOptions.IgnoreCase);
+    foreach (var (name, schema) in provider.MappingsForGame!.Types.Where(t => filterSchema.IsMatch(t.Key)).OrderBy(t => t.Key))
+    {
+        Console.WriteLine($"{name} : {schema.SuperType ?? "-"}");
+        foreach (var prop in schema.Properties.Values.OrderBy(p => p.Index))
+            Console.WriteLine($"  {prop.Name}: {prop.MappingType.Type}{(prop.MappingType.StructType is { } s ? $"<{s}>" : "")}{(prop.MappingType.InnerType is { } i ? $"<{i.Type}{(i.StructType is { } si ? $":{si}" : "")}>" : "")}");
+    }
     return;
 }
 

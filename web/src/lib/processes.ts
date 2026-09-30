@@ -18,10 +18,11 @@ import {
   type Machine,
   type Stack,
 } from './gameData'
+import { itemsPerSlot } from './machineRate'
 import type { SavedRecipe } from './types'
 import type { Modifiers } from './upgrades'
 
-export type ProcessKind = 'recipe' | 'cauldron' | 'nursery' | 'fuel' | 'fertilizer'
+export type ProcessKind = 'recipe' | 'cauldron' | 'nursery' | 'paradox' | 'fuel' | 'fertilizer'
 
 /**
  * One way of turning inputs into outputs, normalised to a single craft.
@@ -232,6 +233,63 @@ function nurseryProcesses(ctx: ProcessContext): Process[] {
   return result
 }
 
+// ---- Paradox Crucible: any item → Oblivion Essence ----
+// Native code (UParadoxFacilityComponent), not in the data tables. The crucible takes one belt entry
+// (a single item, or a whole coin stack), holds count × BaseCost of value, and turns it into one
+// Oblivion Essence in clamp(1500 / value, 0.5, 1500) seconds, burning 1200 P/s while it works.
+// Oblivion ↔ Vitality are ordinary recipes (5 s each).
+export const OBLIVION = 'Mors'
+export const VITALITY = 'Vitae'
+const PARADOX_VALUE_SECONDS = 1500
+const PARADOX_MIN_SECONDS = 0.5
+const PARADOX_MAX_SECONDS = 1500
+/** Input picked when a plan first switches Oblivion Essence to the crucible (the Codex's example). */
+export const DEFAULT_PARADOX_INPUT = 'SageSeed'
+export const PARADOX_CRUCIBLE = 'ParadoxCrucible'
+
+export const paradoxId = (item: string) => `paradox:${item}`
+
+/** Items the crucible can refine into Oblivion Essence: anything with a value that travels on a belt. */
+export const paradoxInputs = items.filter(
+  (i) => !i.hidden && !i.liquid && i.baseCost > 0 && i.key !== OBLIVION && i.key !== VITALITY,
+)
+
+/** Seconds per Oblivion Essence from one belt entry of `item`, at Factory Efficiency level 0. */
+export function paradoxSeconds(item: string, mods: Modifiers): number {
+  const value = (itemsByKey.get(item)?.baseCost ?? 0) * itemsPerSlot(item, mods)
+  if (value <= 0) return PARADOX_MAX_SECONDS
+  return Math.min(PARADOX_MAX_SECONDS, Math.max(PARADOX_MIN_SECONDS, PARADOX_VALUE_SECONDS / value))
+}
+
+function paradoxProcesses(mods: Modifiers): Process[] {
+  const machine = machinesByKey.get(PARADOX_CRUCIBLE) ?? null
+  return paradoxInputs.map((i) => {
+    const stack = itemsPerSlot(i.key, mods)
+    const seconds = paradoxSeconds(i.key, mods)
+    const notes = [`1 belt entry (${stack} × ${i.name}) → 1 Oblivion Essence`]
+    if (seconds === PARADOX_MIN_SECONDS) notes.push('At the 0.5 s minimum: cheaper inputs give the same speed')
+    return {
+      id: paradoxId(i.key),
+      kind: 'paradox' as const,
+      label: `Oblivion Essence ← ${i.name}`,
+      product: OBLIVION,
+      secondary: [],
+      machine,
+      machineOptions: machine ? [machine] : [],
+      seconds,
+      inputs: [
+        { item: i.key, count: stack },
+        { item: HEAT, count: (machine?.heatCost ?? 0) * seconds },
+      ],
+      outputs: [{ item: OBLIVION, count: 1 }],
+      alternate: false,
+      notes,
+      catalysts: [],
+      acceptsCatalysts: false,
+    }
+  })
+}
+
 function fuelProcesses(mods: Modifiers): Process[] {
   return items
     .filter((i) => i.heatValue > 0)
@@ -285,6 +343,7 @@ export function buildCatalog(ctx: ProcessContext): ProcessCatalog {
     ...gameRecipes.filter((r) => !r.hidden).map((r) => recipeProcess(r, ctx)),
     ...nurseryProcesses(ctx),
     ...ctx.saved.map(savedRecipeProcess).filter((p): p is Process => !!p),
+    ...paradoxProcesses(ctx.mods),
     ...fuelProcesses(ctx.mods),
     ...fertilizerProcesses(ctx.mods),
   ]
@@ -298,6 +357,7 @@ export function buildCatalog(ctx: ProcessContext): ProcessCatalog {
 
 /**
  * Default producer: the standard game recipe, else a nursery (preferred over seed plots),
+ * else the Paradox Crucible (for Oblivion Essence, whose only recipe loops back through Vitality),
  * else an alternate recipe, else a saved cauldron recipe, else import.
  */
 export function defaultProducer(catalog: ProcessCatalog, item: string): string {
@@ -308,6 +368,8 @@ export function defaultProducer(catalog: ProcessCatalog, item: string): string {
   const pick =
     options.find((p) => p.kind === 'recipe' && !p.alternate && p.machine?.key !== 'SeedPlot') ??
     options.find((p) => p.kind === 'nursery') ??
+    options.find((p) => p.id === paradoxId(DEFAULT_PARADOX_INPUT)) ??
+    options.find((p) => p.kind === 'paradox') ??
     options.find((p) => p.kind === 'recipe') ??
     options.find((p) => p.kind === 'cauldron') ??
     // Only made as a side product (e.g. Gentian Nectar from the Gentian nursery).

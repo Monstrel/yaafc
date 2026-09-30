@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { cauldronStats, evaluateAdvanced, evaluateNormal, findRecipes } from './cauldron'
 import { NUTRIENTS, baseInputKey, cauldronIngredients, gameRecipes, items, itemsByKey } from './gameData'
-import { buildCatalog } from './processes'
+import { buildCatalog, defaultProducer, paradoxSeconds } from './processes'
 import { busLines } from './baseInputs'
 import { allowedIngredients, builtinGroups, emptyPrefs, onlyGroup, preferredCount, setPrefs } from './itemGroups'
 import { checkLogistics, checkProcess } from './logistics'
@@ -464,5 +464,52 @@ describe('bus items used as both fuel and fertilizer', () => {
     const fuel = partial.uses.find((u) => u.kind === 'fuel')!
     expect(partial.net).toBeCloseTo(12.5 - fuel.need)
     expect(partial.boughtNeed).toBeCloseTo(partial.uses.find((u) => u.kind === 'fertilizer')!.need)
+  })
+})
+
+describe('Paradox Crucible (any item → Oblivion Essence)', () => {
+  const mods = modifiers({})
+  const catalog = buildCatalog({ saved: [], machines: {}, mods, fertilizer: 'BasicFertilizer' })
+
+  it('takes 1500 / value seconds per essence, clamped to 0.5–1500 s', () => {
+    expect(paradoxSeconds('SageSeed', mods)).toBeCloseTo(1500 / 360)
+    expect(paradoxSeconds('WoodBoard', mods)).toBe(1500) // value 1
+    expect(paradoxSeconds('PhilosopherStone', mods)).toBe(0.5)
+  })
+
+  it('refines a whole coin stack at once', () => {
+    const copper = itemsByKey.get('CopperCoin')!.baseCost
+    expect(paradoxSeconds('CopperCoin', modifiers({}, 50))).toBeCloseTo(1500 / (50 * copper))
+    const p = catalog.byId.get('paradox:CopperCoin')!
+    expect(p.inputs.find((s) => s.item === 'CopperCoin')!.count).toBe(50)
+    expect(p.outputs).toEqual([{ item: 'Mors', count: 1 }])
+  })
+
+  it('burns 1200 P/s for the whole refine', () => {
+    const p = catalog.byId.get('paradox:SageSeed')!
+    expect(p.machine?.key).toBe('ParadoxCrucible')
+    expect(p.inputs.find((s) => s.item === NUTRIENTS)).toBeUndefined()
+    expect(p.inputs.find((s) => s.item === '@heat')!.count).toBeCloseTo(1200 * p.seconds)
+  })
+
+  it('is the default Oblivion Essence producer, so Vitality Essence no longer dead-ends in a loop', () => {
+    expect(defaultProducer(catalog, 'Mors')).toBe('paradox:SageSeed')
+    const result = solvePlan(plan({ targets: [{ item: 'Vitae', rate: 6 }] }), catalog, mods)
+    expectBalanced(result)
+    for (const b of result.balances) expect(b.deficit).toBe(0)
+    const refine = result.runs.find((r) => r.process.id === 'paradox:SageSeed')!
+    expect(refine.craftsPerMinute).toBeCloseTo(6)
+    expect(refine.machines).toBeCloseTo(6 / (60 / (1500 / 360)))
+  })
+
+  it('follows the chosen input down the tree', () => {
+    const targets = [{ item: 'Mors', rate: 10 }]
+    const result = solvePlan(plan({ targets, producers: { Mors: 'paradox:SteelGear' } }), catalog, mods)
+    expectBalanced(result)
+    const [root] = buildTree(result, targets)
+    expect(root.run?.process.id).toBe('paradox:SteelGear')
+    const gear = root.children.find((c) => c.item === 'SteelGear')!
+    expect(gear.rate).toBeCloseTo(10)
+    expect(gear.kind).toBe('produce')
   })
 })
