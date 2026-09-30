@@ -210,6 +210,7 @@ export const machinesForCraftType: Map<string, Machine[]> = (() => {
 })()
 
 export const NURSERY = 'AutoNursery'
+export const WORLD_TREE_NURSERY = 'WorldTreeNursery'
 export const ADVANCED_CAULDRON = 'AdvancedCauldron'
 export const ATHANOR = 'Athanor'
 export const ADVANCED_ATHANOR = 'AdvancedAthanor'

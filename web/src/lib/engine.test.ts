@@ -6,6 +6,7 @@ import { busLines } from './baseInputs'
 import { allowedIngredients, builtinGroups, emptyPrefs, onlyGroup, preferredCount, setPrefs } from './itemGroups'
 import { countRecipes, diagnoseNoResults, type FinderQuery } from './diagnose'
 import { checkLogistics, checkProcess } from './logistics'
+import { craftsPerMachine } from './machineRate'
 import { solvePlan, type PlanResult } from './solver'
 import { buildTree, type TreeNode } from './tree'
 import type { Plan, SavedRecipe } from './types'
@@ -596,5 +597,43 @@ describe('empty recipe search diagnosis', () => {
     expect(d.reason).toMatch(/none of them fit/)
     expect(d.fixes.length).toBeGreaterThan(0)
     for (const f of d.fixes) expect(f.count).toBeGreaterThan(0)
+  })
+})
+
+describe('World Tree nursery', () => {
+  // Basic Fertilizer is slow (12 nutrients/s): the tree's speed must not depend on it.
+  const catalog = buildCatalog({ saved: [], machines: {}, mods: modifiers({}), fertilizer: 'BasicFertilizer' })
+  const tree = catalog.byId.get('nursery:TreeStage3')!
+  const out = Object.fromEntries(tree.outputs.map((s) => [s.item, s.count]))
+  const perMinute = (p: typeof tree, item: string, stacks: typeof tree.outputs) =>
+    ((stacks.find((s) => s.item === item)?.count ?? 0) * 60) / p.seconds
+
+  it('grows 100 leaves per core, each item costing the full nutrient value', () => {
+    expect(out.WorldTreeLeaf / out.WorldTreeCore).toBeCloseTo(100)
+    const nutrients = tree.inputs.find((s) => s.item === NUTRIENTS)!.count
+    expect(nutrients).toBeCloseTo(60000 * (out.WorldTreeLeaf + out.WorldTreeCore))
+  })
+
+  it('runs in the World Tree Nursery at a fixed 3 s per item, whatever the fertilizer', () => {
+    for (const stage of ['TreeStage2', 'TreeStage3']) {
+      const p = catalog.byId.get(`nursery:${stage}`)!
+      expect(p.machine?.key).toBe('WorldTreeNursery')
+      const items = p.outputs.reduce((sum, s) => sum + s.count, 0)
+      expect(p.seconds / items).toBeCloseTo(3)
+    }
+  })
+
+  it('speeds up with Factory Efficiency', () => {
+    const mods = modifiers({ FactorySpeed: 2 })
+    expect(mods.factorySpeed).toBeGreaterThan(1)
+    expect(craftsPerMachine(tree, mods) / craftsPerMachine(tree, modifiers({}))).toBeCloseTo(mods.factorySpeed)
+  })
+
+  it('five trees fall just short of one Sol shaper (tester report)', () => {
+    const sol = catalog.byId.get('recipe:Sol')!
+    const coresNeeded = perMinute(sol, 'WorldTreeCore', sol.inputs)
+    const coresGrown = 5 * perMinute(tree, 'WorldTreeCore', tree.outputs)
+    expect(coresNeeded).toBeCloseTo(1)
+    expect(coresGrown).toBeCloseTo(100 / 101)
   })
 })

@@ -7,6 +7,7 @@ import {
   HEAT,
   NURSERY,
   NUTRIENTS,
+  WORLD_TREE_NURSERY,
   gameRecipes,
   itemName,
   items,
@@ -201,22 +202,35 @@ export function savedRecipeProcess(s: SavedRecipe): Process | null {
   }
 }
 
+// World Tree: native code (UTreeNurseryFacilityComponent), mostly not in the data tables. The tree
+// grows at a fixed nutrient rate per stage (× Factory Efficiency) whatever the fertilizer: fertilizer
+// only fills its nutrient buffer. A leaf/core turn counter ignores the table's GrowthNum/SideGrowthNum
+// (99/1): a stage-3 tree emits 100 leaves, then 1 core. Every item, core included, costs one
+// GrowthNutrientValue.
+const WORLD_TREE_STAGE_RATE = [5000, 10000, 20000] // nutrients/s for TreeStage1..3
+const WORLD_TREE_LEAVES_PER_CORE = 100
+
 function nurseryProcesses(ctx: ProcessContext): Process[] {
-  const machine = machinesByKey.get(NURSERY) ?? null
+  const nursery = machinesByKey.get(NURSERY) ?? null
+  const treeNursery = machinesByKey.get(WORLD_TREE_NURSERY) ?? null
   const fert = ctx.fertilizer ? itemsByKey.get(ctx.fertilizer) : undefined
-  const speed = fert?.nutrientSpeed || 1
+  const fertSpeed = fert?.nutrientSpeed || 1
   const result: Process[] = []
   for (const s of seeds) {
     if (!s.plant || !itemsByKey.has(s.plant) || s.nutrientCost <= 0) continue
+    const stage = s.seed.match(/^TreeStage(\d)$/)?.[1]
+    const worldTree = stage !== undefined
+    const machine = worldTree ? treeNursery : nursery
+    const speed = worldTree ? WORLD_TREE_STAGE_RATE[Number(stage) - 1] : fertSpeed
     // One nutrient "charge" grows one plant (and its side product in proportion).
-    const sidePerPlant = s.side && s.count ? s.sideCount / s.count : 0
+    const sidePerPlant = !s.side ? 0 : worldTree ? 1 / WORLD_TREE_LEAVES_PER_CORE : s.count ? s.sideCount / s.count : 0
     const nutrients = s.nutrientCost * (1 + sidePerPlant)
     const outputs: Stack[] = [{ item: s.plant, count: 1 }]
     if (s.side && sidePerPlant) outputs.push({ item: s.side, count: sidePerPlant })
     result.push({
       id: `nursery:${s.seed}`,
       kind: 'nursery',
-      label: `${itemName(s.plant)} (nursery)`,
+      label: `${itemName(s.plant)} (${worldTree ? `stage ${stage}` : 'nursery'})`,
       product: s.plant,
       secondary: s.side && sidePerPlant ? [s.side] : [],
       machine,
@@ -227,7 +241,11 @@ function nurseryProcesses(ctx: ProcessContext): Process[] {
       alternate: false,
       catalysts: [],
       acceptsCatalysts: false,
-      notes: [`Growth speed from ${fert?.name ?? 'fertilizer'} (${speed} nutrients/s)`],
+      notes: [
+        worldTree
+          ? `Fixed stage ${stage} growth speed (${speed} nutrients/s); fertilizer only supplies nutrients`
+          : `Growth speed from ${fert?.name ?? 'fertilizer'} (${speed} nutrients/s)`,
+      ],
     })
   }
   return result
