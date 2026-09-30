@@ -5,6 +5,7 @@ import { usePlanModel } from './lib/planModel'
 import { gameVersion } from './lib/gameData'
 import { emptyPlan, newId, readBackup, useBackup, usePersistentState } from './lib/store'
 import type { Plan, SavedRecipe } from './lib/types'
+import { useUpdateAvailable } from './lib/updateCheck'
 import { CauldronPage } from './pages/CauldronPage'
 import { HomePage } from './pages/HomePage'
 import { PlannerPage } from './pages/PlannerPage'
@@ -20,6 +21,7 @@ export default function App() {
   const [status, setStatus] = useState<string | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
   const downloadBackup = useBackup(saved, plans)
+  const updateAvailable = useUpdateAvailable()
 
   const plan = plans.find((p) => p.id === activePlanId) ?? plans[0]
   // What the active plan makes and overflows, offered as ingredient groups in the recipe finder.
@@ -110,6 +112,13 @@ export default function App() {
           />
         </div>
       </header>
+
+      {updateAvailable && (
+        <div className="toast update-banner" role="status">
+          <span>A new version of the calculator is available.</span>
+          <button onClick={() => location.reload()}>Reload</button>
+        </div>
+      )}
 
       {status && (
         <div className="toast" role="status" onClick={() => setStatus(null)}>

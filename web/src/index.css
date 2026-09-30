@@ -198,6 +198,14 @@ h2 {
   cursor: pointer;
 }
 
+.update-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: default;
+}
+
 .page {
   display: flex;
   flex-direction: column;
