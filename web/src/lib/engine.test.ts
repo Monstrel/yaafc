@@ -7,7 +7,7 @@ import { allowedIngredients, builtinGroups, emptyPrefs, onlyGroup, preferredCoun
 import { countRecipes, diagnoseNoResults, type FinderQuery } from './diagnose'
 import { checkLogistics, checkProcess } from './logistics'
 import { craftsPerMachine } from './machineRate'
-import { solvePlan, type PlanResult } from './solver'
+import { pruneChoices, solvePlan, type PlanResult } from './solver'
 import { buildTree, type TreeNode } from './tree'
 import type { Plan, SavedRecipe } from './types'
 import { PLANNER_UPGRADES, maxLevel, modifiers, upgradeLevel } from './upgrades'
@@ -208,6 +208,27 @@ describe('production tree', () => {
     const find = (nodes: TreeNode[]): TreeNode | undefined =>
       nodes.map((n) => (n.kind === 'loop' ? n : find(n.children))).find(Boolean)
     expect(find(tree)?.item).toBe('Vitae')
+  })
+})
+
+describe('forgetting choices', () => {
+  const mods = modifiers({})
+  const catalog = buildCatalog({ saved: [], machines: {}, mods, fertilizer: null })
+  const choices = {
+    producers: { Coke: 'recipe:Coke', [HEAT]: 'fuel:x', [NUTRIENTS]: 'fert:x' },
+    machines: { 'recipe:Coke': 'AdvancedAthanor' },
+    catalysts: { 'recipe:Coke': ['Catalyst1'] },
+  }
+
+  it("drops picks for items and processes that left the plan, keeping fuel and fertilizer", () => {
+    const pruned = pruneChoices(plan({ targets: [{ item: 'WoodBoard', rate: 1 }], ...choices }), catalog)!
+    expect(pruned.producers).toEqual({ [HEAT]: 'fuel:x', [NUTRIENTS]: 'fert:x' })
+    expect(pruned.machines).toEqual({})
+    expect(pruned.catalysts).toEqual({})
+  })
+
+  it('keeps picks still in use', () => {
+    expect(pruneChoices(plan({ targets: [{ item: 'Coke', rate: 1 }], ...choices }), catalog)).toBeNull()
   })
 })
 

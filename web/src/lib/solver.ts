@@ -1,4 +1,4 @@
-import { baseInputKey, realItem, type Stack } from './gameData'
+import { HEAT, NUTRIENTS, baseInputKey, realItem, type Stack } from './gameData'
 import { solveLP } from './lp'
 import { craftsPerMachine } from './machineRate'
 import { defaultProducer, type Process, type ProcessCatalog } from './processes'
@@ -97,23 +97,15 @@ export function producerFor(plan: Plan, catalog: ProcessCatalog, item: string): 
 }
 
 /**
- * Balances the plan as a linear program. Every item gets one constraint:
- *   Σ(outputs − inputs)·crafts + import + deficit − surplus = target
- * Cycles (e.g. a catalyst feeding its own precursors) need no special handling: the LP simply
- * finds crafting rates where each loop item balances, and anything left over shows as surplus.
+ * Walks from the targets through each item's chosen producer to find the processes involved.
+ * Bus items (`@base:X`) have no producer: they're supplied from outside, like purchases.
  */
-export function solvePlan(plan: Plan, catalog: ProcessCatalog, mods: Modifiers): PlanResult {
-  const resolved = resolveTargets(plan, catalog, mods)
-  const targets = new Map<string, number>()
-  for (const t of resolved) targets.set(t.item, (targets.get(t.item) ?? 0) + t.rate)
-
-  // Walk from the targets through each item's chosen producer to find the processes involved.
-  // Bus items (`@base:X`) have no producer: they're supplied from outside, like purchases.
+function walkPlan(plan: Plan, catalog: ProcessCatalog, targets: string[]) {
   const producers = new Map<string, string>()
   const processes = new Map<string, Process>()
   const itemsSeen = new Set<string>()
   const depth = new Map<string, number>()
-  const queue = [...targets.keys()]
+  const queue = [...targets]
   for (const t of queue) depth.set(t, 0)
   while (queue.length) {
     const item = queue.shift()!
@@ -131,6 +123,46 @@ export function solvePlan(plan: Plan, catalog: ProcessCatalog, mods: Modifiers):
       queue.push(s.item)
     }
   }
+  return { producers, processes, itemsSeen, depth }
+}
+
+/**
+ * Drops producer, machine and catalyst choices for items and processes no longer in the plan, so
+ * an item that's removed and added back starts from its default recipe instead of whatever was
+ * last picked for it. Fuel and fertilizer choices are plan-wide settings and always kept.
+ * Returns null when there's nothing to drop.
+ */
+export function pruneChoices(plan: Plan, catalog: ProcessCatalog): Plan | null {
+  const { producers, processes } = walkPlan(
+    plan,
+    catalog,
+    plan.targets.filter((t) => t.item).map((t) => t.item),
+  )
+  const keepItem = (item: string) => item === HEAT || item === NUTRIENTS || producers.has(item)
+  const keep = <T>(record: Record<string, T> | undefined, test: (key: string) => boolean) => {
+    if (!record) return { record, dropped: false }
+    const kept = Object.fromEntries(Object.entries(record).filter(([k]) => test(k)))
+    return { record: kept, dropped: Object.keys(kept).length !== Object.keys(record).length }
+  }
+  const p = keep(plan.producers, keepItem)
+  const m = keep(plan.machines, (id) => processes.has(id))
+  const c = keep(plan.catalysts, (id) => processes.has(id))
+  if (!p.dropped && !m.dropped && !c.dropped) return null
+  return { ...plan, producers: p.record!, machines: m.record!, catalysts: c.record }
+}
+
+/**
+ * Balances the plan as a linear program. Every item gets one constraint:
+ *   Σ(outputs − inputs)·crafts + import + deficit − surplus = target
+ * Cycles (e.g. a catalyst feeding its own precursors) need no special handling: the LP simply
+ * finds crafting rates where each loop item balances, and anything left over shows as surplus.
+ */
+export function solvePlan(plan: Plan, catalog: ProcessCatalog, mods: Modifiers): PlanResult {
+  const resolved = resolveTargets(plan, catalog, mods)
+  const targets = new Map<string, number>()
+  for (const t of resolved) targets.set(t.item, (targets.get(t.item) ?? 0) + t.rate)
+
+  const { producers, processes, itemsSeen, depth } = walkPlan(plan, catalog, [...targets.keys()])
 
   const constraints: Record<string, number> = {}
   const variables: Record<string, Record<string, number>> = {}

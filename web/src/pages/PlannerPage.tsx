@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import { ItemIcon, ItemLabel } from '../components/ItemIcon'
 import { ItemPicker } from '../components/ItemPicker'
 import { Money } from '../components/Money'
@@ -9,7 +9,7 @@ import { HEAT, NUTRIENTS, iconUrl, itemName, items, itemsByKey } from '../lib/ga
 import { fmt } from '../lib/format'
 import { checkLogistics, type LogisticsCheck } from '../lib/logistics'
 import { usePlanModel } from '../lib/planModel'
-import type { ResolvedTarget } from '../lib/solver'
+import { pruneChoices, type ResolvedTarget } from '../lib/solver'
 import { buildTree } from '../lib/tree'
 import type { Plan, PlanTarget, SavedRecipe } from '../lib/types'
 import { MAX_COIN_STACK, PLANNER_UPGRADES, maxLevel, upgradeLevel, type Modifiers } from '../lib/upgrades'
@@ -38,6 +38,10 @@ const visibleItems = items.filter((i) => !i.hidden)
 
 export function PlannerPage({ plans, plan, saved, onSelectPlan, onUpdatePlan, onNewPlan, onDuplicatePlan, onDeletePlan }: Props) {
   const { mods, catalog, result } = usePlanModel(plan, saved)
+  // Forget recipe, machine and catalyst picks for anything that has left the plan.
+  useEffect(() => {
+    if (pruneChoices(plan, catalog)) onUpdatePlan((p) => pruneChoices(p, catalog) ?? p)
+  }, [plan, catalog, onUpdatePlan])
   const tree = useMemo(() => buildTree(result, result.targets), [result])
   // result.targets skips rows with no item chosen yet; line them back up with the rows.
   let resolvedIndex = 0
