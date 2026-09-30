@@ -52,6 +52,7 @@ const DEFICIT_DEPTH_FACTOR = 0.1
 const MIN_DEFICIT_COST = 10
 const SURPLUS_COST = 1e-4
 const CRAFT_COST = 1e-3
+const SHORTFALL_ROW = 'shortfall'
 
 /**
  * Fuel and fertilizer come off the factory bus: their processes draw from a separate pool
@@ -149,6 +150,27 @@ export function solvePlan(plan: Plan, catalog: ProcessCatalog, mods: Modifiers):
     for (const s of p.inputs) coef[`bal:${s.item}`] = (coef[`bal:${s.item}`] ?? 0) - s.count
     variables[`x:${p.id}`] = coef
   }
+
+  // Two passes, so a shortfall is only ever reported when the chosen producers really can't cover
+  // it. In one pass, deficits were just expensive: a big enough plan (Sol burns millions of P and
+  // tens of thousands of fuel and fertilizer items a minute) cost more than giving up on the target.
+  // Pass 1 minimizes the depth-weighted shortfall alone; pass 2 holds it there and minimizes the
+  // real costs.
+  const phase1 = solveLP({
+    equalities: constraints,
+    columns: Object.fromEntries(
+      Object.entries(variables).map(([name, { cost, ...rows }]) => [name, { ...rows, cost: name.startsWith('def:') ? cost : 0 }]),
+    ),
+  })
+  if (phase1.status !== 'optimal')
+    return { status: phase1.status, message: phase1.message, targets: resolved, runs: [], balances: [] }
+  let shortfall = 0
+  for (const [name, x] of phase1.values) if (name.startsWith('def:')) shortfall += x * variables[name].cost
+  // Σ cost·deficit + slack = cap, with a little room for solver tolerance.
+  constraints[SHORTFALL_ROW] = shortfall * (1 + 1e-6) + 1e-6
+  for (const name of Object.keys(variables))
+    if (name.startsWith('def:')) variables[name][SHORTFALL_ROW] = variables[name].cost
+  variables[`slack:${SHORTFALL_ROW}`] = { [SHORTFALL_ROW]: 1, cost: 0 }
 
   const solution = solveLP({ equalities: constraints, columns: variables })
   if (solution.status !== 'optimal')

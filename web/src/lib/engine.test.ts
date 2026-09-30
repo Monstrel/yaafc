@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { cauldronStats, evaluateAdvanced, evaluateNormal, findRecipes } from './cauldron'
-import { NUTRIENTS, baseInputKey, cauldronIngredients, gameRecipes, items, itemsByKey, upgrades } from './gameData'
+import { HEAT, NUTRIENTS, baseInputKey, cauldronIngredients, gameRecipes, items, itemsByKey, upgrades } from './gameData'
 import { buildCatalog, defaultProducer, paradoxSeconds } from './processes'
 import { busLines } from './baseInputs'
 import { allowedIngredients, builtinGroups, emptyPrefs, onlyGroup, preferredCount, setPrefs } from './itemGroups'
@@ -436,6 +436,22 @@ describe('solver numerics', () => {
         }
       }
     expect(wasted).toEqual([])
+  })
+
+  it('never gives up on a producible target because its chain is expensive — Sol with every fuel', () => {
+    // Sol's chain burns ~50M P/min: pricing a shortfall below that bill used to report fuel-dependent
+    // "can't be met" items (with Wood, Sol itself).
+    const mods = modifiers({})
+    const catalog = buildCatalog({ saved: [], machines: {}, mods, fertilizer: 'BasicFertilizer' })
+    for (const fuel of catalog.byProduct.get(HEAT)!) {
+      const result = solvePlan(
+        plan({ targets: [{ item: 'Sol', rate: 1, unit: 'machines' }], producers: { [HEAT]: fuel.id } }),
+        catalog,
+        mods,
+      )
+      expectBalanced(result)
+      expect(result.balances.filter((b) => b.deficit > 0).map((b) => `${fuel.id}: ${b.item}`)).toEqual([])
+    }
   })
 })
 
