@@ -139,11 +139,17 @@ export function iconUrl(file: string | null | undefined): string | null {
   return file ? `${import.meta.env.BASE_URL}icons/${file}` : null
 }
 
+/** Brewing barrel products (Whispering Fields etc.): sold straight from the tap, never held as items. */
+const barrelProducts = new Set(gameRecipes.filter((r) => r.craftType === 'LiquidTap').map((r) => r.output.item))
+
 /**
  * Items that can be put into a cauldron: they have a cauldron value, are visible in game, and are
- * belt-transportable (liquids travel by pipe and can't be inserted).
+ * belt-transportable (liquids travel by pipe and can't be inserted; barrel products never leave the
+ * barrel).
  */
-export const cauldronIngredients = items.filter((i) => i.cauldronCost > 0 && !i.hidden && !i.liquid)
+export const cauldronIngredients = items.filter(
+  (i) => i.cauldronCost > 0 && !i.hidden && !i.liquid && !barrelProducts.has(i.key),
+)
 
 /** Items a cauldron can produce. CauldronMulti scales the distance; 0 means "never selected". */
 export const cauldronTargets = items.filter((i) => i.cauldronTarget > 0 && i.cauldronMulti > 0)

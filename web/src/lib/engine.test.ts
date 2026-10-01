@@ -69,6 +69,7 @@ describe('cauldron evaluation', () => {
     expect(cauldronIngredients.length).toBeGreaterThan(0)
     expect(cauldronIngredients.some((i) => i.liquid)).toBe(false)
     expect(cauldronIngredients.some((i) => i.key === 'Brandy')).toBe(false)
+    expect(cauldronIngredients.some((i) => i.key === 'WhisperingFields' || i.key === 'StrangeTide')).toBe(false)
   })
 
   it('reverse search never uses the target as its own ingredient', () => {
