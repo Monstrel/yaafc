@@ -390,6 +390,10 @@ function TreeRow({
   const p = node.run?.process
   const belts = node.run ? logistics.get(node.run.key) : undefined
   const limited = !!belts && belts.utilization < 1 && node.machines > 0
+  // How the numbers were worked out: behind an info icon rather than spelled out on every row.
+  const details = [...(p?.notes ?? [])]
+  if (belts?.outputCappedAt != null && node.kind === 'produce')
+    details.push(`Output capped by its belt at ${fmt(belts.outputCappedAt)}/min per machine`)
   const canChoose = !!node.producer && (catalog.byProduct.get(node.item)?.length ?? 0) > 0
   const price = itemsByKey.get(node.item)?.buyPrice
   const name = itemsByKey.get(node.item)?.name ?? node.item
@@ -456,6 +460,11 @@ function TreeRow({
                 branch={{ rows, own: node.ownChoice, mine: node.mine, onReset: () => onResetProducer(node.id) }}
                 compact
               />
+            )}
+            {details.length > 0 && (
+              <span className="info-icon" tabIndex={0} title={details.join('\n')} aria-label={details.join('. ')}>
+                ⓘ
+              </span>
             )}
             {node.consolidated && (
               <div className="note-line">
@@ -533,15 +542,7 @@ function TreeRow({
               </div>
             )}
             {p?.license && node.kind === 'produce' && <div className="note-line">needs the {p.license}</div>}
-            {p?.notes.map((n) => (
-              <div className="note-line" key={n}>
-                {n}
-              </div>
-            ))}
             {node.shortfall > 0 && <div className="note-line warn-text">short by {fmt(node.shortfall)}/min</div>}
-            {belts?.outputCappedAt != null && node.kind === 'produce' && (
-              <div className="note-line">output capped by its belt at {fmt(belts.outputCappedAt)}/min per machine</div>
-            )}
             {belts && (belts.multiBelt || limited) && node.kind === 'produce' && (
               <div className="note-line">
                 belts per machine:{' '}

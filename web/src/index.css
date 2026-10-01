@@ -1041,6 +1041,19 @@ td.under {
   margin-top: 3px;
 }
 
+.info-icon {
+  color: var(--muted);
+  font-size: 14px;
+  margin-left: 6px;
+  cursor: help;
+  vertical-align: middle;
+}
+
+.info-icon:hover,
+.info-icon:focus-visible {
+  color: inherit;
+}
+
 .machines input {
   width: 84px;
   text-align: right;
