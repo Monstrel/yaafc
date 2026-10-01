@@ -33,6 +33,8 @@ export interface Process {
   id: string
   kind: ProcessKind
   label: string
+  /** Name the player gave a saved cauldron recipe. */
+  name?: string
   /** Main product: the item this process is offered as a producer for. */
   product: string
   /** Guaranteed side outputs (not fail products); the process is also offered as their producer. */
@@ -188,6 +190,7 @@ export function savedRecipeProcess(s: SavedRecipe): Process | null {
     id: `cauldron:${s.id}`,
     kind: 'cauldron',
     label: s.name || `${result.output.name} ← ${s.inputs.map(itemName).join(' + ')}`,
+    name: s.name || undefined,
     product: result.output.key,
     secondary: [],
     machine,
@@ -354,9 +357,17 @@ export interface ProcessCatalog {
   byId: Map<string, Process>
   /** Producer options per product item, game recipes first, then saved cauldron recipes. */
   byProduct: Map<string, Process[]>
+  /** The process as it would run on another of its machines (for previewing the choice). */
+  onMachine: (p: Process, machine: string) => Process
 }
 
 export function buildCatalog(ctx: ProcessContext): ProcessCatalog {
+  const recipes = new Map(gameRecipes.map((r) => [`recipe:${r.key}`, r]))
+  const onMachine = (p: Process, machine: string) => {
+    const r = recipes.get(p.id)
+    if (!r || p.machine?.key === machine) return p
+    return recipeProcess(r, { ...ctx, machines: { ...ctx.machines, [p.id]: machine } })
+  }
   const all: Process[] = [
     ...gameRecipes.filter((r) => !r.hidden).map((r) => recipeProcess(r, ctx)),
     ...nurseryProcesses(ctx),
@@ -370,7 +381,7 @@ export function buildCatalog(ctx: ProcessContext): ProcessCatalog {
   for (const p of all) byProduct.set(p.product, [...(byProduct.get(p.product) ?? []), p])
   // Multi-output processes are also offered for their side products, after the main producers.
   for (const p of all) for (const item of p.secondary) byProduct.set(item, [...(byProduct.get(item) ?? []), p])
-  return { byId, byProduct }
+  return { byId, byProduct, onMachine }
 }
 
 /**
@@ -394,6 +405,18 @@ export function defaultProducer(catalog: ProcessCatalog, item: string): string {
     all.find((p) => p.kind === 'nursery' || (p.kind === 'recipe' && p.machine?.key !== 'SeedPlot')) ??
     all[0]
   return pick?.id ?? 'import'
+}
+
+/**
+ * Short name for a producer option shown next to its product: the machine, or what sets the
+ * option apart (the fuel burned, a saved mix's name, the World Tree's stage).
+ */
+export function processTitle(p: Process): string {
+  if (p.kind === 'cauldron') return p.name || 'Saved mix'
+  if (p.kind === 'fuel' || p.kind === 'fertilizer') return itemName(p.inputs[0]?.item ?? '')
+  const machine = p.machine?.name ?? p.label
+  const stage = p.kind === 'nursery' ? p.id.match(/TreeStage(\d)$/)?.[1] : undefined
+  return stage ? `${machine} · stage ${stage}` : machine
 }
 
 /** Label for a producer option: ★ marks saved cauldron recipes. */

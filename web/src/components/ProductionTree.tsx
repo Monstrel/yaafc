@@ -13,8 +13,7 @@ interface Props {
   tree: TreeNode[]
   plan: Plan
   catalog: ProcessCatalog
-  onProducer: (item: string, producer: string) => void
-  onMachine: (processId: string, machine: string) => void
+  onProducer: (item: string, producer: string, machine?: string) => void
   onCatalysts: (processId: string, catalysts: string[]) => void
   onSeparate: (s: Separation, on: boolean) => void
   /** Plan-wide unused amount per item (per minute), to flag overflowing by-products. */
@@ -38,7 +37,6 @@ export function ProductionTree({
   plan,
   catalog,
   onProducer,
-  onMachine,
   onCatalysts,
   onSeparate,
   unused,
@@ -233,7 +231,6 @@ export function ProductionTree({
                   plan={plan}
                   catalog={catalog}
                   onProducer={onProducer}
-                  onMachine={onMachine}
                   onCatalysts={onCatalysts}
                   onSeparate={onSeparate}
                   onSeparateMenu={openMenu}
@@ -301,7 +298,6 @@ function TreeRow({
   plan,
   catalog,
   onProducer,
-  onMachine,
   onCatalysts,
   onSeparate,
   onSeparateMenu,
@@ -321,8 +317,7 @@ function TreeRow({
   onToggle: () => void
   plan: Plan
   catalog: ProcessCatalog
-  onProducer: (item: string, producer: string) => void
-  onMachine: (processId: string, machine: string) => void
+  onProducer: (item: string, producer: string, machine?: string) => void
   onCatalysts: (processId: string, catalysts: string[]) => void
   onSeparate: (s: Separation, on: boolean) => void
   onSeparateMenu: (node: TreeNode, button: HTMLElement) => void
@@ -455,17 +450,6 @@ function TreeRow({
               ) : (
                 <span className="tag warn">not sold at portals</span>
               ))}
-            {p && p.machineOptions.length > 1 && (
-              <select className="compact" value={p.machine?.key} onChange={(e) => onMachine(p.id, e.target.value)}>
-                {p.machineOptions.map((m) => (
-                  <option key={m.key} value={m.key}>
-                    {m.name}
-                    {m.speed !== 1 ? ` (×${m.speed} speed)` : ''}
-                    {m.outputMultiplier !== 1 ? ` (${m.outputMultiplier}× output)` : ''}
-                  </option>
-                ))}
-              </select>
-            )}
             {p?.acceptsCatalysts && node.kind === 'produce' && (
               <div className="catalysts" role="group" aria-label="Catalysts">
                 {CATALYSTS.map((c) => {

@@ -61,10 +61,12 @@ export function PlannerPage({ plans, plan, saved, onSelectPlan, onUpdatePlan, on
   )
   const beltLimited = [...logistics.values()].filter((c) => c.utilization < 1 && c.machines > 0)
 
-  const setProducer = (item: string, producer: string) =>
-    onUpdatePlan((p) => ({ ...p, producers: { ...p.producers, [item]: producer } }))
-  const setMachine = (processId: string, machine: string) =>
-    onUpdatePlan((p) => ({ ...p, machines: { ...p.machines, [processId]: machine } }))
+  const setProducer = (item: string, producer: string, machine?: string) =>
+    onUpdatePlan((p) => ({
+      ...p,
+      producers: { ...p.producers, [item]: producer },
+      machines: machine ? { ...p.machines, [producer]: machine } : p.machines,
+    }))
   const setCatalysts = (processId: string, catalysts: string[]) =>
     onUpdatePlan((p) => ({ ...p, catalysts: { ...p.catalysts, [processId]: catalysts } }))
   const setSeparate = (s: Separation, on: boolean) =>
@@ -325,7 +327,6 @@ export function PlannerPage({ plans, plan, saved, onSelectPlan, onUpdatePlan, on
                   plan={plan}
                   catalog={catalog}
                   onProducer={setProducer}
-                  onMachine={setMachine}
                   onCatalysts={setCatalysts}
                   onSeparate={setSeparate}
                   unused={new Map(surplus.map((b) => [b.item, b.surplus]))}

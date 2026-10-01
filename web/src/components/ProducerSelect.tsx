@@ -1,17 +1,56 @@
-import { fmtSeconds } from '../lib/format'
-import { HEAT, itemsByKey, type Item } from '../lib/gameData'
-import { DEFAULT_PARADOX_INPUT, PARADOX_CRUCIBLE, processLabel, type Process, type ProcessCatalog } from '../lib/processes'
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
+import { fmt, fmtSeconds } from '../lib/format'
+import { HEAT, buildingsByKey, iconUrl, itemName, itemsByKey, type Item, type Stack } from '../lib/gameData'
+import {
+  DEFAULT_PARADOX_INPUT,
+  PARADOX_CRUCIBLE,
+  processLabel,
+  processTitle,
+  type Process,
+  type ProcessCatalog,
+} from '../lib/processes'
 import { producerFor } from '../lib/solver'
 import type { Plan } from '../lib/types'
+import { ItemIcon } from './ItemIcon'
 import { ItemPicker } from './ItemPicker'
+import { Money } from './Money'
 
 const CRUCIBLE = 'crucible'
+const IMPORT = 'import'
+/** Building shown for buying an item at a portal. */
+const BUY_PORTAL = 'Portal_AlchGuild'
+/** Menus with more options than this get a search box (fuels, many saved mixes). */
+const SEARCH_FROM = 10
+const NONE = new Set<string>()
 
 /** The item a single-input process consumes (heat aside). */
 const inputOf = (p: Process) => p.inputs.find((s) => s.item !== HEAT)?.item ?? ''
+const materials = (p: Process) => p.inputs.filter((s) => s.item !== HEAT)
+const stackKey = (s: Stack) => `${s.item}×${s.count}`
+const describe = (stacks: Stack[]) => stacks.map((s) => `${fmt(s.count)} ${itemName(s.item)}`).join(' + ')
 
 /**
- * Chooses which process makes an item (game recipe, nursery, saved ★ cauldron recipe, or buy).
+ * One menu entry: a process on one of its machines, the Paradox Crucible (input picked alongside),
+ * or buying (importing, when portals don't sell) the item.
+ */
+interface Choice {
+  value: string
+  /** The process behind the entry, as run on `machine`; for the crucible, the current (or default) input's. */
+  process?: Process
+  /** Machine to set with the process, when it can run on several. */
+  machine?: string
+  /** Buying: copper per item at a portal; null when portals don't sell it (imported instead). */
+  price?: number | null
+}
+
+/** Menu value of a process on a given machine. */
+const onMachineValue = (id: string, machine: string) => `${id}@${machine}`
+
+/**
+ * Chooses which process makes an item (game recipe, nursery, saved ★ cauldron recipe, buy or import),
+ * and the machine that runs it: a recipe several machines can run is offered once per machine.
+ * A button showing the machine opens a menu previewing each option's ingredients and products;
+ * ingredients the current choice also uses are dimmed so the differences stand out.
  * Everything the Paradox Crucible makes — refining any item, or the fixed Oblivion ↔ Vitality
  * recipes — collapses into a single entry plus an input picker.
  */
@@ -26,7 +65,7 @@ export function ProducerSelect({
   item: string
   plan: Plan
   catalog: ProcessCatalog
-  onChange: (item: string, producer: string) => void
+  onChange: (item: string, producer: string, machine?: string) => void
   compact?: boolean
   noImport?: boolean
 }) {
@@ -37,24 +76,187 @@ export function ProducerSelect({
   const current = producerFor(plan, catalog, item)
   const currentProcess = catalog.byId.get(current)
   const onCrucible = !!currentProcess && isCrucible(currentProcess)
-  const crucibleDefault = (crucible.get(DEFAULT_PARADOX_INPUT) ?? [...crucible.values()][0])?.id
+  const crucibleDefault = crucible.get(DEFAULT_PARADOX_INPUT) ?? [...crucible.values()][0]
   const inputs = [...crucible.keys()].map((k) => itemsByKey.get(k)).filter((i): i is Item => !!i)
+
+  const choices: Choice[] = [
+    ...options.flatMap((p) =>
+      p.machineOptions.length > 1
+        ? p.machineOptions.map((m) => ({
+            value: onMachineValue(p.id, m.key),
+            process: catalog.onMachine(p, m.key),
+            machine: m.key,
+          }))
+        : [{ value: p.id, process: p }],
+    ),
+    ...(crucible.size > 0 ? [{ value: CRUCIBLE, process: onCrucible ? currentProcess : crucibleDefault }] : []),
+    ...(noImport ? [] : [{ value: IMPORT, price: itemsByKey.get(item)?.buyPrice ?? null }]),
+  ]
+  const value = onCrucible
+    ? CRUCIBLE
+    : currentProcess && currentProcess.machineOptions.length > 1 && currentProcess.machine
+      ? onMachineValue(current, currentProcess.machine.key)
+      : current
+  const selected = choices.find((c) => c.value === value) ?? { value, process: currentProcess }
+  // Ingredients the current choice also uses in the same amount: dimmed in the other options, so
+  // what switching would change stands out.
+  const shared = new Set(selected.process && value !== CRUCIBLE ? materials(selected.process).map(stackKey) : [])
+  // Several options on one machine: the button also shows the chosen one's ingredients.
+  const ambiguous = choices.filter((c) => choiceTitle(c) === choiceTitle(selected)).length > 1
+
+  const popoverId = useId()
+  const pop = useRef<HTMLDivElement>(null)
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+
+  // A fixed popover doesn't follow the page: close it when anything outside it scrolls.
+  useEffect(() => {
+    if (!open) return
+    const close = (e: Event) => {
+      if (!(e.target instanceof Node && pop.current?.contains(e.target))) pop.current?.hidePopover()
+    }
+    window.addEventListener('scroll', close, true)
+    window.addEventListener('resize', close)
+    return () => {
+      window.removeEventListener('scroll', close, true)
+      window.removeEventListener('resize', close)
+    }
+  }, [open])
+
+  /** Places the popover under the button (or above it, when there's more room there). */
+  const place = (button: HTMLElement) => {
+    const el = pop.current
+    if (!el) return
+    const r = button.getBoundingClientRect()
+    const width = Math.min(Math.max(r.width, 360), window.innerWidth - 16)
+    const below = window.innerHeight - r.bottom - 12
+    const above = r.top - 12
+    const up = below < 260 && above > below
+    Object.assign(el.style, {
+      width: `${width}px`,
+      left: `${Math.max(8, Math.min(r.left, window.innerWidth - width - 8))}px`,
+      top: up ? 'auto' : `${r.bottom + 4}px`,
+      bottom: up ? `${window.innerHeight - r.top + 4}px` : 'auto',
+      maxHeight: `${Math.min(440, up ? above : below)}px`,
+    })
+  }
+
+  const choose = (c: Choice) => {
+    pop.current?.hidePopover()
+    if (c.value === value) return
+    if (c.value === CRUCIBLE) onChange(item, crucibleDefault!.id)
+    else onChange(item, c.process?.id ?? c.value, c.machine)
+  }
+
+  // Arrow keys move between options (and back up to the search box).
+  const onKeyDown = (e: KeyboardEvent) => {
+    const list = [...(pop.current?.querySelectorAll<HTMLElement>('[role=option]') ?? [])]
+    const at = list.indexOf(document.activeElement as HTMLElement)
+    const inSearch = e.target instanceof HTMLInputElement
+    const next =
+      e.key === 'ArrowDown'
+        ? at + 1
+        : e.key === 'ArrowUp'
+          ? at - 1
+          : e.key === 'Home' && !inSearch
+            ? 0
+            : e.key === 'End' && !inSearch
+              ? list.length - 1
+              : null
+    if (next === null) return
+    e.preventDefault()
+    if (next < 0) pop.current?.querySelector<HTMLElement>('.recipe-search')?.focus()
+    else list[Math.min(next, list.length - 1)]?.focus()
+  }
+
+  const q = query.trim().toLowerCase()
+  const shown = q
+    ? choices.filter((c) =>
+        [choiceTitle(c), c.process ? processLabel(c.process, item) : '', ...(c.process?.inputs ?? []).map((s) => itemName(s.item))]
+          .join(' ')
+          .toLowerCase()
+          .includes(q),
+      )
+    : choices
 
   return (
     <span className="producer-select">
-      <select
-        className={compact ? 'compact' : ''}
-        value={onCrucible ? CRUCIBLE : current}
-        onChange={(e) => onChange(item, e.target.value === CRUCIBLE ? crucibleDefault! : e.target.value)}
+      <button
+        type="button"
+        className={`recipe-button ${compact ? 'compact' : ''}`}
+        popoverTarget={popoverId}
+        aria-haspopup="listbox"
+        title={selected.process ? processLabel(selected.process, item) : choiceTitle(selected)}
+        onClick={(e) => {
+          if (!open) place(e.currentTarget)
+          setOpen(true)
+        }}
       >
-        {options.map((p) => (
-          <option key={p.id} value={p.id}>
-            {processLabel(p, item)}
-          </option>
-        ))}
-        {crucible.size > 0 && <option value={CRUCIBLE}>Paradox Crucible</option>}
-        {!noImport && <option value="import">Buy / import</option>}
-      </select>
+        <ChoiceIcon choice={selected} size={compact ? 20 : 24} />
+        <span className="recipe-title">{choiceTitle(selected)}</span>
+        <ChoiceTags choice={selected} item={item} />
+        {ambiguous && selected.process && selected.value !== CRUCIBLE && (
+          <span className="recipe-mini" aria-hidden>
+            {materials(selected.process).map((s) => (
+              <ItemIcon key={s.item} item={s.item} size={16} />
+            ))}
+          </span>
+        )}
+        <span className="chevron" aria-hidden>
+          ▾
+        </span>
+      </button>
+      <div
+        ref={pop}
+        id={popoverId}
+        popover="auto"
+        className="recipe-menu"
+        onKeyDown={onKeyDown}
+        onToggle={(e) => {
+          const isOpen = e.newState === 'open'
+          setOpen(isOpen)
+          if (isOpen) pop.current?.querySelector<HTMLElement>('.recipe-search, [aria-selected=true]')?.focus()
+          else setQuery('')
+        }}
+      >
+        {open && (
+          <>
+            {choices.length > SEARCH_FROM && (
+              <input
+                className="recipe-search"
+                placeholder="Search…"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && shown[0] && choose(shown[0])}
+              />
+            )}
+            <div role="listbox" aria-label={`Producer for ${itemName(item)}`}>
+              {shown.map((c) => (
+                <button
+                  type="button"
+                  key={c.value}
+                  role="option"
+                  aria-selected={c.value === value}
+                  aria-label={choiceDescription(c, item)}
+                  className="recipe-option"
+                  onClick={() => choose(c)}
+                >
+                  <ChoiceIcon choice={c} size={32} />
+                  <span className="recipe-body">
+                    <span className="recipe-head">
+                      <span className="recipe-title">{choiceTitle(c)}</span>
+                      <ChoiceTags choice={c} item={item} machine />
+                      <ChoiceMeta choice={c} />
+                    </span>
+                    <ChoicePreview choice={c} item={item} shared={c.value === value ? NONE : shared} />
+                  </span>
+                </button>
+              ))}
+              {shown.length === 0 && <div className="picker-empty">No matches</div>}
+            </div>
+          </>
+        )}
+      </div>
       {onCrucible && (
         <ItemPicker
           value={inputOf(currentProcess)}
@@ -64,6 +266,134 @@ export function ProducerSelect({
           detail={(i) => fmtSeconds(crucible.get(i.key)?.seconds ?? 0)}
         />
       )}
+    </span>
+  )
+}
+
+function choiceTitle(c: Choice): string {
+  if (c.value === IMPORT) return c.price != null ? 'Buy' : 'Import'
+  if (c.value === CRUCIBLE) return 'Paradox Crucible'
+  return c.process ? processTitle(c.process) : c.value
+}
+
+function choiceDescription(c: Choice, item: string): string {
+  const p = c.process
+  if (c.value === IMPORT) return c.price != null ? 'Buy at a Purchasing Portal' : 'Import: not sold at portals'
+  if (!p) return choiceTitle(c)
+  if (c.value === CRUCIBLE) return `${choiceTitle(c)}: refine any item`
+  return `${processLabel(p, item)}: ${describe(materials(p))} → ${describe(p.outputs)}`
+}
+
+/**
+ * The building that runs the option (the fuel itself for burning), as the game draws it.
+ * Importing has no building in game, so it gets an abstract arrow into a crate.
+ */
+function ChoiceIcon({ choice, size }: { choice: Choice; size: number }) {
+  const p = choice.process
+  if (p && (p.kind === 'fuel' || p.kind === 'fertilizer')) return <ItemIcon item={inputOf(p)} size={size} />
+  if (choice.value === IMPORT && choice.price == null) return <ImportIcon size={size} />
+  const icon = choice.value === IMPORT ? buildingsByKey.get(BUY_PORTAL)?.icon : p?.machine?.icon
+  const src = iconUrl(icon)
+  const img = src ? (
+    <img className="item-icon" src={src} width={size} height={size} alt="" />
+  ) : (
+    <span className="item-icon missing" style={{ width: size, height: size }} aria-hidden />
+  )
+  if (p?.kind !== 'cauldron') return img
+  return (
+    <span className="recipe-icon-saved" title="Saved cauldron recipe">
+      {img}
+      <span className="star" aria-hidden>
+        ★
+      </span>
+    </span>
+  )
+}
+
+/** An arrow dropping into an open crate: brought in from outside the plan. */
+function ImportIcon({ size }: { size: number }) {
+  return (
+    <span className="item-icon recipe-import-icon" style={{ width: size, height: size }} aria-hidden>
+      <svg
+        viewBox="0 0 16 16"
+        width={size * 0.8}
+        height={size * 0.8}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M2.5 8.5v4.5a.5.5 0 0 0 .5.5h10a.5.5 0 0 0 .5-.5V8.5" />
+        <path d="M1.5 8.5h3M11.5 8.5h3" />
+        <path d="M8 1.5v8M5.5 7 8 9.5 10.5 7" />
+      </svg>
+    </span>
+  )
+}
+
+function ChoiceTags({ choice, item, machine }: { choice: Choice; item: string; machine?: boolean }) {
+  const p = choice.process
+  if (!p || choice.value === CRUCIBLE) return null
+  return (
+    <>
+      {p.alternate && <span className="tag">alt</span>}
+      {p.product !== item && <span className="tag">by-product</span>}
+      {machine && choice.machine && p.machine && p.machine.speed !== 1 && <span className="tag">×{p.machine.speed} speed</span>}
+      {machine && choice.machine && p.machine && p.machine.outputMultiplier !== 1 && (
+        <span className="tag">{p.machine.outputMultiplier}× output</span>
+      )}
+      {machine && choice.machine && p.acceptsCatalysts && <span className="tag">catalysts</span>}
+    </>
+  )
+}
+
+/** Time per craft and heat draw. */
+function ChoiceMeta({ choice }: { choice: Choice }) {
+  const p = choice.process
+  if (!p || choice.value === CRUCIBLE || !p.seconds) return null
+  const heat = p.inputs.find((s) => s.item === HEAT)?.count ?? 0
+  return (
+    <span className="recipe-meta">
+      {fmtSeconds(p.seconds)}
+      {heat > 0 && ` · ${fmt(heat / p.seconds)} P/s`}
+    </span>
+  )
+}
+
+/** Ingredients → products of one craft, the wanted item first among the products. */
+function ChoicePreview({ choice, item, shared }: { choice: Choice; item: string; shared: Set<string> }) {
+  const p = choice.process
+  if (choice.value === IMPORT)
+    return choice.price != null ? (
+      <span className="recipe-preview">
+        <Money copper={choice.price} suffix=" each at a Purchasing Portal" />
+      </span>
+    ) : (
+      <span className="recipe-preview muted">Not sold at portals: brought in from outside the plan</span>
+    )
+  if (choice.value === CRUCIBLE) return <span className="recipe-preview muted">Refines any item; pick the input alongside</span>
+  if (!p) return null
+  const ins = materials(p)
+  const outs = [...p.outputs].sort((a, b) => Number(b.item === item) - Number(a.item === item))
+  return (
+    <span className="recipe-preview" aria-hidden>
+      {ins.map((s) => (
+        <Amount key={s.item} stack={s} className={shared.has(stackKey(s)) ? 'shared' : ''} />
+      ))}
+      {ins.length > 0 && <span className="recipe-arrow">→</span>}
+      {outs.map((s) => (
+        <Amount key={s.item} stack={s} className={s.item === item ? '' : 'byproduct'} />
+      ))}
+    </span>
+  )
+}
+
+function Amount({ stack, className }: { stack: Stack; className: string }) {
+  return (
+    <span className={`recipe-amount ${className}`} title={`${fmt(stack.count)} × ${itemName(stack.item)}`}>
+      {fmt(stack.count)}
+      <ItemIcon item={stack.item} size={20} />
     </span>
   )
 }
