@@ -18,6 +18,10 @@ static class Exporter
     const string ImprovementsTable = "AlchemyFactory/Content/DataTables/DT_Improvements.uasset";
     const string UpgradePointsTable = "AlchemyFactory/Content/DataTables/DT_UpgradePoints.uasset";
     const string AttributesTable = "AlchemyFactory/Content/DataTables/DT_Attributes.uasset";
+    const string SkillsTable = "AlchemyFactory/Content/DataTables/DT_SkillMerge.uasset";
+    const string WorkbenchTable = "AlchemyFactory/Content/DataTables/DT_Workbench.uasset";
+    const string LicensesTable = "AlchemyFactory/Content/DataTables/DT_License.uasset";
+    const int ResearchTiers = 9;
     const int IconSize = 64;
 
     public static void Run(DefaultFileProvider provider, Localization strings, string paksDir, string webDir)
@@ -122,6 +126,7 @@ static class Exporter
             ["buildings"] = buildings,
             ["seeds"] = seeds,
             ["upgrades"] = Upgrades(provider, strings, iconDir),
+            ["research"] = Research(provider, strings, iconDir),
             ["attributes"] = new JObject(Rows(provider, AttributesTable)
                 .Select(r => new JProperty(r.Key, r.Row["BaseValue"]))),
         };
@@ -200,6 +205,78 @@ static class Exporter
             }
         }
         return new JArray(series.Values);
+    }
+
+    /// <summary>
+    /// What each research tier unlocks, numbered 1–9 as the game shows them (DT_SkillMerge's Tier + 1;
+    /// its last tier holds only the final level node and is folded into 9). Machines come from
+    /// research nodes and from workbench entries tied to one; recipes only when a node names them
+    /// (the rest come with their machine); `items` can be bought from that tier (each level node's
+    /// LevelUnlockItems). License-gated recipes (alternate ingots) are listed with the license
+    /// that unlocks them, not given a tier.
+    /// </summary>
+    static JObject Research(DefaultFileProvider provider, Localization strings, string iconDir)
+    {
+        var skills = Rows(provider, SkillsTable).Where(r => !r.Row["Deprecated"]!.Value<bool>()).ToDictionary(r => r.Key, r => r.Row);
+        int TierOf(JObject skill) => Math.Min(skill["Tier"]!.Value<int>() + 1, ResearchTiers);
+        var machines = new Dictionary<string, int>();
+        var recipes = new Dictionary<string, int>();
+        var items = new Dictionary<string, int>();
+        void Unlock(Dictionary<string, int> map, string key, int tier)
+        {
+            if (key == "None") return;
+            map[key] = map.TryGetValue(key, out var t) ? Math.Min(t, tier) : tier;
+        }
+
+        foreach (var skill in skills.Values)
+        {
+            var tier = TierOf(skill);
+            var unlock = skill["UnlockItem"]!;
+            var name = unlock["ConfigName"]!.ToString();
+            switch (Enum(unlock["ConfigType"]))
+            {
+                case "ConstructOptions": Unlock(machines, name, tier); break;
+                case "CraftingRecipes": Unlock(recipes, name, tier); break;
+            }
+            foreach (var extra in skill["ExtraUnlockConstructions"]!) Unlock(machines, extra.ToString(), tier);
+            foreach (var item in skill["LevelUnlockItems"]!) Unlock(items, item.ToString(), tier);
+        }
+
+        // Workbench buildings unlock with a research node, or after another workbench building.
+        var bench = Rows(provider, WorkbenchTable).ToDictionary(r => r.Row["UnlockBuilding"]!.ToString(), r => r.Row);
+        int? BenchTier(string building, int depth = 0)
+        {
+            if (depth > 20 || !bench.TryGetValue(building, out var row)) return null;
+            if (skills.TryGetValue(row["UnlockSkillName"]!.ToString(), out var skill)) return TierOf(skill);
+            return BenchTier(row["PrerequisiteBuilding"]!.ToString(), depth + 1);
+        }
+        foreach (var building in bench.Keys)
+            if (BenchTier(building) is { } tier) Unlock(machines, building, tier);
+
+        var licenses = new JObject();
+        foreach (var (_, row) in Rows(provider, LicensesTable))
+            foreach (var unlock in row["UnlockItems"]!.Where(u => Enum(u["ConfigType"]) == "CraftingRecipes"))
+                licenses[unlock["ConfigName"]!.ToString()] = new JObject
+                {
+                    ["name"] = strings.Resolve(row["LicenseText"]) ?? row["LicenseText"]?["Key"]?.ToString(),
+                    ["level"] = row["LicenseTier"],
+                };
+
+        JObject Sorted(Dictionary<string, int> map) => new(map.OrderBy(e => e.Key).Select(e => new JProperty(e.Key, e.Value)));
+        return new JObject
+        {
+            ["tiers"] = new JArray(Enumerable.Range(1, ResearchTiers).Select(t => new JObject
+            {
+                ["tier"] = t,
+                ["icon"] = ExportIcon(provider,
+                    new JObject { ["ObjectPath"] = $"/Game/Arts/UI/Interaction/T_UI_LevelSkill_{t}.T_UI_LevelSkill_{t}" },
+                    iconDir, $"tier_{t}"),
+            })),
+            ["machines"] = Sorted(machines),
+            ["recipes"] = Sorted(recipes),
+            ["items"] = Sorted(items),
+            ["licenses"] = licenses,
+        };
     }
 
     static IEnumerable<(string Key, JObject Row)> Rows(DefaultFileProvider provider, string path)

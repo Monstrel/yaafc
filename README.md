@@ -14,8 +14,10 @@ cauldron recipes as steps in production chains, including self-feeding loops.
   be a game recipe, a nursery, a saved ★ cauldron recipe, or a purchase, picked per branch (a
   row and the rows of its item below it) or for every row at once. Each row's machines feed the
   row above them, as built in the factory; only by-products cross branches, going to the nearest
-  rows that use them. Loops are solved with a linear program. When a chain can't be met, the shortfall is reported where it breaks, and
-  everything above it is still sized.
+  rows that use them. Loops are solved with a linear program. When a chain can't be met, the
+  shortfall is reported where it breaks, and everything above it is still sized. Each plan has a
+  research tier (I–IX): default recipes, machines and fuel stick to what it unlocks, and steps
+  beyond it are flagged, so you can plan ahead for a tier you haven't reached.
 
 Saved recipes and plans live in the browser (localStorage). Use Export/Import to back them up.
 
@@ -55,6 +57,8 @@ dotnet run -- export     # writes web/src/data/game-data.json and web/public/ico
 | Machines, heat cost | `DataTables/DT_Buildings` + each building's blueprint (`FactoryCraftType`, `GrindingSpeed`) |
 | Nursery growth | `DataTables/DT_PlantSeedConfig` |
 | Upgrades | `DataTables/DT_Improvements`, `DT_UpgradePoints` |
+| Research tiers (machines, recipes, portal stock) | `DataTables/DT_SkillMerge` (`Tier` + 1 = I–IX), `DT_Workbench` (buildings tied to a research node) |
+| License-gated recipes | `DataTables/DT_License` (`UnlockItems`) |
 | English names | `Localization/Game/en/Game.locres` |
 
 ### Modelling assumptions (not in the data tables)

@@ -1,6 +1,20 @@
 import { describe, expect, it } from 'vitest'
 import { cauldronStats, evaluateAdvanced, evaluateNormal, findRecipes } from './cauldron'
-import { HEAT, NUTRIENTS, baseInputKey, cauldronIngredients, gameRecipes, items, itemsByKey, upgrades } from './gameData'
+import {
+  HEAT,
+  MAX_TIER,
+  NUTRIENTS,
+  baseInputKey,
+  buyTier,
+  cauldronIngredients,
+  gameRecipes,
+  items,
+  itemsByKey,
+  licenseFor,
+  machineTier,
+  research,
+  upgrades,
+} from './gameData'
 import { buildCatalog, defaultProducer, paradoxSeconds } from './processes'
 import { busLines } from './baseInputs'
 import { allowedIngredients, builtinGroups, emptyPrefs, onlyGroup, preferredCount, setPrefs } from './itemGroups'
@@ -959,5 +973,53 @@ describe('World Tree nursery', () => {
     const coresGrown = 5 * perMinute(tree, 'WorldTreeCore', tree.outputs)
     expect(coresNeeded).toBeCloseTo(1)
     expect(coresGrown).toBeCloseTo(100 / 101)
+  })
+})
+
+describe('research tiers', () => {
+  const mods = modifiers({})
+  const at = (tier: number) => buildCatalog({ saved: [], machines: {}, mods, fertilizer: 'BasicFertilizer', tier })
+
+  it('reads what each tier unlocks from the research tree and workbench', () => {
+    expect(machineTier('Athanor')).toBe(5)
+    expect(machineTier('AdvancedAthanor')).toBe(8)
+    expect(machineTier('EnhancedGrinder')).toBe(5) // workbench building, unlocked with the Steel Gear research
+    expect(buyTier('IronOre')).toBe(3)
+    expect(licenseFor('CopperIngot_Alt')).toMatch(/License/)
+    expect(research.tiers.map((t) => t.tier)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9])
+  })
+
+  it('works out when each item can first be had, ingredients included', () => {
+    const catalog = at(MAX_TIER)
+    expect(catalog.itemReach('WoodBoard')).toBe(1)
+    expect(catalog.itemReach('SteelIngot')).toBe(5)
+    expect(catalog.itemReach('Sol')).toBe(9)
+    expect(catalog.itemReach('Steam')).toBe(machineTier('SteamBoiler'))
+  })
+
+  it('defaults to what the tier unlocks', () => {
+    expect(defaultProducer(at(3), 'Flax')).toBe('recipe:Flax') // seed plot until nurseries
+    expect(defaultProducer(at(4), 'Flax')).toBe('nursery:FlaxSeed')
+    expect(defaultProducer(at(1), HEAT)).toBe('fuel:WoodBoard')
+    expect(defaultProducer(at(MAX_TIER), HEAT)).toBe('fuel:Steam')
+    // Nothing unlocked yet: still the usual recipe, flagged where it's used.
+    expect(defaultProducer(at(2), 'SteelIngot')).toBe('recipe:SteelIngot')
+  })
+
+  it('runs recipes on an unlocked machine when there is one', () => {
+    for (const tier of [4, 6, 8]) {
+      const catalog = at(tier)
+      for (const p of catalog.byId.values()) {
+        if (!p.machine || !p.machineOptions.some((m) => machineTier(m.key) <= tier)) continue
+        expect(machineTier(p.machine.key), `${p.id} at tier ${tier}`).toBeLessThanOrEqual(tier)
+      }
+    }
+  })
+
+  it('leaves plans without a tier unchanged', () => {
+    const targets = [{ item: 'Sol', rate: 0.25 }]
+    const open = solvePlan(plan({ targets }), at(MAX_TIER), mods)
+    const all = solvePlan(plan({ targets }), buildCatalog({ saved: [], machines: {}, mods, fertilizer: 'BasicFertilizer' }), mods)
+    expect(open.runs.map((r) => r.key)).toEqual(all.runs.map((r) => r.key))
   })
 })

@@ -45,6 +45,8 @@ export interface Plan {
    */
   branches?: Record<string, BranchChoice>
   upgrades: UpgradeLevels
+  /** Research tier reached (1–9): defaults only use what it unlocks. Absent = every tier. */
+  tier?: number
   /**
    * Fuel and fertilizer are base inputs. With feedback on, the plan's own output of the preferred
    * fuel/fertilizer (e.g. Fertile Catalyst from a loop) covers the need before anything is bought.

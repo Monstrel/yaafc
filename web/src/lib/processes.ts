@@ -7,13 +7,18 @@ import {
   HEAT,
   NURSERY,
   NUTRIENTS,
+  MAX_TIER,
   WORLD_TREE_NURSERY,
+  buyTier,
   gameRecipes,
   itemName,
   items,
   itemsByKey,
+  licenseFor,
   machinesByKey,
+  machineTier,
   machinesForCraftType,
+  recipeTier,
   seeds,
   type GameRecipe,
   type Machine,
@@ -53,6 +58,10 @@ export interface Process {
   catalysts: string[]
   /** Whether this process can take catalysts on its current machine. */
   acceptsCatalysts: boolean
+  /** Research tier its recipe and machine need (seeds too, for nurseries). */
+  tier: number
+  /** License the recipe needs, if any (alternate ingots). */
+  license?: string
 }
 
 export interface ProcessContext {
@@ -64,6 +73,8 @@ export interface ProcessContext {
   fertilizer: string | null
   /** Catalysts loaded per process id (Advanced Athanor). */
   catalysts?: Record<string, string[]>
+  /** Research tier reached: defaults stick to what it unlocks (all tiers when absent). */
+  tier?: number
 }
 
 function merge(stacks: Stack[]): Stack[] {
@@ -72,8 +83,14 @@ function merge(stacks: Stack[]): Stack[] {
   return [...map].map(([item, count]) => ({ item, count }))
 }
 
+/** The plan's pick, else the first machine the research tier unlocks, else the first. */
 function pickMachine(id: string, options: Machine[], ctx: ProcessContext): Machine | null {
-  return options.find((m) => m.key === ctx.machines[id]) ?? options[0] ?? null
+  return (
+    options.find((m) => m.key === ctx.machines[id]) ??
+    options.find((m) => machineTier(m.key) <= (ctx.tier ?? MAX_TIER)) ??
+    options[0] ??
+    null
+  )
 }
 
 /**
@@ -151,6 +168,8 @@ function recipeProcess(r: GameRecipe, ctx: ProcessContext): Process {
     notes,
     catalysts: catalysts.map((c) => c.key),
     acceptsCatalysts,
+    tier: Math.max(recipeTier(r.key), machine ? machineTier(machine.key) : 1),
+    license: licenseFor(r.key),
   }
 }
 
@@ -202,6 +221,7 @@ export function savedRecipeProcess(s: SavedRecipe): Process | null {
     notes,
     catalysts: [],
     acceptsCatalysts: false,
+    tier: machine ? machineTier(machine.key) : 1,
   }
 }
 
@@ -244,6 +264,8 @@ function nurseryProcesses(ctx: ProcessContext): Process[] {
       alternate: false,
       catalysts: [],
       acceptsCatalysts: false,
+      // Nurseries grow from bought seeds.
+      tier: Math.max(machine ? machineTier(machine.key) : 1, buyTier(worldTree ? 'WorldTreeSeed' : s.seed)),
       notes: [
         worldTree
           ? `Fixed stage ${stage} growth speed (${speed} nutrients/s); fertilizer only supplies nutrients`
@@ -307,6 +329,7 @@ function paradoxProcesses(mods: Modifiers): Process[] {
       notes,
       catalysts: [],
       acceptsCatalysts: false,
+      tier: machine ? machineTier(machine.key) : 1,
     }
   })
 }
@@ -329,6 +352,7 @@ function fuelProcesses(mods: Modifiers): Process[] {
       notes: [],
       catalysts: [],
       acceptsCatalysts: false,
+      tier: 1,
     }))
 }
 
@@ -350,8 +374,12 @@ function fertilizerProcesses(mods: Modifiers): Process[] {
       notes: [],
       catalysts: [],
       acceptsCatalysts: false,
+      tier: 1,
     }))
 }
+
+/** Items a building makes natively, outside the recipe tables. */
+const BUILDING_MADE: Record<string, string> = { Steam: 'SteamBoiler' }
 
 export interface ProcessCatalog {
   byId: Map<string, Process>
@@ -362,6 +390,12 @@ export interface ProcessCatalog {
    * catalysts loaded in one row of the plan.
    */
   variant: (p: Process, change: { machine?: string; catalysts?: string[] }) => Process
+  /** Research tier the plan has reached. */
+  tier: number
+  /** Earliest research tier an item can be had at: bought, or made from things reachable by then. */
+  itemReach: (item: string) => number
+  /** Earliest research tier a process can run at: its own, and its ingredients'. */
+  reach: (p: Process) => number
 }
 
 export function buildCatalog(ctx: ProcessContext): ProcessCatalog {
@@ -389,30 +423,66 @@ export function buildCatalog(ctx: ProcessContext): ProcessCatalog {
   for (const p of all) byProduct.set(p.product, [...(byProduct.get(p.product) ?? []), p])
   // Multi-output processes are also offered for their side products, after the main producers.
   for (const p of all) for (const item of p.secondary) byProduct.set(item, [...(byProduct.get(item) ?? []), p])
-  return { byId, byProduct, variant }
+
+  // Lower each item's reach to that of the processes making it until nothing changes (loops settle
+  // on their cheapest way in). Items nothing makes and portals don't sell come from outside: tier 1.
+  const reached = new Map<string, number>(Object.entries(BUILDING_MADE).map(([item, b]) => [item, machineTier(b)]))
+  const itemReach = (item: string) => {
+    if (item.startsWith('@')) return 1
+    const known = reached.get(item)
+    if (known !== undefined) return known
+    if (itemsByKey.get(item)?.buyPrice != null) return buyTier(item)
+    return byProduct.has(item) ? Infinity : 1
+  }
+  const reach = (p: Process) => Math.max(p.tier, ...p.inputs.map((s) => itemReach(s.item)))
+  for (let changed = true; changed; ) {
+    changed = false
+    for (const p of all) {
+      const r = reach(p)
+      for (const s of p.outputs)
+        if (r < itemReach(s.item)) {
+          reached.set(s.item, r)
+          changed = true
+        }
+    }
+  }
+  return { byId, byProduct, variant, tier: ctx.tier ?? MAX_TIER, itemReach, reach }
 }
 
 /**
- * Default producer: the standard game recipe, else a nursery (preferred over seed plots),
- * else the Paradox Crucible (for Oblivion Essence, whose only recipe loops back through Vitality),
- * else an alternate recipe, else a saved cauldron recipe, else import.
+ * Default producer, among what the plan's research tier can run (anything, when nothing can): the
+ * standard game recipe, else a nursery (preferred over seed plots), else the Paradox Crucible (for
+ * Oblivion Essence, whose only recipe loops back through Vitality), else an alternate recipe, else
+ * a saved cauldron recipe, else import.
  */
 export function defaultProducer(catalog: ProcessCatalog, item: string): string {
-  if (item === HEAT) return catalog.byId.has('fuel:Steam') ? 'fuel:Steam' : (catalog.byProduct.get(HEAT)?.[0]?.id ?? 'import')
-  if (item === NUTRIENTS) return catalog.byProduct.get(NUTRIENTS)?.[0]?.id ?? 'import'
+  const open = (p: Process | undefined): p is Process => !!p && catalog.reach(p) <= catalog.tier
+  // Steam once there are boilers, else the unlocked fuel with the most heat per item.
+  if (item === HEAT) {
+    const steam = catalog.byId.get('fuel:Steam')
+    const fuels = (catalog.byProduct.get(HEAT) ?? []).filter(open).sort((a, b) => b.outputs[0].count - a.outputs[0].count)
+    return (open(steam) ? steam : (fuels[0] ?? steam))?.id ?? 'import'
+  }
+  if (item === NUTRIENTS) {
+    const list = catalog.byProduct.get(item) ?? []
+    return (list.find(open) ?? list[0])?.id ?? 'import'
+  }
+  const rank = (all: Process[]) => {
+    const options = all.filter((p) => p.product === item)
+    return (
+      options.find((p) => p.kind === 'recipe' && !p.alternate && p.machine?.key !== 'SeedPlot') ??
+      options.find((p) => p.kind === 'nursery') ??
+      options.find((p) => p.id === paradoxId(DEFAULT_PARADOX_INPUT)) ??
+      options.find((p) => p.kind === 'paradox') ??
+      options.find((p) => p.kind === 'recipe') ??
+      options.find((p) => p.kind === 'cauldron') ??
+      // Only made as a side product (e.g. Gentian Nectar from the Gentian nursery).
+      all.find((p) => p.kind === 'nursery' || (p.kind === 'recipe' && p.machine?.key !== 'SeedPlot')) ??
+      all[0]
+    )
+  }
   const all = catalog.byProduct.get(item) ?? []
-  const options = all.filter((p) => p.product === item)
-  const pick =
-    options.find((p) => p.kind === 'recipe' && !p.alternate && p.machine?.key !== 'SeedPlot') ??
-    options.find((p) => p.kind === 'nursery') ??
-    options.find((p) => p.id === paradoxId(DEFAULT_PARADOX_INPUT)) ??
-    options.find((p) => p.kind === 'paradox') ??
-    options.find((p) => p.kind === 'recipe') ??
-    options.find((p) => p.kind === 'cauldron') ??
-    // Only made as a side product (e.g. Gentian Nectar from the Gentian nursery).
-    all.find((p) => p.kind === 'nursery' || (p.kind === 'recipe' && p.machine?.key !== 'SeedPlot')) ??
-    all[0]
-  return pick?.id ?? 'import'
+  return (rank(all.filter(open)) ?? rank(all))?.id ?? 'import'
 }
 
 /**

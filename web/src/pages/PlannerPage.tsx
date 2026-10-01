@@ -2,10 +2,23 @@ import { useEffect, useMemo } from 'react'
 import { ItemIcon, ItemLabel } from '../components/ItemIcon'
 import { ItemPicker } from '../components/ItemPicker'
 import { Money } from '../components/Money'
-import { ProducerSelect } from '../components/ProducerSelect'
+import { ProducerSelect, TierTag } from '../components/ProducerSelect'
 import { ProductionTree } from '../components/ProductionTree'
 import { busLines, type BusLine, type BusUse } from '../lib/baseInputs'
-import { HEAT, NUTRIENTS, iconUrl, itemName, items, itemsByKey } from '../lib/gameData'
+import {
+  HEAT,
+  MAX_TIER,
+  NUTRIENTS,
+  buyTier,
+  iconUrl,
+  itemName,
+  items,
+  itemsByKey,
+  machineTier,
+  machinesByKey,
+  tierIcon,
+  tierName,
+} from '../lib/gameData'
 import { fmt } from '../lib/format'
 import { checkLogistics, type LogisticsCheck } from '../lib/logistics'
 import { usePlanModel } from '../lib/planModel'
@@ -13,6 +26,7 @@ import { chooseProducer, clearBranchChoice, migrateCatalysts, setRowCatalysts, t
 import { pruneChoices, type ResolvedTarget } from '../lib/solver'
 import { separationsOf, withSeparation, withoutSeparation } from '../lib/separate'
 import { planProducer } from '../lib/unfold'
+import type { TreeNode } from '../lib/tree'
 import type { Plan, PlanTarget, SavedRecipe, Separation } from '../lib/types'
 import { MAX_COIN_STACK, PLANNER_UPGRADES, maxLevel, upgradeLevel, type Modifiers } from '../lib/upgrades'
 
@@ -55,6 +69,7 @@ export function PlannerPage({ plans, plan, saved, onSelectPlan, onUpdatePlan, on
     (r) => r.process.machine && [...r.inputs, ...r.outputs].some((x) => itemsByKey.get(x.item)?.tags.includes('Currency')),
   )
   const beltLimited = [...logistics.values()].filter((c) => c.utilization < 1 && c.machines > 0)
+  const beyond = useMemo(() => beyondTier(result.tree, catalog.tier), [result.tree, catalog.tier])
 
   const setProducer = (pick: ProducerPick) => onUpdatePlan((p) => chooseProducer(p, catalog, pick))
   const resetProducer = (row: string) => onUpdatePlan((p) => clearBranchChoice(p, row))
@@ -171,6 +186,10 @@ export function PlannerPage({ plans, plan, saved, onSelectPlan, onUpdatePlan, on
 
           <section className="panel">
             <h2>Upgrades</h2>
+            <ResearchTier
+              tier={catalog.tier}
+              onChange={(tier) => onUpdatePlan((p) => ({ ...p, tier: tier === MAX_TIER ? undefined : tier }))}
+            />
             {PLANNER_UPGRADES.map((u) => (
               <label
                 className="upgrade-row"
@@ -290,6 +309,22 @@ export function PlannerPage({ plans, plan, saved, onSelectPlan, onUpdatePlan, on
                             .map((r) => r.process.label)
                             .join(', ')}
                         </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {beyond.length > 0 && (
+                <div className="panel notice">
+                  <strong>Beyond research tier {tierName(catalog.tier)}.</strong> These steps need research you haven&apos;t
+                  reached yet. Pick another recipe for them, or plan ahead for the tier:
+                  <ul className="flow-list">
+                    {beyond.map((b) => (
+                      <li key={b.item}>
+                        <ItemLabel item={b.item} />
+                        <TierTag tier={b.tier} />
+                        <span className="hint-inline">{b.what}</span>
                       </li>
                     ))}
                   </ul>
@@ -519,5 +554,40 @@ function LogisticsLine({ check, label }: { check: LogisticsCheck; label: string 
         )}
       </div>
     </li>
+  )
+}
+
+/** Steps of the plan whose own recipe, machine or purchase needs research beyond `tier`. */
+function beyondTier(tree: TreeNode[], tier: number): { item: string; tier: number; what: string }[] {
+  const found = new Map<string, { item: string; tier: number; what: string }>()
+  const visit = (n: TreeNode) => {
+    const p = n.run?.process
+    const made = !!p && (n.kind === 'produce' || n.kind === 'byproduct')
+    const bought = n.kind === 'purchase' && itemsByKey.get(n.item)?.buyPrice != null
+    const needs = made ? p.tier : bought ? buyTier(n.item) : 0
+    const seen = found.get(n.item)
+    if (needs > tier && (!seen || needs < seen.tier))
+      found.set(n.item, { item: n.item, tier: needs, what: made ? (p.machine?.name ?? p.label) : 'bought at a portal' })
+    n.children.forEach(visit)
+  }
+  tree.forEach(visit)
+  return [...found.values()].sort((a, b) => a.tier - b.tier)
+}
+
+/** The research tier the plan assumes, with the tier's icon and the machines it unlocks. */
+function ResearchTier({ tier, onChange }: { tier: number; onChange: (tier: number) => void }) {
+  const icon = iconUrl(tierIcon(tier))
+  const unlocks = [...machinesByKey.values()]
+    .filter((m) => machineTier(m.key) === tier && !m.key.endsWith('_Sym'))
+    .map((m) => m.name)
+  return (
+    <label className="upgrade-row research-tier">
+      {icon && <img className="upgrade-icon" src={icon} width={32} height={32} alt="" />}
+      <span className="upgrade-name">
+        Research tier {tierName(tier)}
+        <span className="upgrade-effect">{unlocks.length ? `unlocks ${unlocks.join(', ')}` : 'defaults use what it unlocks'}</span>
+      </span>
+      <input type="range" min={1} max={MAX_TIER} step={1} value={tier} onChange={(e) => onChange(Number(e.target.value))} />
+    </label>
   )
 }

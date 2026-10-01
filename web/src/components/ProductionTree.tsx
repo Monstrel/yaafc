@@ -526,6 +526,7 @@ function TreeRow({
                 ))}
               </div>
             )}
+            {p?.license && node.kind === 'produce' && <div className="note-line">needs the {p.license}</div>}
             {p?.notes.map((n) => (
               <div className="note-line" key={n}>
                 {n}

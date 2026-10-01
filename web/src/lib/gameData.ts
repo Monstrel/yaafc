@@ -104,6 +104,20 @@ interface GameData {
   upgrades: UpgradeSeries[]
   /** Base values of player attributes (e.g. ConveyerSpeed: 60 items/min). */
   attributes: Record<string, number>
+  research: Research
+}
+
+/** What each research tier (1–9, shown as I–IX in game) unlocks. */
+export interface Research {
+  tiers: { tier: number; icon: string | null }[]
+  /** Tier unlocking each building. */
+  machines: Record<string, number>
+  /** Tier unlocking a recipe named by a research node; other recipes come with their machine. */
+  recipes: Record<string, number>
+  /** Tier from which portals sell an item (raw materials and seeds). */
+  items: Record<string, number>
+  /** Recipes unlocked by a license instead of research (alternate ingots). */
+  licenses: Record<string, { name: string; level: number }>
 }
 
 const data = raw as unknown as GameData
@@ -117,6 +131,24 @@ export const buildingsByKey = new Map(buildings.map((b) => [b.key, b]))
 export const seeds = data.seeds
 export const upgrades = data.upgrades
 export const attributeBase = data.attributes
+
+// ---- Research tiers ----
+
+export const research = data.research
+export const MAX_TIER = research.tiers.length
+/** Research tier a building needs (1 when the research tree doesn't list it). */
+export const machineTier = (key: string) => research.machines[key] ?? 1
+/** Research tier a recipe itself needs, beyond its machine's. */
+export const recipeTier = (key: string) => research.recipes[key] ?? 1
+/** Research tier from which portals sell an item. */
+export const buyTier = (item: string) => research.items[item] ?? 1
+/** The license a recipe needs, if any. */
+export const licenseFor = (recipe: string) => research.licenses[recipe]?.name
+
+const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX']
+/** A tier as the game writes it (IV). */
+export const tierName = (tier: number) => ROMAN[tier - 1] ?? String(tier)
+export const tierIcon = (tier: number) => research.tiers.find((t) => t.tier === tier)?.icon ?? null
 
 /** Pseudo-items used by the solver for heat (P) and plant nutrients. */
 export const HEAT = '@heat'

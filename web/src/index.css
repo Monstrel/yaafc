@@ -917,6 +917,28 @@ td.under {
   flex-shrink: 0;
 }
 
+/* Research tier: a slider above the upgrade series, set apart from them. */
+/* Top-aligned, so the icon and slider stay put as the unlocks text below the name changes length. */
+.upgrade-row.research-tier {
+  align-items: flex-start;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.upgrade-row.research-tier input {
+  width: 110px;
+  margin-top: 6px;
+  accent-color: var(--accent);
+}
+
+.tag.tier-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border-color: var(--red);
+  color: var(--red);
+}
+
 .upgrade-name {
   flex: 1;
   display: flex;

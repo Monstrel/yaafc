@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
 import { fmt, fmtSeconds } from '../lib/format'
-import { HEAT, buildingsByKey, iconUrl, itemName, itemsByKey, type Item, type Stack } from '../lib/gameData'
+import { HEAT, buildingsByKey, buyTier, iconUrl, itemName, itemsByKey, tierIcon, tierName, type Item, type Stack } from '../lib/gameData'
 import {
   DEFAULT_PARADOX_INPUT,
   PARADOX_CRUCIBLE,
@@ -39,6 +39,8 @@ interface Choice {
   machine?: string
   /** Buying: copper per item at a portal; null when portals don't sell it (imported instead). */
   price?: number | null
+  /** Research tier the entry needs, when the plan hasn't reached it. */
+  needs?: number
 }
 
 /** Where a pick made on a tree row applies. */
@@ -88,7 +90,15 @@ export function ProducerSelect({
   const crucibleDefault = crucible.get(DEFAULT_PARADOX_INPUT) ?? [...crucible.values()][0]
   const inputs = [...crucible.keys()].map((k) => itemsByKey.get(k)).filter((i): i is Item => !!i)
 
-  const choices: Choice[] = [
+  /**
+   * The research tier an entry's own recipe and machine (or buying) need, if the plan hasn't reached
+   * it yet; locked ingredients show on their own rows.
+   */
+  const needs = (c: Choice) => {
+    const tier = c.process ? c.process.tier : c.value === IMPORT && c.price != null ? buyTier(item) : 1
+    return tier > catalog.tier ? tier : undefined
+  }
+  const entries: Choice[] = [
     ...options.flatMap((p) =>
       p.machineOptions.length > 1
         ? p.machineOptions.map((m) => ({
@@ -101,12 +111,18 @@ export function ProducerSelect({
     ...(crucible.size > 0 ? [{ value: CRUCIBLE, process: onCrucible ? currentProcess : crucibleDefault }] : []),
     ...(noImport ? [] : [{ value: IMPORT, price: itemsByKey.get(item)?.buyPrice ?? null }]),
   ]
+  // What the plan's research tier can't run yet goes last.
+  const choices = entries.map((c) => ({ ...c, needs: needs(c) })).sort((a, b) => Number(!!a.needs) - Number(!!b.needs))
   const value = onCrucible
     ? CRUCIBLE
     : currentProcess && currentProcess.machineOptions.length > 1 && currentProcess.machine
       ? onMachineValue(current, currentProcess.machine.key)
       : current
-  const selected = choices.find((c) => c.value === value) ?? { value, process: currentProcess }
+  const selected = choices.find((c) => c.value === value) ?? {
+    value,
+    process: currentProcess,
+    needs: currentProcess && needs({ value, process: currentProcess }),
+  }
   // Ingredients the current choice also uses in the same amount: dimmed in the other options, so
   // what switching would change stands out.
   const shared = new Set(selected.process && value !== CRUCIBLE ? materials(selected.process).map(stackKey) : [])
@@ -378,11 +394,29 @@ function ImportIcon({ size }: { size: number }) {
   )
 }
 
+/** A research tier badge: the game's tier icon and numeral. */
+export function TierTag({ tier, title }: { tier: number; title?: string }) {
+  const icon = iconUrl(tierIcon(tier))
+  return (
+    <span className="tag tier-tag" title={title ?? `Needs research tier ${tierName(tier)}`}>
+      {icon && <img src={icon} width={14} height={14} alt="" />}
+      {tierName(tier)}
+    </span>
+  )
+}
+
 function ChoiceTags({ choice, item, machine }: { choice: Choice; item: string; machine?: boolean }) {
   const p = choice.process
-  if (!p || choice.value === CRUCIBLE) return null
+  const tier = choice.needs !== undefined && <TierTag tier={choice.needs} />
+  if (!p || choice.value === CRUCIBLE) return tier || null
   return (
     <>
+      {tier}
+      {machine && p.license && (
+        <span className="tag" title={`Unlocked by the ${p.license}, not research`}>
+          {p.license}
+        </span>
+      )}
       {p.alternate && <span className="tag">alt</span>}
       {p.product !== item && <span className="tag">by-product</span>}
       {machine && choice.machine && p.machine && p.machine.speed !== 1 && <span className="tag">×{p.machine.speed} speed</span>}
