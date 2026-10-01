@@ -42,7 +42,7 @@ export function PlannerPage({ plans, plan, saved, onSelectPlan, onUpdatePlan, on
   useEffect(() => {
     if (pruneChoices(plan, catalog)) onUpdatePlan((p) => pruneChoices(p, catalog) ?? p)
   }, [plan, catalog, onUpdatePlan])
-  const tree = useMemo(() => buildTree(result, result.targets), [result])
+  const tree = useMemo(() => buildTree(result, result.targets, plan.separate), [result, plan.separate])
   // result.targets skips rows with no item chosen yet; line them back up with the rows.
   let resolvedIndex = 0
   const resolvedByRow = plan.targets.map((t) => (t.item ? result.targets[resolvedIndex++] : undefined))
@@ -59,6 +59,8 @@ export function PlannerPage({ plans, plan, saved, onSelectPlan, onUpdatePlan, on
     onUpdatePlan((p) => ({ ...p, machines: { ...p.machines, [processId]: machine } }))
   const setCatalysts = (processId: string, catalysts: string[]) =>
     onUpdatePlan((p) => ({ ...p, catalysts: { ...p.catalysts, [processId]: catalysts } }))
+  const setSeparate = (item: string, on: boolean) =>
+    onUpdatePlan((p) => ({ ...p, separate: on ? [...(p.separate ?? []), item] : p.separate?.filter((k) => k !== item) }))
   const setFeedback = (resource: 'fuel' | 'fertilizer', on: boolean) =>
     onUpdatePlan((p) => ({ ...p, feedback: { ...p.feedback, [resource]: on } }))
 
@@ -314,6 +316,7 @@ export function PlannerPage({ plans, plan, saved, onSelectPlan, onUpdatePlan, on
                   onProducer={setProducer}
                   onMachine={setMachine}
                   onCatalysts={setCatalysts}
+                  onSeparate={setSeparate}
                   unused={new Map(surplus.map((b) => [b.item, b.surplus]))}
                   logistics={logistics}
                 />

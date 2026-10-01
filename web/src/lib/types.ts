@@ -41,4 +41,6 @@ export interface Plan {
   coinStack?: number
   /** Catalyst item keys loaded into the Advanced Athanor, per process id. */
   catalysts?: Record<string, string[]>
+  /** Items the production tree builds separately: one root for all their uses instead of a copy per branch. */
+  separate?: string[]
 }

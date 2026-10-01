@@ -995,8 +995,40 @@ tr.idle {
 
 tr.kind-purchase .item-label .name,
 tr.kind-bus .item-label .name,
-tr.kind-loop .item-label .name {
+tr.kind-loop .item-label .name,
+tr.kind-separate .item-label .name {
   color: var(--muted);
+}
+
+/* Quiet icon button beside the item name: there's one on most rows. */
+.tree-action {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 2px;
+  padding: 3px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  opacity: 0.6;
+}
+
+.tree-action:hover:not(:disabled),
+.tree-action:focus-visible {
+  color: var(--accent);
+  opacity: 1;
+}
+
+.production.tree tr.tree-section td {
+  padding-top: 18px;
+  border-bottom: 2px solid var(--accent);
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.production.tree tr.tree-section .hint-inline {
+  margin-left: 10px;
+  font-weight: 400;
 }
 
 .warn-text {

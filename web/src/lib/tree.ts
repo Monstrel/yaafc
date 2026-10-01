@@ -7,6 +7,7 @@ export type TreeNodeKind =
   | 'purchase' // bought at a purchasing portal
   | 'bus' // fuel/fertilizer taken from the factory bus
   | 'loop' // already produced further up this branch (cycle)
+  | 'separate' // built separately: its machines are under its own root
 
 export interface TreeNode {
   /** Stable path id (item keys from the root), used for folding. */
@@ -33,6 +34,8 @@ export interface TreeNode {
   /** Part of the rate nothing can supply, per minute. */
   shortfall: number
   children: TreeNode[]
+  /** A root gathering every use of an item built separately (its rate is the plan-wide demand). */
+  consolidated?: boolean
 }
 
 const MAX_DEPTH = 40
@@ -67,14 +70,28 @@ function drivingOutput(run: ProcessRun, balances: Map<string, ItemBalance>): str
  * Each item's demand is met, in order, from by-products already being made, then its own
  * producer's machines, then purchases; every branch gets its proportional share of each source.
  * Shared intermediates appear under every branch that uses them, so every row reads as
- * "what this leg of the factory needs".
+ * "what this leg of the factory needs" — except items in `separate`, which get one root of their
+ * own for the whole plan's demand and a reference leaf wherever they're used.
  */
-export function buildTree(result: PlanResult, targets: { item: string; rate: number }[]): TreeNode[] {
+export function buildTree(
+  result: PlanResult,
+  targets: { item: string; rate: number }[],
+  separate: readonly string[] = [],
+): TreeNode[] {
   const runs = new Map(result.runs.map((r) => [r.process.id, r]))
   const balances = new Map(result.balances.map((b) => [b.item, b]))
   const drivers = new Map(result.runs.map((r) => [r.process.id, drivingOutput(r, balances)]))
+  /** Whether machines run for this item (only those are worth building separately). */
+  const machineMade = (item: string) => {
+    const producer = balances.get(item)?.producer
+    return !!producer && drivers.get(producer) === item
+  }
+  const separated = new Set(separate.filter(machineMade))
+  // Separated items needing a root of their own, in the order the tree first uses them.
+  const pending: string[] = []
+  const queued = new Set(targets.map((t) => t.item).filter((item) => separated.has(item)))
 
-  const node = (item: string, rate: number, path: string[], root: number): TreeNode => {
+  const node = (item: string, rate: number, path: string[], root: string): TreeNode => {
     const id = [root, ...path, item].join('/')
     const base = {
       id,
@@ -127,6 +144,14 @@ export function buildTree(result: PlanResult, targets: { item: string; rate: num
     if (!drivenHere)
       return { ...base, ...parts, kind: usedBy > 0 || (bySupply > 0 && demand === 0) ? 'byproduct' : 'purchase' }
 
+    if (path.length > 0 && separated.has(item)) {
+      if (!queued.has(item)) {
+        queued.add(item)
+        pending.push(item)
+      }
+      return { ...base, ...parts, kind: 'separate', run: producerRun }
+    }
+
     const run = producerRun
     const share = madeHere > 0 ? (usedMade * f) / madeHere : 0
     const pseudo = (key: string) => (run.inputs.find((s) => s.item === key)?.count ?? 0) * share
@@ -149,7 +174,25 @@ export function buildTree(result: PlanResult, targets: { item: string; rate: num
     }
   }
 
-  return targets.flatMap((t, i) => (t.item ? [node(t.item, t.rate, [], i)] : []))
+  /** One root covering every use of a separated item (and its target rate, if it's a target). */
+  const consolidated = (item: string, root: string): TreeNode => ({
+    ...node(item, demandOf(balances.get(item)), [], root),
+    consolidated: true,
+  })
+
+  const roots: TreeNode[] = []
+  const targetRoots = new Set<string>()
+  targets.forEach((t, i) => {
+    if (!t.item) return
+    if (!separated.has(t.item)) roots.push(node(t.item, t.rate, [], `${i}`))
+    else if (!targetRoots.has(t.item)) {
+      targetRoots.add(t.item)
+      roots.push(consolidated(t.item, `${i}`))
+    }
+  })
+  // Building a separated root can turn up more separated items; `pending` grows as we go.
+  for (let i = 0; i < pending.length; i++) roots.push(consolidated(pending[i], 'separate'))
+  return roots
 }
 
 /** Every node id that has children (for "expand/collapse all"). */

@@ -209,6 +209,49 @@ describe('production tree', () => {
       nodes.map((n) => (n.kind === 'loop' ? n : find(n.children))).find(Boolean)
     expect(find(tree)?.item).toBe('Vitae')
   })
+
+  describe('building an item separately', () => {
+    const targets = [{ item: 'Sol', rate: 0.25 }]
+    const result = solvePlan(plan({ targets }), catalog, mods)
+    const all = (n: TreeNode): TreeNode[] => [n, ...n.children.flatMap(all)]
+    const machinesOf = (nodes: TreeNode[], processId: string) =>
+      nodes.filter((n) => n.run?.process.id === processId).reduce((sum, n) => sum + n.machines, 0)
+
+    it('gathers every use under one root, keeping each machine counted once', () => {
+      const roots = buildTree(result, targets, ['WorldTreeLeaf'])
+      const nodes = roots.flatMap(all)
+      const leafRoots = roots.filter((r) => r.item === 'WorldTreeLeaf')
+      expect(leafRoots).toHaveLength(1)
+      expect(leafRoots[0].consolidated).toBe(true)
+      const balance = result.balances.find((b) => b.item === 'WorldTreeLeaf')!
+      expect(leafRoots[0].rate).toBeCloseTo(balance.consumed + balance.target)
+
+      const uses = nodes.filter((n) => n.item === 'WorldTreeLeaf' && !n.consolidated)
+      expect(uses.length).toBeGreaterThan(1)
+      expect(uses.every((n) => n.kind === 'separate' && n.children.length === 0 && n.machines === 0)).toBe(true)
+
+      for (const run of result.runs.filter((r) => r.machines > 0 && r.process.machine))
+        expect(machinesOf(nodes, run.process.id), run.process.label).toBeCloseTo(run.machines)
+    })
+
+    it('ignores items no machine makes for the plan', () => {
+      const bought = result.balances.find((b) => b.producer === 'import' && b.consumed > 0 && !b.item.startsWith('@'))!
+      const roots = buildTree(result, targets, [bought.item])
+      expect(roots.filter((r) => r.consolidated)).toHaveLength(0)
+      expect(roots.flatMap(all).some((n) => n.item === bought.item && n.kind === 'purchase')).toBe(true)
+    })
+
+    it('uses the target row itself as the root when the target is separated', () => {
+      const roots = buildTree(result, targets, ['Sol'])
+      expect(roots).toHaveLength(1)
+      expect(roots[0].consolidated).toBe(true)
+    })
+
+    it('is forgotten once the item leaves the plan', () => {
+      const p = plan({ targets: [{ item: 'WoodBoard', rate: 1 }], separate: ['WoodBoard', 'WorldTreeLeaf'] })
+      expect(pruneChoices(p, catalog)?.separate).toEqual(['WoodBoard'])
+    })
+  })
 })
 
 describe('forgetting choices', () => {

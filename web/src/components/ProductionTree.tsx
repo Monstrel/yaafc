@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { CATALYSTS, itemsByKey } from '../lib/gameData'
 import { fmt } from '../lib/format'
 import type { LogisticsCheck } from '../lib/logistics'
@@ -16,6 +16,7 @@ interface Props {
   onProducer: (item: string, producer: string) => void
   onMachine: (processId: string, machine: string) => void
   onCatalysts: (processId: string, catalysts: string[]) => void
+  onSeparate: (item: string, on: boolean) => void
   /** Plan-wide unused amount per item (per minute), to flag overflowing by-products. */
   unused: Map<string, number>
   logistics: Map<string, LogisticsCheck>
@@ -32,7 +33,17 @@ interface JumpState {
 }
 
 /** Foldable tree-table: one root per target, each ingredient a child branch with its share of machines. */
-export function ProductionTree({ tree, plan, catalog, onProducer, onMachine, onCatalysts, unused, logistics }: Props) {
+export function ProductionTree({
+  tree,
+  plan,
+  catalog,
+  onProducer,
+  onMachine,
+  onCatalysts,
+  onSeparate,
+  unused,
+  logistics,
+}: Props) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const toggle = (id: string) =>
     setCollapsed((c) => {
@@ -88,7 +99,11 @@ export function ProductionTree({ tree, plan, catalog, onProducer, onMachine, onC
     row.classList.add('pulse')
     const done = () => row.classList.remove('pulse')
     row.addEventListener('animationend', done, { once: true })
-    return () => row.removeEventListener('animationend', done)
+    // Only the latest jump pulses.
+    return () => {
+      row.removeEventListener('animationend', done)
+      done()
+    }
   }, [pulse])
 
   /** A link from `from` to the rows `match` picks out; plain text when there are none. */
@@ -145,22 +160,32 @@ export function ProductionTree({ tree, plan, catalog, onProducer, onMachine, onC
             </tr>
           </thead>
           <tbody ref={tbody}>
-            {rows.map(({ node, depth }) => (
-              <TreeRow
-                key={node.id}
-                node={node}
-                depth={depth}
-                open={!collapsed.has(node.id)}
-                onToggle={() => toggle(node.id)}
-                plan={plan}
-                catalog={catalog}
-                onProducer={onProducer}
-                onMachine={onMachine}
-                onCatalysts={onCatalysts}
-                unused={unused}
-                logistics={logistics}
-                link={link}
-              />
+            {rows.map(({ node, depth }, i) => (
+              <Fragment key={node.id}>
+                {depth === 0 && node.id.startsWith('separate/') && !rows[i - 1]?.node.id.startsWith('separate/') && (
+                  <tr className="tree-section">
+                    <td colSpan={5}>
+                      Built separately
+                      <span className="hint-inline">every use across the plan, gathered in one place</span>
+                    </td>
+                  </tr>
+                )}
+                <TreeRow
+                  node={node}
+                  depth={depth}
+                  open={!collapsed.has(node.id)}
+                  onToggle={() => toggle(node.id)}
+                  plan={plan}
+                  catalog={catalog}
+                  onProducer={onProducer}
+                  onMachine={onMachine}
+                  onCatalysts={onCatalysts}
+                  onSeparate={onSeparate}
+                  unused={unused}
+                  logistics={logistics}
+                  link={link}
+                />
+              </Fragment>
             ))}
           </tbody>
         </table>
@@ -179,6 +204,7 @@ function TreeRow({
   onProducer,
   onMachine,
   onCatalysts,
+  onSeparate,
   unused,
   logistics,
   link,
@@ -192,6 +218,7 @@ function TreeRow({
   onProducer: (item: string, producer: string) => void
   onMachine: (processId: string, machine: string) => void
   onCatalysts: (processId: string, catalysts: string[]) => void
+  onSeparate: (item: string, on: boolean) => void
   unused: Map<string, number>
   logistics: Map<string, LogisticsCheck>
   link: LinkFn
@@ -201,6 +228,7 @@ function TreeRow({
   const limited = !!belts && belts.utilization < 1 && node.machines > 0
   const canChoose = node.kind !== 'bus' && (catalog.byProduct.get(node.item)?.length ?? 0) > 0
   const price = itemsByKey.get(node.item)?.buyPrice
+  const name = itemsByKey.get(node.item)?.name ?? node.item
   const sources = node.byproductSources.map((s, i) => (
     <span key={s.id}>
       {i > 0 && ', '}
@@ -226,17 +254,58 @@ function TreeRow({
             <span className="fold-spacer" />
           )}
           <ItemLabel item={node.item} />
+          {node.consolidated ? (
+            <button
+              type="button"
+              className="tree-action"
+              title={`Merge back: show ${name} under each branch that uses it again`}
+              aria-label={`Merge ${name} back into the tree`}
+              onClick={() => onSeparate(node.item, false)}
+            >
+              <BoxArrowIcon inward />
+            </button>
+          ) : (
+            node.kind === 'produce' &&
+            depth > 0 && (
+              <button
+                type="button"
+                className="tree-action"
+                title={`Build separately: gather every use of ${name} into one tree of its own, below the targets`}
+                aria-label={`Build ${name} separately`}
+                onClick={() => onSeparate(node.item, true)}
+              >
+                <BoxArrowIcon />
+              </button>
+            )
+          )}
         </div>
       </td>
       <td className="num rate-cell">{fmt(node.rate)}</td>
       <td>
         {node.kind === 'loop' ? (
           <span className="leaf-note">↺ made further up this branch (loop)</span>
+        ) : node.kind === 'separate' ? (
+          <span className="leaf-note">
+            ⇲{' '}
+            {link(node, 'separate', (n) => !!n.consolidated && n.item === node.item, 'built separately', `Show where ${name} is built`)}
+          </span>
         ) : node.kind === 'bus' ? (
           <span className="leaf-note">from the bus</span>
         ) : (
           <>
             {canChoose && <ProducerSelect item={node.item} plan={plan} catalog={catalog} onChange={onProducer} compact />}
+            {node.consolidated && (
+              <div className="note-line">
+                ⇱{' '}
+                {link(
+                  node,
+                  'uses',
+                  (n) => n.kind === 'separate' && n.item === node.item,
+                  'all uses across the plan',
+                  `Show the branches that use ${name}`,
+                )}
+              </div>
+            )}
             {node.kind === 'purchase' &&
               (price != null ? (
                 <span className="leaf-note">
@@ -350,5 +419,26 @@ function TreeRow({
         {node.nutrients > 0 && <div className="machine-meta">{fmt(node.nutrients)} nutrients/s</div>}
       </td>
     </tr>
+  )
+}
+
+/** A box with an arrow leaving it (build separately), or coming back in (merge back). */
+function BoxArrowIcon({ inward = false }: { inward?: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      width="14"
+      height="14"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M11.5 9.5V13a.5.5 0 0 1-.5.5H3a.5.5 0 0 1-.5-.5V5a.5.5 0 0 1 .5-.5h3.5" />
+      <path d="M13.5 2.5 7.5 8.5" />
+      <path d={inward ? 'M7.5 4.5v4h4' : 'M9.5 2.5h4v4'} />
+    </svg>
   )
 }

@@ -127,7 +127,7 @@ function walkPlan(plan: Plan, catalog: ProcessCatalog, targets: string[]) {
 }
 
 /**
- * Drops producer, machine and catalyst choices for items and processes no longer in the plan, so
+ * Drops producer, machine, catalyst and build-separately choices for items and processes no longer in the plan, so
  * an item that's removed and added back starts from its default recipe instead of whatever was
  * last picked for it. Fuel and fertilizer choices are plan-wide settings and always kept.
  * Returns null when there's nothing to drop.
@@ -147,8 +147,11 @@ export function pruneChoices(plan: Plan, catalog: ProcessCatalog): Plan | null {
   const p = keep(plan.producers, keepItem)
   const m = keep(plan.machines, (id) => processes.has(id))
   const c = keep(plan.catalysts, (id) => processes.has(id))
-  if (!p.dropped && !m.dropped && !c.dropped) return null
-  return { ...plan, producers: p.record!, machines: m.record!, catalysts: c.record }
+  // "Build separately" only means something for items the plan makes.
+  const separate = plan.separate?.filter((item) => (producers.get(item) ?? 'import') !== 'import')
+  const s = separate?.length !== plan.separate?.length
+  if (!p.dropped && !m.dropped && !c.dropped && !s) return null
+  return { ...plan, producers: p.record!, machines: m.record!, catalysts: c.record, separate }
 }
 
 /**
