@@ -291,6 +291,12 @@ h2 {
   white-space: nowrap;
 }
 
+/* Line the label up with surrounding text by its words, not by the icon's bottom edge. */
+.item-label > .count,
+.item-label > .name {
+  align-self: baseline;
+}
+
 .item-label .count {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
@@ -1046,7 +1052,6 @@ td.under {
   font-size: 14px;
   margin-left: 6px;
   cursor: help;
-  vertical-align: middle;
 }
 
 .info-icon:hover,
