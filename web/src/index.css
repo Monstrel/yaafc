@@ -123,6 +123,18 @@ h2 {
   padding: 0 16px 40px;
 }
 
+/* Planner tables get wide; let the page use the whole window, but keep the
+   header and footer where they sit on the other tabs. */
+.app.app-wide {
+  max-width: none;
+}
+
+.app-wide > .app-header,
+.app-wide > .app-footer {
+  max-width: calc(1400px - 32px);
+  margin-inline: auto;
+}
+
 .app-header {
   display: flex;
   align-items: center;

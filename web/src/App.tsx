@@ -72,7 +72,7 @@ export default function App() {
   }
 
   return (
-    <div className="app">
+    <div className={tab === 'planner' ? 'app app-wide' : 'app'}>
       <header className="app-header">
         <div className="brand">
           <span className="logo" aria-hidden>
