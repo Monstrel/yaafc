@@ -41,6 +41,15 @@ export interface Plan {
   coinStack?: number
   /** Catalyst item keys loaded into the Advanced Athanor, per process id. */
   catalysts?: Record<string, string[]>
-  /** Items the production tree builds separately: one root for all their uses instead of a copy per branch. */
-  separate?: string[]
+  /** Items the production tree builds separately, gathering their uses instead of a copy per branch. */
+  separate?: Separation[]
+}
+
+/** Where the production tree gathers the uses of an item built separately. */
+export interface Separation {
+  item: string
+  /** Item whose rows gather this item's uses from below them; absent = a root at the top of the plan. */
+  anchor?: string
+  /** Tree row id of the one `anchor` row that gathers them; absent = every `anchor` row. */
+  at?: string
 }

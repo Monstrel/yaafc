@@ -10,8 +10,9 @@ import { fmt } from '../lib/format'
 import { checkLogistics, type LogisticsCheck } from '../lib/logistics'
 import { usePlanModel } from '../lib/planModel'
 import { pruneChoices, type ResolvedTarget } from '../lib/solver'
-import { buildTree } from '../lib/tree'
-import type { Plan, PlanTarget, SavedRecipe } from '../lib/types'
+import { separationKey, separationsOf, withSeparation, withoutSeparation } from '../lib/separate'
+import { buildTree, staleSeparations } from '../lib/tree'
+import type { Plan, PlanTarget, SavedRecipe, Separation } from '../lib/types'
 import { MAX_COIN_STACK, PLANNER_UPGRADES, maxLevel, upgradeLevel, type Modifiers } from '../lib/upgrades'
 
 /** What each planner upgrade series currently does, shown under its name. */
@@ -42,7 +43,14 @@ export function PlannerPage({ plans, plan, saved, onSelectPlan, onUpdatePlan, on
   useEffect(() => {
     if (pruneChoices(plan, catalog)) onUpdatePlan((p) => pruneChoices(p, catalog) ?? p)
   }, [plan, catalog, onUpdatePlan])
-  const tree = useMemo(() => buildTree(result, result.targets, plan.separate), [result, plan.separate])
+  const separations = useMemo(() => separationsOf(plan.separate), [plan.separate])
+  const tree = useMemo(() => buildTree(result, result.targets, separations), [result, separations])
+  // Forget build-separately choices that no longer gather anything (the item left the anchor, say).
+  useEffect(() => {
+    const stale = new Set(staleSeparations(tree, separations).map(separationKey))
+    if (stale.size)
+      onUpdatePlan((p) => ({ ...p, separate: separationsOf(p.separate).filter((s) => !stale.has(separationKey(s))) }))
+  }, [tree, separations, onUpdatePlan])
   // result.targets skips rows with no item chosen yet; line them back up with the rows.
   let resolvedIndex = 0
   const resolvedByRow = plan.targets.map((t) => (t.item ? result.targets[resolvedIndex++] : undefined))
@@ -59,8 +67,11 @@ export function PlannerPage({ plans, plan, saved, onSelectPlan, onUpdatePlan, on
     onUpdatePlan((p) => ({ ...p, machines: { ...p.machines, [processId]: machine } }))
   const setCatalysts = (processId: string, catalysts: string[]) =>
     onUpdatePlan((p) => ({ ...p, catalysts: { ...p.catalysts, [processId]: catalysts } }))
-  const setSeparate = (item: string, on: boolean) =>
-    onUpdatePlan((p) => ({ ...p, separate: on ? [...(p.separate ?? []), item] : p.separate?.filter((k) => k !== item) }))
+  const setSeparate = (s: Separation, on: boolean) =>
+    onUpdatePlan((p) => {
+      const list = separationsOf(p.separate)
+      return { ...p, separate: on ? withSeparation(list, s) : withoutSeparation(list, s) }
+    })
   const setFeedback = (resource: 'fuel' | 'fertilizer', on: boolean) =>
     onUpdatePlan((p) => ({ ...p, feedback: { ...p.feedback, [resource]: on } }))
 

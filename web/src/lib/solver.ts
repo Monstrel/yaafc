@@ -2,6 +2,7 @@ import { HEAT, NUTRIENTS, baseInputKey, realItem, type Stack } from './gameData'
 import { solveLP } from './lp'
 import { craftsPerMachine } from './machineRate'
 import { defaultProducer, type Process, type ProcessCatalog } from './processes'
+import { separationsOf } from './separate'
 import type { Plan } from './types'
 import type { Modifiers } from './upgrades'
 
@@ -147,8 +148,9 @@ export function pruneChoices(plan: Plan, catalog: ProcessCatalog): Plan | null {
   const p = keep(plan.producers, keepItem)
   const m = keep(plan.machines, (id) => processes.has(id))
   const c = keep(plan.catalysts, (id) => processes.has(id))
-  // "Build separately" only means something for items the plan makes.
-  const separate = plan.separate?.filter((item) => (producers.get(item) ?? 'import') !== 'import')
+  // "Build separately" only means something for items the plan makes, gathered under items it makes.
+  const made = (item: string) => (producers.get(item) ?? 'import') !== 'import'
+  const separate = plan.separate && separationsOf(plan.separate).filter((s) => made(s.item) && (!s.anchor || made(s.anchor)))
   const s = separate?.length !== plan.separate?.length
   if (!p.dropped && !m.dropped && !c.dropped && !s) return null
   return { ...plan, producers: p.record!, machines: m.record!, catalysts: c.record, separate }

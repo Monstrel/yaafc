@@ -8,7 +8,8 @@ import { countRecipes, diagnoseNoResults, type FinderQuery } from './diagnose'
 import { checkLogistics, checkProcess } from './logistics'
 import { craftsPerMachine } from './machineRate'
 import { pruneChoices, solvePlan, type PlanResult } from './solver'
-import { buildTree, type TreeNode } from './tree'
+import { buildTree, staleSeparations, type TreeNode } from './tree'
+import { separationsOf, withSeparation } from './separate'
 import type { Plan, SavedRecipe } from './types'
 import { PLANNER_UPGRADES, maxLevel, modifiers, upgradeLevel } from './upgrades'
 
@@ -218,7 +219,7 @@ describe('production tree', () => {
       nodes.filter((n) => n.run?.process.id === processId).reduce((sum, n) => sum + n.machines, 0)
 
     it('gathers every use under one root, keeping each machine counted once', () => {
-      const roots = buildTree(result, targets, ['WorldTreeLeaf'])
+      const roots = buildTree(result, targets, [{ item: 'WorldTreeLeaf' }])
       const nodes = roots.flatMap(all)
       const leafRoots = roots.filter((r) => r.item === 'WorldTreeLeaf')
       expect(leafRoots).toHaveLength(1)
@@ -236,20 +237,158 @@ describe('production tree', () => {
 
     it('ignores items no machine makes for the plan', () => {
       const bought = result.balances.find((b) => b.producer === 'import' && b.consumed > 0 && !b.item.startsWith('@'))!
-      const roots = buildTree(result, targets, [bought.item])
+      const roots = buildTree(result, targets, [{ item: bought.item }])
       expect(roots.filter((r) => r.consolidated)).toHaveLength(0)
       expect(roots.flatMap(all).some((n) => n.item === bought.item && n.kind === 'purchase')).toBe(true)
     })
 
     it('uses the target row itself as the root when the target is separated', () => {
-      const roots = buildTree(result, targets, ['Sol'])
+      const roots = buildTree(result, targets, [{ item: 'Sol' }])
       expect(roots).toHaveLength(1)
       expect(roots[0].consolidated).toBe(true)
     })
 
     it('is forgotten once the item leaves the plan', () => {
-      const p = plan({ targets: [{ item: 'WoodBoard', rate: 1 }], separate: ['WoodBoard', 'WorldTreeLeaf'] })
-      expect(pruneChoices(p, catalog)?.separate).toEqual(['WoodBoard'])
+      const p = plan({
+        targets: [{ item: 'WoodBoard', rate: 1 }],
+        separate: [{ item: 'WoodBoard' }, { item: 'WorldTreeLeaf' }, { item: 'WoodBoard', anchor: 'Sol' }],
+      })
+      expect(pruneChoices(p, catalog)?.separate).toEqual([{ item: 'WoodBoard' }])
+    })
+
+    it('reads plans saved before anchors as the top of the plan', () => {
+      expect(separationsOf(['Plank'] as never)).toEqual([{ item: 'Plank' }])
+    })
+
+    describe('with an item above it', () => {
+      // Fairy Dust is made in two branches of Sol, each grinding its own Chamomile.
+      const dusts = buildTree(result, targets).flatMap(all).filter((n) => n.item === 'FairyDust' && n.kind === 'produce')
+      const chamomileUnder = (n: TreeNode) => all(n).filter((c) => c.item === 'Chamomile' && c !== n)
+      const expectMachinesOnce = (nodes: TreeNode[]) => {
+        for (const run of result.runs.filter((r) => r.machines > 0 && r.process.machine))
+          expect(machinesOf(nodes, run.process.id), run.process.label).toBeCloseTo(run.machines)
+      }
+
+      it('finds the example it needs', () => {
+        expect(dusts.length).toBeGreaterThan(1)
+        expect(dusts.every((d) => chamomileUnder(d).length > 0)).toBe(true)
+      })
+
+      it('gathers the uses below every anchor row into a "with" row after its children', () => {
+        const sep = { item: 'Chamomile', anchor: 'FairyDust' }
+        const roots = buildTree(result, targets, [sep])
+        const nodes = roots.flatMap(all)
+        const anchors = nodes.filter((n) => n.item === 'FairyDust' && n.kind === 'produce')
+        for (const dust of anchors) {
+          const group = dust.children.at(-1)!
+          expect(group.item).toBe('Chamomile')
+          expect(group.separation).toEqual(sep)
+          const uses = chamomileUnder(dust).filter((n) => n.kind === 'separate')
+          expect(uses.length).toBeGreaterThan(0)
+          expect(uses.every((n) => n.groupId === group.id && n.groupAnchor === 'FairyDust')).toBe(true)
+          expect(group.rate).toBeCloseTo(uses.reduce((sum, n) => sum + n.rate, 0))
+        }
+        expect(staleSeparations(roots, [sep])).toEqual([])
+        expectMachinesOnce(nodes)
+      })
+
+      it('can gather under just one anchor row', () => {
+        const sep = { item: 'Chamomile', anchor: 'FairyDust', at: dusts[0].id }
+        const nodes = buildTree(result, targets, [sep]).flatMap(all)
+        const groups = nodes.filter((n) => n.separation)
+        expect(groups).toHaveLength(1)
+        expect(groups[0].id).toBe(`${dusts[0].id}/with:Chamomile`)
+        const other = nodes.find((n) => n.id === dusts[1].id)!
+        expect(chamomileUnder(other).some((n) => n.kind === 'produce')).toBe(true)
+        expectMachinesOnce(nodes)
+      })
+
+      it('counts machines once when one gathered row feeds another, in either order', () => {
+        const powder = { item: 'ChamomilePowder', anchor: 'FairyDust' }
+        const herb = { item: 'Chamomile', anchor: 'FairyDust' }
+        // Jupiter uses Planks directly and through its Pulleys: built first, the Plank row has to be
+        // rebuilt once the Pulley row adds its Planks.
+        const plank = { item: 'WoodBoard', anchor: 'Jupiter' }
+        const pulley = { item: 'WoodPulley', anchor: 'Jupiter' }
+        for (const seps of [
+          [powder, herb],
+          [herb, powder],
+          [plank, pulley],
+          [pulley, plank],
+        ]) {
+          const roots = buildTree(result, targets, seps)
+          expect(staleSeparations(roots, seps)).toEqual([])
+          expectMachinesOnce(roots.flatMap(all))
+        }
+        const jupiter = buildTree(result, targets, [plank, pulley])
+          .flatMap(all)
+          .find((n) => n.item === 'Jupiter')!
+        const planks = jupiter.children.find((c) => c.item === 'WoodBoard' && c.consolidated)!
+        const uses = all(jupiter).filter((n) => n.item === 'WoodBoard' && n.kind === 'separate')
+        expect(uses.length).toBeGreaterThan(1)
+        expect(planks.rate).toBeCloseTo(uses.reduce((sum, n) => sum + n.rate, 0))
+      })
+
+      it('takes back what a gathered row gave the others when it is rebuilt', () => {
+        // R ← X + Q, Q ← X, X ← Y, one craft per minute per machine. Gathered under R in the order
+        // X, Y, Q: X is built from R's own X (giving Y 1/min), then Q's row adds another X, so X is
+        // rebuilt at 2/min and must not count its first 1/min of Y twice.
+        const recipe = (item: string, inputs: string[], crafts: number) => ({
+          process: {
+            id: item,
+            label: item,
+            product: item,
+            outputs: [{ item, count: 1 }],
+            inputs: inputs.map((i) => ({ item: i, count: 1 })),
+            machine: { name: 'M' },
+          },
+          craftsPerMinute: crafts,
+          machines: crafts,
+          inputs: inputs.map((i) => ({ item: i, count: crafts })),
+          outputs: [{ item, count: crafts }],
+        })
+        const balance = (item: string, made: number, target = 0) =>
+          ({ item, producer: item, target, produced: made, consumed: made - target, imported: 0, deficit: 0, surplus: 0 })
+        const fake = {
+          status: 'ok',
+          runs: [recipe('R', ['X', 'Q'], 1), recipe('Q', ['X'], 1), recipe('X', ['Y'], 2), recipe('Y', [], 2)],
+          balances: [balance('R', 1, 1), balance('Q', 1), balance('X', 2), balance('Y', 2)],
+        } as never as PlanResult
+        const seps = ['X', 'Y', 'Q'].map((item) => ({ item, anchor: 'R' }))
+        const [root] = buildTree(fake, [{ item: 'R', rate: 1 }], seps)
+        const rows = Object.fromEntries(root.children.filter((c) => c.consolidated).map((c) => [c.item, c]))
+        expect(rows.X.rate).toBeCloseTo(2)
+        expect(rows.Y.rate).toBeCloseTo(2)
+        expect(rows.Y.machines).toBeCloseTo(2)
+      })
+
+      it('reports a choice whose anchor sits above none of its uses as stale', () => {
+        const sep = { item: 'Chamomile', anchor: 'WorldTreeLeaf' }
+        expect(staleSeparations(buildTree(result, targets, [sep]), [sep])).toEqual([sep])
+      })
+    })
+  })
+
+  describe('choosing where to build separately', () => {
+    const top = { item: 'Plank' }
+    const every = { item: 'Plank', anchor: 'Jupiter' }
+    const one = { item: 'Plank', anchor: 'Jupiter', at: 'a' }
+    const other = { item: 'Plank', anchor: 'Jupiter', at: 'b' }
+
+    it('keeps the top of the plan and anchors apart for an item', () => {
+      expect(withSeparation([every, { item: 'Logs' }], top)).toEqual([{ item: 'Logs' }, top])
+      expect(withSeparation([top], every)).toEqual([every])
+    })
+
+    it('lets single anchor rows add up, and "every" replace them', () => {
+      expect(withSeparation([one], other)).toEqual([one, other])
+      expect(withSeparation([one, other], every)).toEqual([every])
+      expect(withSeparation([every], one)).toEqual([one])
+    })
+
+    it('keeps anchors on different items', () => {
+      const saturn = { item: 'Plank', anchor: 'Saturn' }
+      expect(withSeparation([saturn], every)).toEqual([saturn, every])
     })
   })
 })

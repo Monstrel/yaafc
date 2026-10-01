@@ -1,10 +1,10 @@
-import { Fragment, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
+import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { CATALYSTS, itemsByKey } from '../lib/gameData'
 import { fmt } from '../lib/format'
 import type { LogisticsCheck } from '../lib/logistics'
 import type { ProcessCatalog } from '../lib/processes'
 import { branchIds, type TreeNode } from '../lib/tree'
-import type { Plan } from '../lib/types'
+import type { Plan, Separation } from '../lib/types'
 import { ItemIcon, ItemLabel } from './ItemIcon'
 import { Money } from './Money'
 import { ProducerSelect } from './ProducerSelect'
@@ -16,7 +16,7 @@ interface Props {
   onProducer: (item: string, producer: string) => void
   onMachine: (processId: string, machine: string) => void
   onCatalysts: (processId: string, catalysts: string[]) => void
-  onSeparate: (item: string, on: boolean) => void
+  onSeparate: (s: Separation, on: boolean) => void
   /** Plan-wide unused amount per item (per minute), to flag overflowing by-products. */
   unused: Map<string, number>
   logistics: Map<string, LogisticsCheck>
@@ -53,6 +53,11 @@ export function ProductionTree({
       return next
     })
 
+  const view = useMemo(() => viewOf(tree), [tree])
+  const targets = view[0]?.id === PLAN_ROOT ? view[0].children : view
+  /** What items built at the top of the plan are shown "with". */
+  const topName = topAnchorName(tree)
+
   // Every node with the ids of the branches above it, folded or not.
   const all = useMemo(() => {
     const out: { node: TreeNode; ancestors: string[] }[] = []
@@ -62,9 +67,51 @@ export function ProductionTree({
         visit(node.children, [...ancestors, node.id])
       }
     }
-    visit(tree, [])
+    visit(view, [])
     return out
-  }, [tree])
+  }, [view])
+  const byId = useMemo(() => new Map(all.map((e) => [e.node.id, e])), [all])
+
+  // "Build separately" menu: where to gather this row's item.
+  const [menu, setMenu] = useState<{ node: TreeNode; anchors: TreeNode[]; x: number; y: number } | null>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (menu) menuRef.current?.showPopover()
+  }, [menu])
+  const openMenu = (node: TreeNode, button: HTMLElement) => {
+    const rect = button.getBoundingClientRect()
+    // Top-of-plan groups only sit under the target on screen: their own tree starts at the group.
+    const ancestors = byId.get(node.id)?.ancestors ?? []
+    const group = ancestors.findIndex(isTopGroupId)
+    const anchors = ancestors
+      .slice(Math.max(group, 0))
+      // A lone target gathers the same uses as the top of the plan: don't offer it twice.
+      .filter((id) => id !== PLAN_ROOT && !(targets.length === 1 && id === targets[0].id))
+      .map((id) => byId.get(id)!.node)
+      .filter((a) => a.kind === 'produce' && a.item !== node.item)
+      .reverse()
+    setMenu({ node, anchors, x: Math.min(rect.left, window.innerWidth - 300), y: rect.bottom + 4 })
+  }
+
+  // Picking an anchor built in several places asks whether to gather under all of them.
+  const [confirm, setConfirm] = useState<{ node: TreeNode; anchor: TreeNode; count: number } | null>(null)
+  const dialogRef = useRef<HTMLDialogElement>(null)
+  useEffect(() => {
+    if (confirm) dialogRef.current?.showModal()
+  }, [confirm])
+  const chooseAnchor = (node: TreeNode, anchor: TreeNode) => {
+    menuRef.current?.hidePopover()
+    const count = all.filter((e) => e.node.kind === 'produce' && e.node.item === anchor.item).length
+    if (count > 1) setConfirm({ node, anchor, count })
+    else onSeparate({ item: node.item, anchor: anchor.item }, true)
+  }
+  const decide = (choice: AnchorDecision) => {
+    dialogRef.current?.close()
+    if (!confirm || choice === 'cancel') return
+    const { node, anchor } = confirm
+    if (choice === 'lift') onSeparate({ item: anchor.item }, true)
+    onSeparate({ item: node.item, anchor: anchor.item, ...(choice === 'one' && { at: anchor.id }) }, true)
+  }
 
   const [jump, setJump] = useState<JumpState | null>(null)
   // Bumped on every jump so following the same row twice pulses it again.
@@ -129,14 +176,7 @@ export function ProductionTree({
     )
   }
 
-  const rows: { node: TreeNode; depth: number }[] = []
-  const walk = (nodes: TreeNode[], depth: number) => {
-    for (const node of nodes) {
-      rows.push({ node, depth })
-      if (!collapsed.has(node.id)) walk(node.children, depth + 1)
-    }
-  }
-  walk(tree, 0)
+  const lines = layoutLines(view, collapsed)
 
   return (
     <>
@@ -144,7 +184,7 @@ export function ProductionTree({
         <button className="compact-button" onClick={() => setCollapsed(new Set())}>
           Expand all
         </button>
-        <button className="compact-button" onClick={() => setCollapsed(new Set(tree.flatMap((n) => branchIds(n.children))))}>
+        <button className="compact-button" onClick={() => setCollapsed(new Set(targets.flatMap((n) => branchIds(n.children))))}>
           Collapse to targets
         </button>
       </div>
@@ -160,36 +200,95 @@ export function ProductionTree({
             </tr>
           </thead>
           <tbody ref={tbody}>
-            {rows.map(({ node, depth }, i) => (
-              <Fragment key={node.id}>
-                {depth === 0 && node.id.startsWith('separate/') && !rows[i - 1]?.node.id.startsWith('separate/') && (
-                  <tr className="tree-section">
-                    <td colSpan={5}>
-                      Built separately
-                      <span className="hint-inline">every use across the plan, gathered in one place</span>
-                    </td>
-                  </tr>
-                )}
+            {lines.map((line) =>
+              line.kind === 'with' ? (
+                <tr
+                  className={`tree-with in-with ${line.afterBranch ? 'after-branch' : ''}`}
+                  key={`${line.anchorId}/with`}
+                  style={cardStyle(line.depth)}
+                >
+                  <td colSpan={5}>
+                    <Edges edges={line.edges} />
+                    <div className="tree-with-label" style={{ marginLeft: line.depth * 20 + 4 }}>
+                      with
+                      <span className="hint-inline">
+                        {line.anchorId === PLAN_ROOT
+                          ? 'uses gathered from all targets'
+                          : `uses gathered from below ${itemsByKey.get(line.anchor)?.name}`}
+                      </span>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
                 <TreeRow
-                  node={node}
-                  depth={depth}
-                  open={!collapsed.has(node.id)}
-                  onToggle={() => toggle(node.id)}
+                  key={line.node.id}
+                  topName={topName}
+                  node={line.node}
+                  depth={line.depth}
+                  edges={line.edges}
+                  card={line.card}
+                  afterBranch={line.afterBranch}
+                  open={!collapsed.has(line.node.id)}
+                  onToggle={() => toggle(line.node.id)}
                   plan={plan}
                   catalog={catalog}
                   onProducer={onProducer}
                   onMachine={onMachine}
                   onCatalysts={onCatalysts}
                   onSeparate={onSeparate}
+                  onSeparateMenu={openMenu}
                   unused={unused}
                   logistics={logistics}
                   link={link}
                 />
-              </Fragment>
-            ))}
+              ),
+            )}
           </tbody>
         </table>
       </div>
+
+      <div
+        ref={menuRef}
+        popover="auto"
+        className="tree-menu"
+        role="menu"
+        style={menu ? { left: menu.x, top: menu.y } : undefined}
+        onToggle={(e) => e.newState === 'closed' && setMenu(null)}
+      >
+        {menu && (
+          <>
+            <div className="tree-menu-title">Build {itemsByKey.get(menu.node.item)?.name} separately</div>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                menuRef.current?.hidePopover()
+                onSeparate({ item: menu.node.item }, true)
+              }}
+            >
+              <span className="tree-menu-top" aria-hidden>
+                <BoxArrowIcon />
+              </span>
+              <span>
+                Top of the plan
+                <span className="tree-menu-hint">every use, gathered with {topName}</span>
+              </span>
+            </button>
+            {menu.anchors.length > 0 && <div className="tree-menu-title">or with</div>}
+            {menu.anchors.map((a) => (
+              <button type="button" role="menuitem" key={a.id} onClick={() => chooseAnchor(menu.node, a)}>
+                <ItemLabel item={a.item} size={18} />
+              </button>
+            ))}
+          </>
+        )}
+      </div>
+
+      <dialog ref={dialogRef} className="tree-dialog" onClose={() => setConfirm(null)}>
+        {confirm && (
+          <AnchorChoice node={confirm.node} anchor={confirm.anchor} count={confirm.count} onDecide={decide} />
+        )}
+      </dialog>
     </>
   )
 }
@@ -205,10 +304,17 @@ function TreeRow({
   onMachine,
   onCatalysts,
   onSeparate,
+  onSeparateMenu,
   unused,
   logistics,
   link,
+  edges,
+  card,
+  afterBranch,
+  topName,
 }: {
+  /** What items built at the top of the plan are shown "with". */
+  topName: string
   node: TreeNode
   depth: number
   open: boolean
@@ -218,17 +324,39 @@ function TreeRow({
   onProducer: (item: string, producer: string) => void
   onMachine: (processId: string, machine: string) => void
   onCatalysts: (processId: string, catalysts: string[]) => void
-  onSeparate: (item: string, on: boolean) => void
+  onSeparate: (s: Separation, on: boolean) => void
+  onSeparateMenu: (node: TreeNode, button: HTMLElement) => void
   unused: Map<string, number>
   logistics: Map<string, LogisticsCheck>
   link: LinkFn
+  edges: Edge[]
+  /** Level of the "with" group card this row sits in, if any. */
+  card?: number
+  afterBranch?: boolean
 }) {
+  if (node.id === PLAN_ROOT)
+    return (
+      <tr data-node-id={node.id} className="kind-plan depth-0">
+        <td className="tree-item">
+          <Edges edges={edges} />
+          <div className="tree-cell">
+            <button className="fold" onClick={onToggle} aria-expanded={open} aria-label={open ? 'Collapse' : 'Expand'}>
+              {open ? '▾' : '▸'}
+            </button>
+            <span className="plan-root-name">All targets</span>
+          </div>
+        </td>
+        <td colSpan={4} />
+      </tr>
+    )
+
   const p = node.run?.process
   const belts = p ? logistics.get(p.id) : undefined
   const limited = !!belts && belts.utilization < 1 && node.machines > 0
   const canChoose = node.kind !== 'bus' && (catalog.byProduct.get(node.item)?.length ?? 0) > 0
   const price = itemsByKey.get(node.item)?.buyPrice
   const name = itemsByKey.get(node.item)?.name ?? node.item
+  const anchorName = node.separation?.anchor && itemsByKey.get(node.separation.anchor)?.name
   const sources = node.byproductSources.map((s, i) => (
     <span key={s.id}>
       {i > 0 && ', '}
@@ -243,8 +371,13 @@ function TreeRow({
   ))
 
   return (
-    <tr data-node-id={node.id} className={`kind-${node.kind} depth-${Math.min(depth, 1)} ${node.rate === 0 ? 'idle' : ''}`}>
+    <tr
+      data-node-id={node.id}
+      className={`kind-${node.kind} depth-${Math.min(depth, 1)} ${node.rate === 0 ? 'idle' : ''} ${card !== undefined ? 'in-with' : ''} ${afterBranch ? 'after-branch' : ''}`}
+      style={cardStyle(card)}
+    >
       <td className="tree-item">
+        <Edges edges={edges} />
         <div className="tree-cell" style={{ paddingLeft: depth * 20 }}>
           {node.children.length > 0 ? (
             <button className="fold" onClick={onToggle} aria-expanded={open} aria-label={open ? 'Collapse' : 'Expand'}>
@@ -254,13 +387,13 @@ function TreeRow({
             <span className="fold-spacer" />
           )}
           <ItemLabel item={node.item} />
-          {node.consolidated ? (
+          {node.separation ? (
             <button
               type="button"
               className="tree-action"
-              title={`Merge back: show ${name} under each branch that uses it again`}
+              title={`Merge back: ${mergeHint(node.separation, name)}`}
               aria-label={`Merge ${name} back into the tree`}
-              onClick={() => onSeparate(node.item, false)}
+              onClick={() => onSeparate(node.separation!, false)}
             >
               <BoxArrowIcon inward />
             </button>
@@ -270,9 +403,10 @@ function TreeRow({
               <button
                 type="button"
                 className="tree-action"
-                title={`Build separately: gather every use of ${name} into one tree of its own, below the targets`}
+                title={`Build separately: gather the uses of ${name} into one place, at the top of the plan or with an item above it`}
                 aria-label={`Build ${name} separately`}
-                onClick={() => onSeparate(node.item, true)}
+                aria-haspopup="menu"
+                onClick={(e) => onSeparateMenu(node, e.currentTarget)}
               >
                 <BoxArrowIcon />
               </button>
@@ -287,7 +421,13 @@ function TreeRow({
         ) : node.kind === 'separate' ? (
           <span className="leaf-note">
             ⇲{' '}
-            {link(node, 'separate', (n) => !!n.consolidated && n.item === node.item, 'built separately', `Show where ${name} is built`)}
+            {link(
+              node,
+              'separate',
+              (n) => n.id === node.groupId,
+              `with ${node.groupAnchor ? itemsByKey.get(node.groupAnchor)?.name : topName}`,
+              `Show where ${name} is built`,
+            )}
           </span>
         ) : node.kind === 'bus' ? (
           <span className="leaf-note">from the bus</span>
@@ -300,8 +440,8 @@ function TreeRow({
                 {link(
                   node,
                   'uses',
-                  (n) => n.kind === 'separate' && n.item === node.item,
-                  'all uses across the plan',
+                  (n) => n.kind === 'separate' && n.groupId === node.id,
+                  node.separation?.anchor ? `uses below ${anchorName}` : 'all uses across the plan',
                   `Show the branches that use ${name}`,
                 )}
               </div>
@@ -442,3 +582,173 @@ function BoxArrowIcon({ inward = false }: { inward?: boolean }) {
     </svg>
   )
 }
+
+type AnchorDecision = 'every' | 'one' | 'lift' | 'cancel'
+
+/** Asks whether to gather an item with every row of an anchor built in several places, or this one. */
+function AnchorChoice({
+  node,
+  anchor,
+  count,
+  onDecide,
+}: {
+  node: TreeNode
+  anchor: TreeNode
+  count: number
+  onDecide: (choice: AnchorDecision) => void
+}) {
+  const item = itemsByKey.get(node.item)?.name ?? node.item
+  const at = itemsByKey.get(anchor.item)?.name ?? anchor.item
+  return (
+    <>
+      <h3>
+        Gather {item} with which {at}?
+      </h3>
+      <p>
+        {at} is built in {count} places in this plan. Each one can gather the {item} used below it, or just
+        this one.
+      </p>
+      <div className="tree-dialog-actions">
+        <button type="button" className="primary" autoFocus onClick={() => onDecide('every')}>
+          Every {at} ({count})
+        </button>
+        <button type="button" onClick={() => onDecide('one')}>
+          Only this one
+        </button>
+        <button type="button" onClick={() => onDecide('cancel')}>
+          Cancel
+        </button>
+      </div>
+      {!anchor.consolidated && (
+        <p className="tree-dialog-tip">
+          Or build {at} separately as well, so there&apos;s a single {at} to gather {item} with:{' '}
+          <button type="button" className="tree-link" onClick={() => onDecide('lift')}>
+            build {at} separately
+          </button>
+        </p>
+      )}
+    </>
+  )
+}
+
+/** What merging a separated item back undoes. */
+function mergeHint(s: Separation, name: string) {
+  if (!s.anchor) return `show ${name} under each branch that uses it again`
+  const at = itemsByKey.get(s.anchor)?.name ?? s.anchor
+  return s.at ? `stop gathering ${name} with this ${at}` : `stop gathering ${name} with every ${at}`
+}
+
+/** One row's piece of a branch's card edge: its rounded top, the side, or its rounded bottom. */
+interface Edge {
+  level: number
+  piece: 'top' | 'mid' | 'bottom'
+  /** The highlighted edge around a "with" group. */
+  accent: boolean
+}
+
+/** A table line: an item row, or the divider above an anchor's "with" rows. */
+type Line =
+  | { kind: 'row'; node: TreeNode; depth: number; card?: number; edges: Edge[]; afterBranch?: boolean }
+  | { kind: 'with'; anchor: string; anchorId: string; depth: number; edges: Edge[]; afterBranch?: boolean }
+
+const PLAN_ROOT = 'plan'
+/** The root of an item built at the top of the plan (not a row inside it). */
+const isTopGroupId = (id: string) => /^separate\/[^/]+$/.test(id)
+
+/**
+ * The tree as shown: items built at the top of the plan join the target as a "with" group, or,
+ * with several targets, an "All targets" row holding the targets and the group.
+ */
+function viewOf(tree: TreeNode[]): TreeNode[] {
+  const groups = tree.filter((n) => n.id.startsWith('separate/'))
+  if (!groups.length) return tree
+  const targets = tree.filter((n) => !n.id.startsWith('separate/'))
+  if (targets.length === 1) return [{ ...targets[0], children: [...targets[0].children, ...groups] }]
+  const plan: TreeNode = {
+    id: PLAN_ROOT,
+    item: '',
+    kind: 'produce',
+    rate: 0,
+    machines: 0,
+    heat: 0,
+    nutrients: 0,
+    byproducts: [],
+    fromByproduct: 0,
+    byproductSources: [],
+    purchased: 0,
+    shortfall: 0,
+    children: [...targets, ...groups],
+  }
+  return [plan]
+}
+
+function topAnchorName(tree: TreeNode[]) {
+  const targets = tree.filter((n) => !n.id.startsWith('separate/'))
+  return targets.length === 1 ? (itemsByKey.get(targets[0].item)?.name ?? targets[0].item) : 'all targets'
+}
+
+/** A row gathering separated uses: a top-of-plan group, or one under an anchor. */
+const isGroupRow = (node: TreeNode, depth: number) =>
+  depth > 0 && (isTopGroupId(node.id) || !!node.separation?.anchor)
+
+/**
+ * Lays out the visible lines. Each open branch gets a card edge from its row down to its last
+ * descendant, and each anchor's "with" rows get a highlighted one from their divider.
+ */
+function layoutLines(tree: TreeNode[], collapsed: Set<string>): Line[] {
+  const lines: Line[] = []
+  const walk = (nodes: TreeNode[], depth: number, card?: number, parent?: TreeNode) => {
+    let divided = false
+    for (const node of nodes) {
+      const group = isGroupRow(node, depth)
+      if (group && !divided && parent) {
+        divided = true
+        lines.push({ kind: 'with', anchor: parent.item, anchorId: parent.id, depth, edges: [] })
+      }
+      const inCard = group ? depth : card
+      lines.push({ kind: 'row', node, depth, card: inCard, edges: [] })
+      if (!collapsed.has(node.id)) walk(node.children, depth + 1, inCard, node)
+    }
+  }
+  walk(tree, 0)
+
+  // Edges open at a line and close before the first line at `closeAt` depth or shallower.
+  const open: { level: number; closeAt: number; start: number; accent: boolean }[] = []
+  const draw = (span: (typeof open)[number], end: number) => {
+    for (let k = span.start; k <= end; k++) {
+      const piece = k === span.start ? 'top' : k === end ? 'bottom' : 'mid'
+      lines[k].edges.push({ level: span.level, piece, accent: span.accent })
+    }
+  }
+  lines.forEach((line, k) => {
+    while (open.length && open.at(-1)!.closeAt >= line.depth) draw(open.pop()!, k - 1)
+    if (line.kind === 'with') open.push({ level: line.depth, closeAt: line.depth - 1, start: k, accent: true })
+    // A "with" row's own children sit inside its group's edge, which already starts at its level.
+    else if (line.node.children.length && !collapsed.has(line.node.id) && !isGroupRow(line.node, line.depth))
+      open.push({ level: line.depth, closeAt: line.depth, start: k, accent: false })
+  })
+  while (open.length) draw(open.pop()!, lines.length - 1)
+  // Breathing room after a branch closes, above the line that follows it.
+  lines.forEach((line, k) => {
+    if (k > 0 && lines[k - 1].edges.some((e) => e.piece === 'bottom')) line.afterBranch = true
+  })
+  return lines
+}
+
+const edgeX = (level: number) => level * 20 + 4 // just left of that level's fold arrow
+
+/** The card edges passing through a row, one per branch it sits in. */
+function Edges({ edges }: { edges: Edge[] }) {
+  return edges.map((e) => (
+    <span
+      key={e.level}
+      className={`edge ${e.piece}${e.accent ? ' accent' : ''}`}
+      style={{ left: edgeX(e.level) }}
+      aria-hidden
+    />
+  ))
+}
+
+/** Where a "with" card's tint starts: at its edge, so the margin outside stays clear. */
+const cardStyle = (level?: number) =>
+  level === undefined ? undefined : ({ '--card-x': `${edgeX(level)}px` } as CSSProperties)

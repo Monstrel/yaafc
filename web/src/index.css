@@ -1019,16 +1019,189 @@ tr.kind-separate .item-label .name {
   opacity: 1;
 }
 
-.production.tree tr.tree-section td {
-  padding-top: 18px;
-  border-bottom: 2px solid var(--accent);
+/* Holds several targets and what's built at the top of the plan "with" them. */
+.plan-root-name {
   font-weight: 600;
+  padding: 3px 0;
+}
+
+/*
+ * Card edges: each open branch gets a rounded "[" from its row down to its last row. Rows are
+ * separated only from the rate column on, so the edges have the item column to themselves.
+ */
+.production.tree td.tree-item,
+.production.tree tr.tree-with td {
+  position: relative;
+}
+
+.production.tree td.tree-item {
+  border-bottom-color: transparent; /* kept, not removed, so every cell in a row lines up */
+}
+
+.edge {
+  position: absolute;
+  top: -1px;
+  bottom: -1px;
+  width: 8px;
+  border-left: 1.5px solid currentColor;
+  color: color-mix(in srgb, var(--muted) 40%, transparent);
+  pointer-events: none;
+}
+
+.edge.top {
+  top: 7px;
+  border-top: 1.5px solid currentColor;
+  border-top-left-radius: 8px;
+}
+
+.edge.bottom {
+  bottom: 7px;
+  border-bottom: 1.5px solid currentColor;
+  border-bottom-left-radius: 8px;
+}
+
+/* Space between a branch's card and the line after it, kept clear of the card's tint and edge. */
+.production.tree tr.after-branch td {
+  padding-top: 18px;
+}
+
+.production.tree tr.after-branch .edge.top {
+  top: 19px;
+}
+
+/* A "with" card starts at its divider: keep the space above it out of the card's tint. */
+.production.tree tr.tree-with.after-branch td {
+  padding-top: 20px;
+  background:
+    linear-gradient(var(--panel), var(--panel)) top / 100% 12px no-repeat,
+    linear-gradient(to right, transparent var(--card-x), var(--card-tint) var(--card-x));
+}
+
+.edge.accent {
+  border-left-width: 2px;
   color: var(--accent);
 }
 
-.production.tree tr.tree-section .hint-inline {
-  margin-left: 10px;
+/* A "with" group: tinted, so it reads as part of its anchor rather than the rows after it. */
+.production.tree tr.in-with td {
+  --card-tint: color-mix(in srgb, var(--accent) 6%, transparent);
+  background: var(--card-tint);
+}
+
+.production.tree tr.in-with td.tree-item,
+.production.tree tr.tree-with td {
+  background: linear-gradient(to right, transparent var(--card-x), var(--card-tint) var(--card-x));
+}
+
+/* Divider above the rows an anchor builds "with" its own ingredients. */
+.production.tree tr.tree-with td {
+  padding-top: 8px;
+  padding-bottom: 0;
+  border-bottom: none;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.tree-with-label {
+  padding: 0 0 3px 6px;
+  border-bottom: 1px dashed var(--accent);
+}
+
+.production.tree tr.tree-with .hint-inline {
+  margin-left: 8px;
   font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+/* "Build separately" menu: a popover, so the table's scrolling can't clip it. */
+.tree-menu {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  width: 280px;
+  max-height: min(420px, 70vh);
+  overflow-y: auto;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 30px rgb(0 0 0 / 0.35);
+  padding: 6px;
+}
+
+.tree-menu-title {
+  padding: 6px 8px 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.tree-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 6px 8px;
+  border-radius: 6px;
+}
+
+.tree-menu button:hover,
+.tree-menu button:focus-visible {
+  background: var(--panel-2);
+}
+
+.tree-menu-top {
+  display: inline-flex;
+  justify-content: center;
+  width: 18px;
+  color: var(--accent);
+}
+
+.tree-menu-hint {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.tree-dialog {
+  max-width: min(440px, calc(100vw - 32px));
+  padding: 20px;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 20px 50px rgb(0 0 0 / 0.4);
+}
+
+.tree-dialog::backdrop {
+  background: rgb(0 0 0 / 0.45);
+}
+
+.tree-dialog h3 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+.tree-dialog p {
+  margin: 0 0 14px;
+}
+
+.tree-dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tree-dialog p.tree-dialog-tip {
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-size: 13px;
 }
 
 .warn-text {
