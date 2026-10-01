@@ -11,8 +11,8 @@ export function usePlanModel(plan: Plan, saved: SavedRecipe[]) {
   const fertChoice = plan.producers[NUTRIENTS]
   const fertilizer = fertChoice?.startsWith('fert:') ? fertChoice.slice(5) : 'BasicFertilizer'
   const catalog = useMemo(
-    () => buildCatalog({ saved, machines: plan.machines, mods, fertilizer, catalysts: plan.catalysts }),
-    [saved, plan.machines, mods, fertilizer, plan.catalysts],
+    () => buildCatalog({ saved, machines: plan.machines, mods, fertilizer }),
+    [saved, plan.machines, mods, fertilizer],
   )
   const result = useMemo(() => solvePlan(plan, catalog, mods), [plan, catalog, mods])
   return { mods, catalog, result }

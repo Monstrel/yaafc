@@ -9,8 +9,6 @@ import {
   type Process,
   type ProcessCatalog,
 } from '../lib/processes'
-import { producerFor } from '../lib/solver'
-import type { Plan } from '../lib/types'
 import { ItemIcon } from './ItemIcon'
 import { ItemPicker } from './ItemPicker'
 import { Money } from './Money'
@@ -43,6 +41,15 @@ interface Choice {
   price?: number | null
 }
 
+/** Where a pick made on a tree row applies. */
+export interface BranchScope {
+  /** Rows of the item in the plan that use a producer of their own (not loops or separate builds). */
+  rows: number
+  /** The row has its own pick. */
+  own: boolean
+  onReset: () => void
+}
+
 /** Menu value of a process on a given machine. */
 const onMachineValue = (id: string, machine: string) => `${id}@${machine}`
 
@@ -56,25 +63,27 @@ const onMachineValue = (id: string, machine: string) => `${id}@${machine}`
  */
 export function ProducerSelect({
   item,
-  plan,
+  current: { producer: current, process: currentProcess },
   catalog,
   onChange,
   compact,
   noImport,
+  branch,
 }: {
   item: string
-  plan: Plan
+  /** The producer in use ('import' or a process id) and its process on the machine it runs on. */
+  current: { producer: string; process?: Process }
   catalog: ProcessCatalog
-  onChange: (item: string, producer: string, machine?: string) => void
+  onChange: (producer: string, machine?: string, everywhere?: boolean) => void
   compact?: boolean
   noImport?: boolean
+  /** On a tree row: picks cover the row's branch, or every row of the item when asked. */
+  branch?: BranchScope
 }) {
   const all = catalog.byProduct.get(item) ?? []
   const isCrucible = (p: Process) => p.machine?.key === PARADOX_CRUCIBLE && p.product === item
   const options = all.filter((p) => !isCrucible(p))
   const crucible = new Map(all.filter(isCrucible).map((p) => [inputOf(p), p]))
-  const current = producerFor(plan, catalog, item)
-  const currentProcess = catalog.byId.get(current)
   const onCrucible = !!currentProcess && isCrucible(currentProcess)
   const crucibleDefault = crucible.get(DEFAULT_PARADOX_INPUT) ?? [...crucible.values()][0]
   const inputs = [...crucible.keys()].map((k) => itemsByKey.get(k)).filter((i): i is Item => !!i)
@@ -84,7 +93,7 @@ export function ProducerSelect({
       p.machineOptions.length > 1
         ? p.machineOptions.map((m) => ({
             value: onMachineValue(p.id, m.key),
-            process: catalog.onMachine(p, m.key),
+            process: catalog.variant(p, { machine: m.key }),
             machine: m.key,
           }))
         : [{ value: p.id, process: p }],
@@ -108,6 +117,8 @@ export function ProducerSelect({
   const pop = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
+  const [everywhere, setEverywhere] = useState(false)
+  const showScope = !!branch && (branch.rows > 1 || branch.own)
 
   // A fixed popover doesn't follow the page: close it when anything outside it scrolls.
   useEffect(() => {
@@ -144,8 +155,8 @@ export function ProducerSelect({
   const choose = (c: Choice) => {
     pop.current?.hidePopover()
     if (c.value === value) return
-    if (c.value === CRUCIBLE) onChange(item, crucibleDefault!.id)
-    else onChange(item, c.process?.id ?? c.value, c.machine)
+    if (c.value === CRUCIBLE) onChange(crucibleDefault!.id, undefined, everywhere)
+    else onChange(c.process?.id ?? c.value, c.machine, everywhere)
   }
 
   // Arrow keys move between options (and back up to the search box).
@@ -195,6 +206,11 @@ export function ProducerSelect({
         <ChoiceIcon choice={selected} size={compact ? 20 : 24} />
         <span className="recipe-title">{choiceTitle(selected)}</span>
         <ChoiceTags choice={selected} item={item} />
+        {branch?.own && (
+          <span className="tag branch-tag" title="Picked for this branch: other rows of this item can differ">
+            branch
+          </span>
+        )}
         {ambiguous && selected.process && selected.value !== CRUCIBLE && (
           <span className="recipe-mini" aria-hidden>
             {materials(selected.process).map((s) => (
@@ -216,7 +232,10 @@ export function ProducerSelect({
           const isOpen = e.newState === 'open'
           setOpen(isOpen)
           if (isOpen) pop.current?.querySelector<HTMLElement>('.recipe-search, [aria-selected=true]')?.focus()
-          else setQuery('')
+          else {
+            setQuery('')
+            setEverywhere(false)
+          }
         }}
       >
         {open && (
@@ -229,6 +248,33 @@ export function ProducerSelect({
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && shown[0] && choose(shown[0])}
               />
+            )}
+            {showScope && (
+              <div className="recipe-scope">
+                {branch!.rows > 1 && (
+                  <div className="scope-toggle" role="radiogroup" aria-label="Apply the pick to">
+                    <button type="button" role="radio" aria-checked={!everywhere} onClick={() => setEverywhere(false)}>
+                      This branch
+                    </button>
+                    <button type="button" role="radio" aria-checked={everywhere} onClick={() => setEverywhere(true)}>
+                      All {branch!.rows} rows
+                    </button>
+                  </div>
+                )}
+                {branch!.own && (
+                  <button
+                    type="button"
+                    className="tree-link"
+                    title="Follow the pick above this row (or the plan's) again"
+                    onClick={() => {
+                      pop.current?.hidePopover()
+                      branch!.onReset()
+                    }}
+                  >
+                    ↺ Clear this branch&apos;s pick
+                  </button>
+                )}
+              </div>
             )}
             <div role="listbox" aria-label={`Producer for ${itemName(item)}`}>
               {shown.map((c) => (
@@ -261,7 +307,7 @@ export function ProducerSelect({
         <ItemPicker
           value={inputOf(currentProcess)}
           options={inputs}
-          onChange={(key) => key && crucible.has(key) && onChange(item, crucible.get(key)!.id)}
+          onChange={(key) => key && crucible.has(key) && onChange(crucible.get(key)!.id)}
           placeholder="Crucible input…"
           detail={(i) => fmtSeconds(crucible.get(i.key)?.seconds ?? 0)}
         />

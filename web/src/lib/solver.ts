@@ -1,12 +1,16 @@
 import { HEAT, NUTRIENTS, baseInputKey, realItem, type Stack } from './gameData'
 import { solveLP } from './lp'
 import { craftsPerMachine } from './machineRate'
-import { defaultProducer, type Process, type ProcessCatalog } from './processes'
-import { separationsOf } from './separate'
+import { runKey, type Process, type ProcessCatalog } from './processes'
+import { separationKey, separationsOf } from './separate'
+import { NO_FLOWS, buildTree, type RowFlows, type TreeNode } from './tree'
 import type { Plan } from './types'
+import { planProducer, unfold, type PlanNode, type PlanShape } from './unfold'
 import type { Modifiers } from './upgrades'
 
 export interface ProcessRun {
+  /** The process on its machine (see `runKey`): one recipe can run on different machines in different branches. */
+  key: string
   process: Process
   craftsPerMinute: number
   machines: number
@@ -16,7 +20,6 @@ export interface ProcessRun {
 
 export interface ItemBalance {
   item: string
-  producer: string // process id or 'import'
   target: number
   produced: number
   consumed: number
@@ -39,8 +42,10 @@ export interface PlanResult {
   status: 'ok' | 'infeasible' | 'error'
   message?: string
   targets: ResolvedTarget[]
+  /** Machines per process (on its machine), summed over the tree's rows. */
   runs: ProcessRun[]
   balances: ItemBalance[]
+  tree: TreeNode[]
 }
 
 const ZERO = 1e-12
@@ -53,6 +58,11 @@ const DEFICIT_DEPTH_FACTOR = 0.1
 const MIN_DEFICIT_COST = 10
 const SURPLUS_COST = 1e-4
 const CRAFT_COST = 1e-3
+// A row running a process for its side product (Gentian Nectar from Gentian nurseries) costs a
+// little more, so a sibling row making the main product covers it with its by-product instead.
+const SIDE_RUN_FACTOR = 1.001
+// By-products go to the nearest rows that use them: priced by the steps between the two rows.
+const FLOW_COST = 1e-7
 const SHORTFALL_ROW = 'shortfall'
 
 /**
@@ -72,12 +82,12 @@ export function outputPerMachine(p: Process, item: string, mods: Modifiers): num
   return out * craftsPerMachine(p, mods)
 }
 
-/** Converts machine-count targets to items per minute using each item's chosen producer. */
-export function resolveTargets(plan: Plan, catalog: ProcessCatalog, mods: Modifiers): ResolvedTarget[] {
+/** Converts machine-count targets to items per minute using the producer of each target's row. */
+function resolveTargets(plan: Plan, shape: PlanShape, mods: Modifiers): ResolvedTarget[] {
   return plan.targets
     .filter((t) => t.item)
-    .map((t) => {
-      const p = catalog.byId.get(producerFor(plan, catalog, t.item))
+    .map((t, i) => {
+      const p = shape.targetRows[i]?.process
       const perMachine = p ? outputPerMachine(p, t.item, mods) : null
       const amount = t.rate || 0
       return {
@@ -89,172 +99,302 @@ export function resolveTargets(plan: Plan, catalog: ProcessCatalog, mods: Modifi
     })
 }
 
-export function producerFor(plan: Plan, catalog: ProcessCatalog, item: string): string {
-  const choice = plan.producers[item]
-  if (choice === 'import') return choice
-  const chosen = choice ? catalog.byId.get(choice) : undefined
-  if (chosen && (chosen.product === item || chosen.secondary.includes(item))) return choice!
-  return defaultProducer(catalog, item)
-}
-
 /**
- * Walks from the targets through each item's chosen producer to find the processes involved.
- * Bus items (`@base:X`) have no producer: they're supplied from outside, like purchases.
- */
-function walkPlan(plan: Plan, catalog: ProcessCatalog, targets: string[]) {
-  const producers = new Map<string, string>()
-  const processes = new Map<string, Process>()
-  const itemsSeen = new Set<string>()
-  const depth = new Map<string, number>()
-  const queue = [...targets]
-  for (const t of queue) depth.set(t, 0)
-  while (queue.length) {
-    const item = queue.shift()!
-    if (producers.has(item)) continue
-    itemsSeen.add(item)
-    const producer = realItem(item) !== item ? 'import' : producerFor(plan, catalog, item)
-    producers.set(item, producer)
-    const found = catalog.byId.get(producer)
-    if (!found || processes.has(found.id)) continue
-    const p = fromBus(found)
-    processes.set(p.id, p)
-    for (const s of p.outputs) itemsSeen.add(s.item)
-    for (const s of p.inputs) {
-      if (!depth.has(s.item)) depth.set(s.item, (depth.get(item) ?? 0) + 1)
-      queue.push(s.item)
-    }
-  }
-  return { producers, processes, itemsSeen, depth }
-}
-
-/**
- * Drops producer, machine, catalyst and build-separately choices for items and processes no longer in the plan, so
- * an item that's removed and added back starts from its default recipe instead of whatever was
- * last picked for it. Fuel and fertilizer choices are plan-wide settings and always kept.
- * Returns null when there's nothing to drop.
+ * Drops producer, machine, catalyst, branch and build-separately choices for items, processes and
+ * rows no longer in the plan, so an item that's removed and added back starts from its default
+ * recipe instead of whatever was last picked for it. A build-separately choice that gathers
+ * nothing (its anchor no longer sits above the item, say) goes too. Fuel and fertilizer choices
+ * are plan-wide settings and always kept. Returns null when there's nothing to drop.
  */
 export function pruneChoices(plan: Plan, catalog: ProcessCatalog): Plan | null {
-  const { producers, processes } = walkPlan(
-    plan,
-    catalog,
-    plan.targets.filter((t) => t.item).map((t) => t.item),
-  )
-  const keepItem = (item: string) => item === HEAT || item === NUTRIENTS || producers.has(item)
+  const { nodes } = unfold(plan, catalog)
+  const rows = new Set(nodes.map((n) => n.id))
+  const items = new Set(nodes.map((n) => n.item))
+  const processes = new Set(nodes.flatMap((n) => (n.process ? [n.process.id] : [])))
+  const gathering = new Set(nodes.flatMap((n) => (n.separation ? [separationKey(n.separation)] : [])))
   const keep = <T>(record: Record<string, T> | undefined, test: (key: string) => boolean) => {
     if (!record) return { record, dropped: false }
     const kept = Object.fromEntries(Object.entries(record).filter(([k]) => test(k)))
     return { record: kept, dropped: Object.keys(kept).length !== Object.keys(record).length }
   }
-  const p = keep(plan.producers, keepItem)
+  const p = keep(plan.producers, (item) => item === HEAT || item === NUTRIENTS || items.has(item))
   const m = keep(plan.machines, (id) => processes.has(id))
-  const c = keep(plan.catalysts, (id) => processes.has(id))
-  // "Build separately" only means something for items the plan makes, gathered under items it makes.
-  const made = (item: string) => (producers.get(item) ?? 'import') !== 'import'
-  const separate = plan.separate && separationsOf(plan.separate).filter((s) => made(s.item) && (!s.anchor || made(s.anchor)))
+  // Catalysts stay with a row only while its machines can take them.
+  const loadable = new Set(nodes.flatMap((n) => (n.process?.acceptsCatalysts ? [n.id] : [])))
+  const c = keep(plan.rowCatalysts, (id) => loadable.has(id))
+  const b = keep(plan.branches, (id) => rows.has(id))
+  const separate = plan.separate && separationsOf(plan.separate).filter((s) => gathering.has(separationKey(s)))
   const s = separate?.length !== plan.separate?.length
-  if (!p.dropped && !m.dropped && !c.dropped && !s) return null
-  return { ...plan, producers: p.record!, machines: m.record!, catalysts: c.record, separate }
+  if (!p.dropped && !m.dropped && !c.dropped && !b.dropped && !s) return null
+  return { ...plan, producers: p.record!, machines: m.record!, rowCatalysts: c.record, branches: b.record, separate }
 }
 
+/** The row that supplies a row: itself, or the row a loop or separate build points to. */
+function supplierOf(n: PlanNode): PlanNode {
+  let s = n
+  while ((s.kind === 'loop' || s.kind === 'separate') && s.ref) s = s.ref
+  return s
+}
+
+const isSupply = (n: PlanNode) => supplierOf(n) === n
+
+/** Steps between two rows of the tree. */
+function distance(a: PlanNode, b: PlanNode): number {
+  const x = a.id.split('/')
+  const y = b.id.split('/')
+  let common = 0
+  while (common < x.length && common < y.length && x[common] === y[common]) common++
+  return x.length + y.length - 2 * common
+}
+
+/** Ingredients a row's process takes from the rows below it, in the order of its children. */
+const ingredients = (p: Process) => p.inputs.filter((s) => s.item !== HEAT && s.item !== NUTRIENTS)
+const outputOf = (p: Process, item: string) => p.outputs.find((s) => s.item === item)?.count ?? 0
+
 /**
- * Balances the plan as a linear program. Every item gets one constraint:
- *   Σ(outputs − inputs)·crafts + import + deficit − surplus = target
- * Cycles (e.g. a catalyst feeding its own precursors) need no special handling: the LP simply
- * finds crafting rates where each loop item balances, and anything left over shows as surplus.
+ * Balances the plan as a linear program over the rows of the production tree. Each row's machines
+ * feed only the row above them, as built in the factory:
+ *   (row's output) + (by-products it takes) + import + deficit − surplus = (what the rows above it use)
+ * A loop row adds its use to the row it loops back to, a separate build to the row gathering it.
+ * By-products are the one exception: each row's side outputs can feed any row of their item,
+ * the nearest first, and what's left over is surplus. Heat and nutrients are plan-wide: fuel and
+ * fertilizer come off the bus for every machine.
  */
 export function solvePlan(plan: Plan, catalog: ProcessCatalog, mods: Modifiers): PlanResult {
-  const resolved = resolveTargets(plan, catalog, mods)
-  const targets = new Map<string, number>()
-  for (const t of resolved) targets.set(t.item, (targets.get(t.item) ?? 0) + t.rate)
+  const shape = unfold(plan, catalog)
+  const targets = resolveTargets(plan, shape, mods)
+  const index = new Map(shape.nodes.map((n, k) => [n, k]))
+  const bal = (n: PlanNode) => `b:${index.get(supplierOf(n))}`
 
-  const { producers, processes, itemsSeen, depth } = walkPlan(plan, catalog, [...targets.keys()])
+  const equalities: Record<string, number> = {}
+  const columns: Record<string, Record<string, number>> = {}
+  const add = (col: Record<string, number>, row: string, v: number) => {
+    if (v) col[row] = (col[row] ?? 0) + v
+  }
 
-  const constraints: Record<string, number> = {}
-  const variables: Record<string, Record<string, number>> = {}
-  for (const item of itemsSeen) {
-    constraints[`bal:${item}`] = targets.get(item) ?? 0
-    variables[`sur:${item}`] = { [`bal:${item}`]: -1, cost: SURPLUS_COST }
-    const producer = producers.get(item)
-    if (producer === 'import') variables[`imp:${item}`] = { [`bal:${item}`]: 1, cost: IMPORT_COST }
+  const supplies = shape.nodes.filter(isSupply)
+  for (const s of supplies) {
+    const k = index.get(s)!
+    equalities[`b:${k}`] = 0
+    columns[`s:${k}`] = { [`b:${k}`]: -1, cost: SURPLUS_COST }
+    if (s.kind === 'import' || s.kind === 'bus') columns[`i:${k}`] = { [`b:${k}`]: 1, cost: IMPORT_COST }
     else {
-      const cost = Math.max(MIN_DEFICIT_COST, DEFICIT_COST * DEFICIT_DEPTH_FACTOR ** (depth.get(item) ?? 0))
-      variables[`def:${item}`] = { [`bal:${item}`]: 1, cost }
+      const cost = Math.max(MIN_DEFICIT_COST, DEFICIT_COST * DEFICIT_DEPTH_FACTOR ** s.depth)
+      columns[`d:${k}`] = { [`b:${k}`]: 1, cost }
     }
   }
-  for (const p of processes.values()) {
-    const coef: Record<string, number> = { cost: CRAFT_COST * Math.max(p.seconds, 1) }
-    for (const s of p.outputs) coef[`bal:${s.item}`] = (coef[`bal:${s.item}`] ?? 0) + s.count
-    for (const s of p.inputs) coef[`bal:${s.item}`] = (coef[`bal:${s.item}`] ?? 0) - s.count
-    variables[`x:${p.id}`] = coef
+  targets.forEach((t, i) => {
+    const row = shape.targetRows[i]
+    if (row) equalities[bal(row)] += t.rate
+  })
+
+  // Plan-wide heat and nutrients, supplied by the preferred fuel and fertilizer from the bus.
+  const globals = new Map<string, Process | null>()
+  const global = (item: string) => {
+    if (globals.has(item)) return
+    const p = realItem(item) !== item ? undefined : catalog.byId.get(planProducer(plan, catalog, item))
+    const process = p ? fromBus(p) : null
+    globals.set(item, process)
+    equalities[`g:${item}`] = 0
+    columns[`gs:${item}`] = { [`g:${item}`]: -1, cost: SURPLUS_COST }
+    if (process) columns[`d:g:${item}`] = { [`g:${item}`]: 1, cost: MIN_DEFICIT_COST }
+    else columns[`gi:${item}`] = { [`g:${item}`]: 1, cost: IMPORT_COST }
+    if (!process) return
+    const col: Record<string, number> = { cost: CRAFT_COST * Math.max(process.seconds, 1) }
+    columns[`gx:${item}`] = col
+    for (const s of process.outputs) add(col, `g:${s.item}`, s.count)
+    for (const s of process.inputs) {
+      global(s.item)
+      add(col, `g:${s.item}`, -s.count)
+    }
   }
+
+  // By-product pools: what one row makes of each side output, shared out to rows of that item.
+  const consumers = new Map<string, PlanNode[]>()
+  for (const s of supplies)
+    if (s.kind !== 'bus') consumers.set(s.item, [...(consumers.get(s.item) ?? []), s])
+  const flows: { name: string; from: PlanNode; to: PlanNode }[] = []
+
+  for (const n of shape.nodes) {
+    if (n.kind !== 'make') continue
+    const p = n.process!
+    const k = index.get(n)!
+    const col: Record<string, number> = {
+      cost: CRAFT_COST * Math.max(p.seconds, 1) * (p.product === n.item ? 1 : SIDE_RUN_FACTOR),
+    }
+    columns[`x:${k}`] = col
+    add(col, `b:${k}`, outputOf(p, n.item))
+    for (const o of p.outputs) {
+      if (o.item === n.item) continue
+      if (o.item.startsWith('@')) {
+        global(o.item)
+        add(col, `g:${o.item}`, o.count)
+        continue
+      }
+      const pool = `p:${k}:${o.item}`
+      equalities[pool] = 0
+      add(col, pool, o.count)
+      columns[`ps:${k}:${o.item}`] = { [pool]: -1, cost: SURPLUS_COST }
+      for (const c of consumers.get(o.item) ?? []) {
+        const name = `f:${k}>${index.get(c)}`
+        columns[name] = { [pool]: -1, [`b:${index.get(c)}`]: 1, cost: FLOW_COST * (1 + distance(n, c)) }
+        flows.push({ name, from: n, to: c })
+      }
+    }
+    for (const s of p.inputs)
+      if (s.item === HEAT || s.item === NUTRIENTS) {
+        global(s.item)
+        add(col, `g:${s.item}`, -s.count)
+      }
+    ingredients(p).forEach((s, j) => {
+      const c = n.children[j]
+      if (c) add(col, bal(c), -s.count)
+    })
+  }
+
+  const fail = (status: 'infeasible' | 'error', message?: string): PlanResult => ({
+    status,
+    message,
+    targets,
+    runs: [],
+    balances: [],
+    tree: buildTree(shape.roots, new Map(), mods),
+  })
 
   // Two passes, so a shortfall is only ever reported when the chosen producers really can't cover
   // it. In one pass, deficits were just expensive: a big enough plan (Sol burns millions of P and
   // tens of thousands of fuel and fertilizer items a minute) cost more than giving up on the target.
   // Pass 1 minimizes the depth-weighted shortfall alone; pass 2 holds it there and minimizes the
   // real costs.
+  const isDeficit = (name: string) => name.startsWith('d:')
   const phase1 = solveLP({
-    equalities: constraints,
+    equalities,
     columns: Object.fromEntries(
-      Object.entries(variables).map(([name, { cost, ...rows }]) => [name, { ...rows, cost: name.startsWith('def:') ? cost : 0 }]),
+      Object.entries(columns).map(([name, { cost, ...rows }]) => [name, { ...rows, cost: isDeficit(name) ? cost : 0 }]),
     ),
   })
-  if (phase1.status !== 'optimal')
-    return { status: phase1.status, message: phase1.message, targets: resolved, runs: [], balances: [] }
+  if (phase1.status !== 'optimal') return fail(phase1.status, phase1.message)
   let shortfall = 0
-  for (const [name, x] of phase1.values) if (name.startsWith('def:')) shortfall += x * variables[name].cost
+  for (const [name, x] of phase1.values) if (isDeficit(name)) shortfall += x * columns[name].cost
   // Σ cost·deficit + slack = cap, with a little room for solver tolerance.
-  constraints[SHORTFALL_ROW] = shortfall * (1 + 1e-6) + 1e-6
-  for (const name of Object.keys(variables))
-    if (name.startsWith('def:')) variables[name][SHORTFALL_ROW] = variables[name].cost
-  variables[`slack:${SHORTFALL_ROW}`] = { [SHORTFALL_ROW]: 1, cost: 0 }
+  equalities[SHORTFALL_ROW] = shortfall * (1 + 1e-6) + 1e-6
+  for (const name of Object.keys(columns)) if (isDeficit(name)) columns[name][SHORTFALL_ROW] = columns[name].cost
+  columns[`slack:${SHORTFALL_ROW}`] = { [SHORTFALL_ROW]: 1, cost: 0 }
 
-  const solution = solveLP({ equalities: constraints, columns: variables })
-  if (solution.status !== 'optimal')
-    return { status: solution.status, message: solution.message, targets: resolved, runs: [], balances: [] }
-
-  const value = solution.values
+  const solution = solveLP({ equalities, columns })
+  if (solution.status !== 'optimal') return fail(solution.status, solution.message)
   const v = (name: string) => {
-    const x = value.get(name) ?? 0
+    const x = solution.values.get(name) ?? 0
     return Math.abs(x) < ZERO ? 0 : x
   }
 
-  const runs: ProcessRun[] = [...processes.values()].map((p) => {
-    const crafts = v(`x:${p.id}`)
-    return {
-      process: p,
-      craftsPerMinute: crafts,
-      machines: p.seconds > 0 ? crafts / craftsPerMachine(p, mods) : 0,
-      inputs: p.inputs.map((s) => ({ item: s.item, count: s.count * crafts })),
-      outputs: p.outputs.map((s) => ({ item: s.item, count: s.count * crafts })),
-    }
+  // What each row uses or delivers itself; a supplying row adds what loops and separate builds take.
+  const crafts = (n: PlanNode) => (n.kind === 'make' ? v(`x:${index.get(n)}`) : 0)
+  const own = new Map<PlanNode, number>()
+  targets.forEach((t, i) => {
+    const row = shape.targetRows[i]
+    if (row) own.set(row, (own.get(row) ?? 0) + t.rate)
   })
+  for (const n of shape.nodes)
+    if (n.kind === 'make')
+      ingredients(n.process!).forEach((s, j) => {
+        const c = n.children[j]
+        if (c) own.set(c, (own.get(c) ?? 0) + s.count * crafts(n))
+      })
+  const demand = new Map<PlanNode, number>()
+  for (const n of shape.nodes) {
+    const s = supplierOf(n)
+    demand.set(s, (demand.get(s) ?? 0) + (own.get(n) ?? 0))
+  }
+  const drawn = new Map<PlanNode, { from: PlanNode; amount: number }[]>()
+  for (const f of flows) {
+    const amount = v(f.name)
+    if (amount > 0) drawn.set(f.to, [...(drawn.get(f.to) ?? []), { from: f.from, amount }])
+  }
 
-  // Derive import/deficit/surplus from the craft rates so every balance is exact; the solver's
-  // own slack values are rounded and would leave visible noise on items with huge counts (heat).
-  const balances: ItemBalance[] = [...itemsSeen].map((item) => {
-    let produced = 0
-    let consumed = 0
-    for (const r of runs) {
-      for (const s of r.outputs) if (s.item === item) produced += s.count
-      for (const s of r.inputs) if (s.item === item) consumed += s.count
+  const rowFlows = new Map<PlanNode, RowFlows>()
+  for (const n of shape.nodes) {
+    if (!isSupply(n)) {
+      rowFlows.set(n, { ...NO_FLOWS, rate: own.get(n) ?? 0 })
+      continue
     }
-    const producer = producers.get(item) ?? 'import'
-    const target = targets.get(item) ?? 0
-    let missing = target - (produced - consumed)
-    if (Math.abs(missing) <= RELATIVE_NOISE * Math.max(1, produced, consumed)) missing = 0
-    const shortfall = Math.max(0, missing)
-    return {
-      item,
-      producer,
-      target,
-      produced,
-      consumed,
-      imported: producer === 'import' ? shortfall : 0,
-      deficit: producer === 'import' ? 0 : shortfall,
-      surplus: Math.max(0, -missing),
-    }
-  })
+    const need = demand.get(n) ?? 0
+    const x = crafts(n)
+    const made = n.kind === 'make' ? outputOf(n.process!, n.item) * x : 0
+    const tol = RELATIVE_NOISE * Math.max(1, need, made)
+    const draws = (drawn.get(n) ?? []).filter((d) => d.amount > tol * 1e-2).sort((a, b) => b.amount - a.amount)
+    const fromByproduct = draws.reduce((sum, d) => sum + d.amount, 0)
+    const missing = need - made - fromByproduct
+    const short = missing > tol ? missing : 0
+    const bought = n.kind === 'import' || n.kind === 'bus'
+    rowFlows.set(n, {
+      rate: need,
+      crafts: x,
+      fromByproduct,
+      byproductSources: draws.map((d) => ({ id: d.from.id, label: d.from.process!.label })),
+      purchased: bought ? short : 0,
+      shortfall: bought ? 0 : short,
+    })
+  }
 
-  return { status: 'ok', targets: resolved, runs, balances }
+  // Machines per process on its machine, summed over the rows, plus the plan-wide fuel and fertilizer.
+  const totals = new Map<string, { process: Process; crafts: number }>()
+  const count = (p: Process, x: number) => {
+    const key = runKey(p)
+    const t = totals.get(key) ?? { process: p, crafts: 0 }
+    t.crafts += x
+    totals.set(key, t)
+  }
+  for (const n of shape.nodes) if (n.kind === 'make') count(n.process!, crafts(n))
+  for (const [item, p] of globals) if (p) count(p, v(`gx:${item}`))
+  const runs: ProcessRun[] = [...totals].map(([key, { process: p, crafts: x }]) => ({
+    key,
+    process: p,
+    craftsPerMinute: x,
+    machines: p.seconds > 0 ? x / craftsPerMachine(p, mods) : 0,
+    inputs: p.inputs.map((s) => ({ item: s.item, count: s.count * x })),
+    outputs: p.outputs.map((s) => ({ item: s.item, count: s.count * x })),
+  }))
+
+  // Per item: imports and shortfalls from the rows, surplus whatever's left, so every balance is
+  // exact. Plan-wide items (heat, nutrients, the bus) balance from the craft rates alone; the
+  // solver's own slack values are rounded and would leave visible noise on items with huge counts.
+  const balance = new Map<string, ItemBalance>()
+  const of = (item: string) => {
+    let b = balance.get(item)
+    if (!b) {
+      b = { item, target: 0, produced: 0, consumed: 0, imported: 0, deficit: 0, surplus: 0 }
+      balance.set(item, b)
+    }
+    return b
+  }
+  for (const t of targets) of(t.item).target += t.rate
+  for (const r of runs) {
+    for (const s of r.outputs) of(s.item).produced += s.count
+    for (const s of r.inputs) of(s.item).consumed += s.count
+  }
+  for (const n of supplies) {
+    const f = rowFlows.get(n)!
+    const b = of(n.item)
+    b.imported += f.purchased
+    b.deficit += f.shortfall
+  }
+  for (const b of balance.values()) {
+    let net = b.produced - b.consumed + b.imported + b.deficit - b.target
+    if (Math.abs(net) <= RELATIVE_NOISE * Math.max(1, b.produced, b.consumed)) net = 0
+    if (globals.has(b.item)) {
+      const missing = Math.max(0, -net)
+      if (globals.get(b.item)) b.deficit += missing
+      else b.imported += missing
+    }
+    b.surplus = Math.max(0, net)
+  }
+
+  return {
+    status: 'ok',
+    targets,
+    runs,
+    balances: [...balance.values()],
+    tree: buildTree(shape.roots, rowFlows, mods),
+  }
 }

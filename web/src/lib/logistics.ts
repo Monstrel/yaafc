@@ -1,5 +1,5 @@
 import { craftsPerMachine, itemsPerSlot, onBelt, outputCap } from './machineRate'
-import type { Process } from './processes'
+import { runKey, type Process } from './processes'
 import type { ProcessRun } from './solver'
 import type { Modifiers } from './upgrades'
 
@@ -15,7 +15,8 @@ export interface BeltFlow {
 }
 
 export interface LogisticsCheck {
-  processId: string
+  /** The process on its machine (`runKey`). */
+  key: string
   machineName: string
   beltSpeed: number
   beltIn: number
@@ -78,7 +79,7 @@ export function checkProcess(p: Process, mods: Modifiers, machines = 0): Logisti
   // Output items per minute at the capped rate (for the "capped at" note).
   const solidOut = p.outputs.filter((s) => onBelt(s.item)).reduce((sum, s) => sum + s.count * crafts, 0)
   return {
-    processId: p.id,
+    key: runKey(p),
     machineName: machine.name,
     beltSpeed: speed,
     beltIn,
@@ -101,7 +102,7 @@ export function checkLogistics(runs: ProcessRun[], mods: Modifiers): Map<string,
   const checks = new Map<string, LogisticsCheck>()
   for (const run of runs) {
     const check = checkProcess(run.process, mods, run.machines)
-    if (check) checks.set(run.process.id, check)
+    if (check) checks.set(run.key, check)
   }
   return checks
 }

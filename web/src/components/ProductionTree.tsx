@@ -4,17 +4,20 @@ import { fmt } from '../lib/format'
 import type { LogisticsCheck } from '../lib/logistics'
 import type { ProcessCatalog } from '../lib/processes'
 import { branchIds, type TreeNode } from '../lib/tree'
-import type { Plan, Separation } from '../lib/types'
+import type { ProducerPick } from '../lib/choices'
+import type { Separation } from '../lib/types'
 import { ItemIcon, ItemLabel } from './ItemIcon'
 import { Money } from './Money'
 import { ProducerSelect } from './ProducerSelect'
 
 interface Props {
   tree: TreeNode[]
-  plan: Plan
   catalog: ProcessCatalog
-  onProducer: (item: string, producer: string, machine?: string) => void
-  onCatalysts: (processId: string, catalysts: string[]) => void
+  onProducer: (pick: ProducerPick) => void
+  /** Drops a row's own producer pick. */
+  onResetProducer: (row: string) => void
+  /** Loads catalysts into one row's machines. */
+  onCatalysts: (row: string, catalysts: string[]) => void
   onSeparate: (s: Separation, on: boolean) => void
   /** Plan-wide unused amount per item (per minute), to flag overflowing by-products. */
   unused: Map<string, number>
@@ -34,9 +37,9 @@ interface JumpState {
 /** Foldable tree-table: one root per target, each ingredient a child branch with its share of machines. */
 export function ProductionTree({
   tree,
-  plan,
   catalog,
   onProducer,
+  onResetProducer,
   onCatalysts,
   onSeparate,
   unused,
@@ -69,6 +72,13 @@ export function ProductionTree({
     return out
   }, [view])
   const byId = useMemo(() => new Map(all.map((e) => [e.node.id, e])), [all])
+  // Rows per item that use a producer of their own: a pick can cover one branch or all of them.
+  const rowsOf = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const { node } of all)
+      if (node.producer && node.id !== PLAN_ROOT) counts.set(node.item, (counts.get(node.item) ?? 0) + 1)
+    return counts
+  }, [all])
 
   // "Build separately" menu: where to gather this row's item.
   const [menu, setMenu] = useState<{ node: TreeNode; anchors: TreeNode[]; x: number; y: number } | null>(null)
@@ -228,9 +238,10 @@ export function ProductionTree({
                   afterBranch={line.afterBranch}
                   open={!collapsed.has(line.node.id)}
                   onToggle={() => toggle(line.node.id)}
-                  plan={plan}
                   catalog={catalog}
+                  rows={rowsOf.get(line.node.item) ?? 1}
                   onProducer={onProducer}
+                  onResetProducer={onResetProducer}
                   onCatalysts={onCatalysts}
                   onSeparate={onSeparate}
                   onSeparateMenu={openMenu}
@@ -295,9 +306,10 @@ function TreeRow({
   depth,
   open,
   onToggle,
-  plan,
   catalog,
+  rows,
   onProducer,
+  onResetProducer,
   onCatalysts,
   onSeparate,
   onSeparateMenu,
@@ -315,10 +327,13 @@ function TreeRow({
   depth: number
   open: boolean
   onToggle: () => void
-  plan: Plan
   catalog: ProcessCatalog
-  onProducer: (item: string, producer: string, machine?: string) => void
-  onCatalysts: (processId: string, catalysts: string[]) => void
+  /** Rows of this item using a producer of their own. */
+  rows: number
+  onProducer: (pick: ProducerPick) => void
+  onResetProducer: (row: string) => void
+  /** Loads catalysts into one row's machines. */
+  onCatalysts: (row: string, catalysts: string[]) => void
   onSeparate: (s: Separation, on: boolean) => void
   onSeparateMenu: (node: TreeNode, button: HTMLElement) => void
   unused: Map<string, number>
@@ -346,9 +361,9 @@ function TreeRow({
     )
 
   const p = node.run?.process
-  const belts = p ? logistics.get(p.id) : undefined
+  const belts = node.run ? logistics.get(node.run.key) : undefined
   const limited = !!belts && belts.utilization < 1 && node.machines > 0
-  const canChoose = node.kind !== 'bus' && (catalog.byProduct.get(node.item)?.length ?? 0) > 0
+  const canChoose = !!node.producer && (catalog.byProduct.get(node.item)?.length ?? 0) > 0
   const price = itemsByKey.get(node.item)?.buyPrice
   const name = itemsByKey.get(node.item)?.name ?? node.item
   const anchorName = node.separation?.anchor && itemsByKey.get(node.separation.anchor)?.name
@@ -358,7 +373,7 @@ function TreeRow({
       {link(
         node,
         `from:${s.id}`,
-        (n) => n.kind === 'produce' && n.run?.process.id === s.id && n.machines > 0,
+        (n) => n.id === s.id,
         s.label,
         `Show the ${s.label} machines`,
       )}
@@ -428,7 +443,18 @@ function TreeRow({
           <span className="leaf-note">from the bus</span>
         ) : (
           <>
-            {canChoose && <ProducerSelect item={node.item} plan={plan} catalog={catalog} onChange={onProducer} compact />}
+            {canChoose && (
+              <ProducerSelect
+                item={node.item}
+                current={{ producer: node.producer, process: node.run?.process }}
+                catalog={catalog}
+                onChange={(producer, machine, everywhere) =>
+                  onProducer({ item: node.item, producer, machine, row: node.id, everywhere })
+                }
+                branch={{ rows, own: node.ownChoice, onReset: () => onResetProducer(node.id) }}
+                compact
+              />
+            )}
             {node.consolidated && (
               <div className="note-line">
                 ⇱{' '}
@@ -462,7 +488,7 @@ function TreeRow({
                       aria-pressed={on}
                       title={`${itemsByKey.get(c.key)?.name}: ${c.description} (${c.charges.toLocaleString()} charges)`}
                       onClick={() =>
-                        onCatalysts(p.id, on ? p.catalysts.filter((k) => k !== c.key) : [...p.catalysts, c.key])
+                        onCatalysts(node.id, on ? p.catalysts.filter((k) => k !== c.key) : [...p.catalysts, c.key])
                       }
                     >
                       <ItemIcon item={c.key} size={16} />
@@ -489,7 +515,7 @@ function TreeRow({
                     {link(
                       node,
                       `uses:${b.item}`,
-                      (n) => n.item === b.item && n.rate > 0 && (n.kind === 'byproduct' || n.fromByproduct > 0),
+                      (n) => n.byproductSources.some((s) => s.id === node.id),
                       <ItemLabel item={b.item} count={fmt(b.count)} size={16} />,
                       `Show where ${itemsByKey.get(b.item)?.name ?? b.item} is used`,
                     )}
@@ -661,6 +687,8 @@ function viewOf(tree: TreeNode[]): TreeNode[] {
     byproductSources: [],
     purchased: 0,
     shortfall: 0,
+    producer: '',
+    ownChoice: false,
     children: [...targets, ...groups],
   }
   return [plan]

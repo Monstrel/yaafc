@@ -9,9 +9,10 @@ import { HEAT, NUTRIENTS, iconUrl, itemName, items, itemsByKey } from '../lib/ga
 import { fmt } from '../lib/format'
 import { checkLogistics, type LogisticsCheck } from '../lib/logistics'
 import { usePlanModel } from '../lib/planModel'
+import { chooseProducer, clearBranchChoice, migrateCatalysts, setRowCatalysts, type ProducerPick } from '../lib/choices'
 import { pruneChoices, type ResolvedTarget } from '../lib/solver'
-import { separationKey, separationsOf, withSeparation, withoutSeparation } from '../lib/separate'
-import { buildTree, staleSeparations } from '../lib/tree'
+import { separationsOf, withSeparation, withoutSeparation } from '../lib/separate'
+import { planProducer } from '../lib/unfold'
 import type { Plan, PlanTarget, SavedRecipe, Separation } from '../lib/types'
 import { MAX_COIN_STACK, PLANNER_UPGRADES, maxLevel, upgradeLevel, type Modifiers } from '../lib/upgrades'
 
@@ -39,18 +40,12 @@ const visibleItems = items.filter((i) => !i.hidden)
 
 export function PlannerPage({ plans, plan, saved, onSelectPlan, onUpdatePlan, onNewPlan, onDuplicatePlan, onDeletePlan }: Props) {
   const { mods, catalog, result } = usePlanModel(plan, saved)
-  // Forget recipe, machine and catalyst picks for anything that has left the plan.
+  // Forget recipe, machine, catalyst, branch and build-separately picks for anything that has left
+  // the plan (and build-separately picks that no longer gather anything).
   useEffect(() => {
-    if (pruneChoices(plan, catalog)) onUpdatePlan((p) => pruneChoices(p, catalog) ?? p)
+    if (migrateCatalysts(plan, catalog)) onUpdatePlan((p) => migrateCatalysts(p, catalog) ?? p)
+    else if (pruneChoices(plan, catalog)) onUpdatePlan((p) => pruneChoices(p, catalog) ?? p)
   }, [plan, catalog, onUpdatePlan])
-  const separations = useMemo(() => separationsOf(plan.separate), [plan.separate])
-  const tree = useMemo(() => buildTree(result, result.targets, separations), [result, separations])
-  // Forget build-separately choices that no longer gather anything (the item left the anchor, say).
-  useEffect(() => {
-    const stale = new Set(staleSeparations(tree, separations).map(separationKey))
-    if (stale.size)
-      onUpdatePlan((p) => ({ ...p, separate: separationsOf(p.separate).filter((s) => !stale.has(separationKey(s))) }))
-  }, [tree, separations, onUpdatePlan])
   // result.targets skips rows with no item chosen yet; line them back up with the rows.
   let resolvedIndex = 0
   const resolvedByRow = plan.targets.map((t) => (t.item ? result.targets[resolvedIndex++] : undefined))
@@ -61,14 +56,22 @@ export function PlannerPage({ plans, plan, saved, onSelectPlan, onUpdatePlan, on
   )
   const beltLimited = [...logistics.values()].filter((c) => c.utilization < 1 && c.machines > 0)
 
-  const setProducer = (item: string, producer: string, machine?: string) =>
-    onUpdatePlan((p) => ({
-      ...p,
-      producers: { ...p.producers, [item]: producer },
-      machines: machine ? { ...p.machines, [producer]: machine } : p.machines,
-    }))
-  const setCatalysts = (processId: string, catalysts: string[]) =>
-    onUpdatePlan((p) => ({ ...p, catalysts: { ...p.catalysts, [processId]: catalysts } }))
+  const setProducer = (pick: ProducerPick) => onUpdatePlan((p) => chooseProducer(p, catalog, pick))
+  const resetProducer = (row: string) => onUpdatePlan((p) => clearBranchChoice(p, row))
+  /** Fuel or fertilizer: picked for the whole plan. */
+  const planWide = (item: string) => {
+    const producer = planProducer(plan, catalog, item)
+    return (
+      <ProducerSelect
+        item={item}
+        current={{ producer, process: catalog.byId.get(producer) }}
+        catalog={catalog}
+        onChange={(producer, machine) => setProducer({ item, producer, machine })}
+        noImport
+      />
+    )
+  }
+  const setCatalysts = (row: string, catalysts: string[]) => onUpdatePlan((p) => setRowCatalysts(p, row, catalysts))
   const setSeparate = (s: Separation, on: boolean) =>
     onUpdatePlan((p) => {
       const list = separationsOf(p.separate)
@@ -77,7 +80,7 @@ export function PlannerPage({ plans, plan, saved, onSelectPlan, onUpdatePlan, on
   const setFeedback = (resource: 'fuel' | 'fertilizer', on: boolean) =>
     onUpdatePlan((p) => ({ ...p, feedback: { ...p.feedback, [resource]: on } }))
 
-  const purchases = result.balances.filter((b) => b.producer === 'import' && !b.item.startsWith('@') && b.imported > 0)
+  const purchases = result.balances.filter((b) => !b.item.startsWith('@') && b.imported > 0)
   const surplus = result.balances.filter((b) => b.surplus > 0 && !b.item.startsWith('@'))
   const deficits = result.balances.filter((b) => b.deficit > 0)
   const heat = result.balances.find((b) => b.item === HEAT)
@@ -146,7 +149,7 @@ export function PlannerPage({ plans, plan, saved, onSelectPlan, onUpdatePlan, on
             <p className="hint">Taken from the factory bus: the planner shows how much you need instead of planning their production.</p>
             <label className="stacked">
               Preferred fuel
-              <ProducerSelect item={HEAT} plan={plan} catalog={catalog} onChange={setProducer} noImport />
+              {planWide(HEAT)}
             </label>
             <label className="check">
               <input type="checkbox" checked={!!plan.feedback?.fuel} onChange={(e) => setFeedback('fuel', e.target.checked)} />
@@ -154,7 +157,7 @@ export function PlannerPage({ plans, plan, saved, onSelectPlan, onUpdatePlan, on
             </label>
             <label className="stacked">
               Preferred fertilizer
-              <ProducerSelect item={NUTRIENTS} plan={plan} catalog={catalog} onChange={setProducer} noImport />
+              {planWide(NUTRIENTS)}
             </label>
             <label className="check">
               <input
@@ -300,9 +303,9 @@ export function PlannerPage({ plans, plan, saved, onSelectPlan, onUpdatePlan, on
                   <ul className="logistics-list">
                     {beltLimited.map((c) => (
                       <LogisticsLine
-                        key={c.processId}
+                        key={c.key}
                         check={c}
-                        label={result.runs.find((r) => r.process.id === c.processId)?.process.label ?? c.processId}
+                        label={result.runs.find((r) => r.key === c.key)?.process.label ?? c.key}
                       />
                     ))}
                   </ul>
@@ -323,10 +326,10 @@ export function PlannerPage({ plans, plan, saved, onSelectPlan, onUpdatePlan, on
               <section className="panel">
                 <h2>Production</h2>
                 <ProductionTree
-                  tree={tree}
-                  plan={plan}
+                  tree={result.tree}
                   catalog={catalog}
                   onProducer={setProducer}
+                  onResetProducer={resetProducer}
                   onCatalysts={setCatalysts}
                   onSeparate={setSeparate}
                   unused={new Map(surplus.map((b) => [b.item, b.surplus]))}

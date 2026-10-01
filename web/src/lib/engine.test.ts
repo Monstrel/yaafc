@@ -8,9 +8,11 @@ import { countRecipes, diagnoseNoResults, type FinderQuery } from './diagnose'
 import { checkLogistics, checkProcess } from './logistics'
 import { craftsPerMachine } from './machineRate'
 import { pruneChoices, solvePlan, type PlanResult } from './solver'
-import { buildTree, staleSeparations, type TreeNode } from './tree'
+import type { TreeNode } from './tree'
+import { chooseProducer, clearBranchChoice, migrateCatalysts, setRowCatalysts } from './choices'
+import { resolveChoice } from './unfold'
 import { separationsOf, withSeparation } from './separate'
-import type { Plan, SavedRecipe } from './types'
+import type { Plan, SavedRecipe, Separation } from './types'
 import { PLANNER_UPGRADES, maxLevel, modifiers, upgradeLevel } from './upgrades'
 
 const round1 = (x: number) => Math.round(x * 10) / 10
@@ -191,10 +193,19 @@ describe('planner solver', () => {
 describe('production tree', () => {
   const mods = modifiers({})
   const catalog = buildCatalog({ saved: [], machines: {}, mods, fertilizer: null })
+  const all = (n: TreeNode): TreeNode[] => [n, ...n.children.flatMap(all)]
+  /** Every machine in the plan shows up in exactly one row. */
+  const expectMachinesOnce = (r: PlanResult) => {
+    const nodes = r.tree.flatMap(all)
+    for (const run of r.runs.filter((x) => x.machines > 0 && x.process.machine)) {
+      const shown = nodes.filter((n) => n.run?.key === run.key).reduce((sum, n) => sum + n.machines, 0)
+      expect(shown, run.process.label).toBeCloseTo(run.machines)
+    }
+  }
 
   it('splits machines by branch and ends in purchased leaves', () => {
     const targets = [{ item: 'WoodBoard', rate: 60 }]
-    const [root] = buildTree(solvePlan(plan({ targets }), catalog, mods), targets)
+    const [root] = solvePlan(plan({ targets }), catalog, mods).tree
     expect(root.kind).toBe('produce')
     expect(root.machines).toBeCloseTo(2)
     const wood = root.children.find((c) => c.item === 'Wood')!
@@ -206,45 +217,57 @@ describe('production tree', () => {
     // Vitality Essence ← Oblivion Essence ← Vitality Essence (both Paradox Crucible recipes).
     const targets = [{ item: 'Vitae', rate: 10 }]
     const result = solvePlan(plan({ targets, producers: { Mors: 'recipe:Mors_Alt' } }), catalog, mods)
-    const tree = buildTree(result, targets)
     const find = (nodes: TreeNode[]): TreeNode | undefined =>
       nodes.map((n) => (n.kind === 'loop' ? n : find(n.children))).find(Boolean)
-    expect(find(tree)?.item).toBe('Vitae')
+    expect(find(result.tree)?.item).toBe('Vitae')
+  })
+
+  it('feeds a by-product to the row that uses it nearest its source', () => {
+    // Steel fails into Iron Ingots, which go straight back into the Steel's own Iron Ingot supply.
+    const [steel] = solvePlan(plan({ targets: [{ item: 'SteelIngot', rate: 10 }] }), catalog, mods).tree
+    const iron = steel.children.find((c) => c.item === 'IronIngot')!
+    const failed = steel.byproducts.find((b) => b.item === 'IronIngot')!.count
+    expect(failed).toBeGreaterThan(0)
+    expect(iron.byproductSources.map((s) => s.id)).toEqual([steel.id])
+    expect(iron.fromByproduct).toBeCloseTo(failed)
+  })
+
+  it('shows every machine in exactly one row', () => {
+    expectMachinesOnce(solvePlan(plan({ targets: [{ item: 'Sol', rate: 0.25 }] }), catalog, mods))
   })
 
   describe('building an item separately', () => {
     const targets = [{ item: 'Sol', rate: 0.25 }]
-    const result = solvePlan(plan({ targets }), catalog, mods)
-    const all = (n: TreeNode): TreeNode[] => [n, ...n.children.flatMap(all)]
-    const machinesOf = (nodes: TreeNode[], processId: string) =>
-      nodes.filter((n) => n.run?.process.id === processId).reduce((sum, n) => sum + n.machines, 0)
+    const solve = (separate: Separation[] = []) => solvePlan(plan({ targets, separate }), catalog, mods)
+    const keptSeparations = (separate: Separation[]) =>
+      pruneChoices(plan({ targets, separate }), catalog)?.separate ?? separate
+    const result = solve()
 
     it('gathers every use under one root, keeping each machine counted once', () => {
-      const roots = buildTree(result, targets, [{ item: 'WorldTreeLeaf' }])
-      const nodes = roots.flatMap(all)
-      const leafRoots = roots.filter((r) => r.item === 'WorldTreeLeaf')
+      const r = solve([{ item: 'WorldTreeLeaf' }])
+      const nodes = r.tree.flatMap(all)
+      const leafRoots = r.tree.filter((n) => n.item === 'WorldTreeLeaf')
       expect(leafRoots).toHaveLength(1)
       expect(leafRoots[0].consolidated).toBe(true)
-      const balance = result.balances.find((b) => b.item === 'WorldTreeLeaf')!
+      const balance = r.balances.find((b) => b.item === 'WorldTreeLeaf')!
       expect(leafRoots[0].rate).toBeCloseTo(balance.consumed + balance.target)
 
       const uses = nodes.filter((n) => n.item === 'WorldTreeLeaf' && !n.consolidated)
       expect(uses.length).toBeGreaterThan(1)
       expect(uses.every((n) => n.kind === 'separate' && n.children.length === 0 && n.machines === 0)).toBe(true)
-
-      for (const run of result.runs.filter((r) => r.machines > 0 && r.process.machine))
-        expect(machinesOf(nodes, run.process.id), run.process.label).toBeCloseTo(run.machines)
+      expectMachinesOnce(r)
     })
 
     it('ignores items no machine makes for the plan', () => {
-      const bought = result.balances.find((b) => b.producer === 'import' && b.consumed > 0 && !b.item.startsWith('@'))!
-      const roots = buildTree(result, targets, [{ item: bought.item }])
-      expect(roots.filter((r) => r.consolidated)).toHaveLength(0)
-      expect(roots.flatMap(all).some((n) => n.item === bought.item && n.kind === 'purchase')).toBe(true)
+      const bought = result.tree.flatMap(all).find((n) => n.kind === 'purchase')!
+      const nodes = solve([{ item: bought.item }]).tree.flatMap(all)
+      expect(nodes.some((n) => n.consolidated)).toBe(false)
+      expect(nodes.some((n) => n.item === bought.item && n.kind === 'purchase')).toBe(true)
+      expect(keptSeparations([{ item: bought.item }])).toEqual([])
     })
 
     it('uses the target row itself as the root when the target is separated', () => {
-      const roots = buildTree(result, targets, [{ item: 'Sol' }])
+      const roots = solve([{ item: 'Sol' }]).tree
       expect(roots).toHaveLength(1)
       expect(roots[0].consolidated).toBe(true)
     })
@@ -263,12 +286,8 @@ describe('production tree', () => {
 
     describe('with an item above it', () => {
       // Fairy Dust is made in two branches of Sol, each grinding its own Chamomile.
-      const dusts = buildTree(result, targets).flatMap(all).filter((n) => n.item === 'FairyDust' && n.kind === 'produce')
+      const dusts = result.tree.flatMap(all).filter((n) => n.item === 'FairyDust' && n.kind === 'produce')
       const chamomileUnder = (n: TreeNode) => all(n).filter((c) => c.item === 'Chamomile' && c !== n)
-      const expectMachinesOnce = (nodes: TreeNode[]) => {
-        for (const run of result.runs.filter((r) => r.machines > 0 && r.process.machine))
-          expect(machinesOf(nodes, run.process.id), run.process.label).toBeCloseTo(run.machines)
-      }
 
       it('finds the example it needs', () => {
         expect(dusts.length).toBeGreaterThan(1)
@@ -277,8 +296,8 @@ describe('production tree', () => {
 
       it('gathers the uses below every anchor row into a "with" row after its children', () => {
         const sep = { item: 'Chamomile', anchor: 'FairyDust' }
-        const roots = buildTree(result, targets, [sep])
-        const nodes = roots.flatMap(all)
+        const r = solve([sep])
+        const nodes = r.tree.flatMap(all)
         const anchors = nodes.filter((n) => n.item === 'FairyDust' && n.kind === 'produce')
         for (const dust of anchors) {
           const group = dust.children.at(-1)!
@@ -289,26 +308,26 @@ describe('production tree', () => {
           expect(uses.every((n) => n.groupId === group.id && n.groupAnchor === 'FairyDust')).toBe(true)
           expect(group.rate).toBeCloseTo(uses.reduce((sum, n) => sum + n.rate, 0))
         }
-        expect(staleSeparations(roots, [sep])).toEqual([])
-        expectMachinesOnce(nodes)
+        expect(keptSeparations([sep])).toEqual([sep])
+        expectMachinesOnce(r)
       })
 
       it('can gather under just one anchor row', () => {
         const sep = { item: 'Chamomile', anchor: 'FairyDust', at: dusts[0].id }
-        const nodes = buildTree(result, targets, [sep]).flatMap(all)
+        const r = solve([sep])
+        const nodes = r.tree.flatMap(all)
         const groups = nodes.filter((n) => n.separation)
         expect(groups).toHaveLength(1)
         expect(groups[0].id).toBe(`${dusts[0].id}/with:Chamomile`)
         const other = nodes.find((n) => n.id === dusts[1].id)!
         expect(chamomileUnder(other).some((n) => n.kind === 'produce')).toBe(true)
-        expectMachinesOnce(nodes)
+        expectMachinesOnce(r)
       })
 
       it('counts machines once when one gathered row feeds another, in either order', () => {
         const powder = { item: 'ChamomilePowder', anchor: 'FairyDust' }
         const herb = { item: 'Chamomile', anchor: 'FairyDust' }
-        // Jupiter uses Planks directly and through its Pulleys: built first, the Plank row has to be
-        // rebuilt once the Pulley row adds its Planks.
+        // Jupiter uses Planks directly and through its Pulleys.
         const plank = { item: 'WoodBoard', anchor: 'Jupiter' }
         const pulley = { item: 'WoodPulley', anchor: 'Jupiter' }
         for (const seps of [
@@ -317,12 +336,11 @@ describe('production tree', () => {
           [plank, pulley],
           [pulley, plank],
         ]) {
-          const roots = buildTree(result, targets, seps)
-          expect(staleSeparations(roots, seps)).toEqual([])
-          expectMachinesOnce(roots.flatMap(all))
+          expect(keptSeparations(seps)).toEqual(seps)
+          expectMachinesOnce(solve(seps))
         }
-        const jupiter = buildTree(result, targets, [plank, pulley])
-          .flatMap(all)
+        const jupiter = solve([plank, pulley])
+          .tree.flatMap(all)
           .find((n) => n.item === 'Jupiter')!
         const planks = jupiter.children.find((c) => c.item === 'WoodBoard' && c.consolidated)!
         const uses = all(jupiter).filter((n) => n.item === 'WoodBoard' && n.kind === 'separate')
@@ -330,42 +348,8 @@ describe('production tree', () => {
         expect(planks.rate).toBeCloseTo(uses.reduce((sum, n) => sum + n.rate, 0))
       })
 
-      it('takes back what a gathered row gave the others when it is rebuilt', () => {
-        // R ← X + Q, Q ← X, X ← Y, one craft per minute per machine. Gathered under R in the order
-        // X, Y, Q: X is built from R's own X (giving Y 1/min), then Q's row adds another X, so X is
-        // rebuilt at 2/min and must not count its first 1/min of Y twice.
-        const recipe = (item: string, inputs: string[], crafts: number) => ({
-          process: {
-            id: item,
-            label: item,
-            product: item,
-            outputs: [{ item, count: 1 }],
-            inputs: inputs.map((i) => ({ item: i, count: 1 })),
-            machine: { name: 'M' },
-          },
-          craftsPerMinute: crafts,
-          machines: crafts,
-          inputs: inputs.map((i) => ({ item: i, count: crafts })),
-          outputs: [{ item, count: crafts }],
-        })
-        const balance = (item: string, made: number, target = 0) =>
-          ({ item, producer: item, target, produced: made, consumed: made - target, imported: 0, deficit: 0, surplus: 0 })
-        const fake = {
-          status: 'ok',
-          runs: [recipe('R', ['X', 'Q'], 1), recipe('Q', ['X'], 1), recipe('X', ['Y'], 2), recipe('Y', [], 2)],
-          balances: [balance('R', 1, 1), balance('Q', 1), balance('X', 2), balance('Y', 2)],
-        } as never as PlanResult
-        const seps = ['X', 'Y', 'Q'].map((item) => ({ item, anchor: 'R' }))
-        const [root] = buildTree(fake, [{ item: 'R', rate: 1 }], seps)
-        const rows = Object.fromEntries(root.children.filter((c) => c.consolidated).map((c) => [c.item, c]))
-        expect(rows.X.rate).toBeCloseTo(2)
-        expect(rows.Y.rate).toBeCloseTo(2)
-        expect(rows.Y.machines).toBeCloseTo(2)
-      })
-
-      it('reports a choice whose anchor sits above none of its uses as stale', () => {
-        const sep = { item: 'Chamomile', anchor: 'WorldTreeLeaf' }
-        expect(staleSeparations(buildTree(result, targets, [sep]), [sep])).toEqual([sep])
+      it('forgets a choice whose anchor sits above none of its uses', () => {
+        expect(keptSeparations([{ item: 'Chamomile', anchor: 'WorldTreeLeaf' }])).toEqual([])
       })
     })
   })
@@ -394,20 +378,128 @@ describe('production tree', () => {
   })
 })
 
-describe('forgetting choices', () => {
+describe('producers per branch', () => {
   const mods = modifiers({})
   const catalog = buildCatalog({ saved: [], machines: {}, mods, fertilizer: null })
+  const all = (n: TreeNode): TreeNode[] => [n, ...n.children.flatMap(all)]
+  const solved = (p: Plan) => solvePlan(p, catalog, mods)
+  const rows = (r: PlanResult, item: string) => r.tree.flatMap(all).filter((n) => n.item === item)
+  // Sol makes Fairy Dust in two branches.
+  const sol = plan({ targets: [{ item: 'Sol', rate: 0.25 }] })
+  const [first, second] = rows(solved(sol), 'FairyDust')
+
+  it('applies a pick to its own branch only', () => {
+    const p = chooseProducer(sol, catalog, { item: 'FairyDust', producer: 'import', row: first.id })
+    expect(p.branches).toEqual({ [first.id]: { producer: 'import' } })
+    const r = solved(p)
+    expectBalanced(r)
+    const [a, b] = rows(r, 'FairyDust')
+    expect(a.kind).toBe('purchase')
+    expect(a.ownChoice).toBe(true)
+    expect(b.kind).toBe('produce')
+    expect(b.ownChoice).toBe(false)
+    const dust = r.balances.find((x) => x.item === 'FairyDust')!
+    expect(dust.imported).toBeCloseTo(a.rate)
+    expect(dust.produced).toBeCloseTo(b.rate)
+  })
+
+  it('applies a pick everywhere on request, clearing branch picks', () => {
+    const branch = chooseProducer(sol, catalog, { item: 'FairyDust', producer: 'import', row: first.id })
+    const p = chooseProducer(branch, catalog, { item: 'FairyDust', producer: 'import', row: second.id, everywhere: true })
+    expect(p.producers.FairyDust).toBe('import')
+    expect(p.branches).toEqual({})
+    expect(rows(solved(p), 'FairyDust').every((n) => n.kind === 'purchase')).toBe(true)
+  })
+
+  it("doesn't store a pick the row inherits anyway, and can clear one", () => {
+    const same = chooseProducer(sol, catalog, { item: 'FairyDust', producer: first.producer, row: first.id })
+    expect(same.branches ?? {}).toEqual({})
+    const picked = chooseProducer(sol, catalog, { item: 'FairyDust', producer: 'import', row: first.id })
+    expect(clearBranchChoice(picked, first.id).branches).toEqual({})
+  })
+
+  it('covers rows of the same item further down the branch, the deepest pick winning', () => {
+    const p = plan({ branches: { '0/WoodBoard': { producer: 'import' }, '0/WoodBoard/X/WoodBoard/Y/WoodBoard': { producer: 'recipe:WoodBoard' } } })
+    expect(resolveChoice(p, catalog, 'WoodBoard', '0/WoodBoard/X/WoodBoard').producer).toBe('import')
+    expect(resolveChoice(p, catalog, 'WoodBoard', '0/WoodBoard/X/WoodBoard').own).toBe(false)
+    expect(resolveChoice(p, catalog, 'Wood', '0/WoodBoard/Wood').producer).not.toBe('recipe:WoodBoard')
+    expect(resolveChoice(p, catalog, 'WoodBoard', '0/WoodBoard/X/WoodBoard/Y/WoodBoard/Z/WoodBoard').producer).toBe(
+      'recipe:WoodBoard',
+    )
+    expect(resolveChoice(p, catalog, 'WoodBoard', '1/WoodBoard').producer).toBe('recipe:WoodBoard')
+  })
+
+  it('a pick on a row replaces picks below it for the same item', () => {
+    const p = plan({ branches: { '0/A/WoodBoard': { producer: 'import' }, '0/A/Other': { producer: 'import' } } })
+    const next = chooseProducer(p, catalog, { item: 'WoodBoard', producer: 'import', row: '0/A' })
+    expect(next.branches).toEqual({ '0/A/Other': { producer: 'import' }, '0/A': { producer: 'import' } })
+  })
+
+  it('runs one recipe on different machines in different branches', () => {
+    const coke = plan({ targets: [{ item: 'Coke', rate: 10 }, { item: 'Coke', rate: 10 }] })
+    const p = chooseProducer(coke, catalog, { item: 'Coke', producer: 'recipe:Coke', machine: 'AdvancedAthanor', row: '1/Coke' })
+    const r = solved(p)
+    expectBalanced(r)
+    const runs = r.runs.filter((x) => x.process.id === 'recipe:Coke')
+    expect(runs.map((x) => x.process.machine?.key).sort()).toEqual(['AdvancedAthanor', 'Athanor'])
+    expect(r.tree.map((n) => n.run?.process.machine?.key)).toEqual(['Athanor', 'AdvancedAthanor'])
+  })
+
+  describe('catalysts', () => {
+    const coke = chooseProducer(
+      plan({ targets: [{ item: 'Coke', rate: 10 }, { item: 'Coke', rate: 10 }] }),
+      catalog,
+      { item: 'Coke', producer: 'recipe:Coke', machine: 'AdvancedAthanor', everywhere: true },
+    )
+    const athanor = buildCatalog({ saved: [], machines: coke.machines, mods, fertilizer: null })
+
+    it('loads into one row at a time', () => {
+      const r = solvePlan(setRowCatalysts(coke, '1/Coke', ['Catalyst2']), athanor, mods)
+      expectBalanced(r)
+      expect(r.tree.map((n) => n.run?.process.catalysts)).toEqual([[], ['Catalyst2']])
+      // Fertile doubles the output, so the second row needs half the machines.
+      expect(r.tree[1].machines).toBeCloseTo(r.tree[0].machines / 2)
+      expect(r.runs.filter((x) => x.process.id === 'recipe:Coke')).toHaveLength(2)
+    })
+
+    it('are dropped when the row no longer takes them', () => {
+      const loaded = setRowCatalysts(coke, '1/Coke', ['Catalyst2'])
+      expect(pruneChoices(loaded, athanor)).toBeNull()
+      const plain = chooseProducer(loaded, athanor, { item: 'Coke', producer: 'recipe:Coke', machine: 'Athanor', row: '1/Coke' })
+      expect(pruneChoices(plain, athanor)?.rowCatalysts).toEqual({})
+      expect(setRowCatalysts(loaded, '1/Coke', []).rowCatalysts).toEqual({})
+    })
+
+    it('saved per recipe by older plans move onto every row running it', () => {
+      const old = { ...coke, catalysts: { 'recipe:Coke': ['Catalyst1'] } }
+      const moved = migrateCatalysts(old, athanor)!
+      expect(moved.catalysts).toBeUndefined()
+      expect(moved.rowCatalysts).toEqual({ '0/Coke': ['Catalyst1'], '1/Coke': ['Catalyst1'] })
+      expect(migrateCatalysts(moved, athanor)).toBeNull()
+    })
+  })
+
+  it('forgets picks for rows that left the plan', () => {
+    const p = chooseProducer(sol, catalog, { item: 'FairyDust', producer: 'import', row: first.id })
+    expect(pruneChoices(p, catalog)).toBeNull()
+    expect(pruneChoices({ ...p, targets: [{ item: 'WoodBoard', rate: 1 }] }, catalog)?.branches).toEqual({})
+  })
+})
+
+describe('forgetting choices', () => {
+  const mods = modifiers({})
   const choices = {
     producers: { Coke: 'recipe:Coke', [HEAT]: 'fuel:x', [NUTRIENTS]: 'fert:x' },
     machines: { 'recipe:Coke': 'AdvancedAthanor' },
-    catalysts: { 'recipe:Coke': ['Catalyst1'] },
+    rowCatalysts: { '0/Coke': ['Catalyst1'] },
   }
+  const catalog = buildCatalog({ saved: [], machines: choices.machines, mods, fertilizer: null })
 
   it("drops picks for items and processes that left the plan, keeping fuel and fertilizer", () => {
     const pruned = pruneChoices(plan({ targets: [{ item: 'WoodBoard', rate: 1 }], ...choices }), catalog)!
     expect(pruned.producers).toEqual({ [HEAT]: 'fuel:x', [NUTRIENTS]: 'fert:x' })
     expect(pruned.machines).toEqual({})
-    expect(pruned.catalysts).toEqual({})
+    expect(pruned.rowCatalysts).toEqual({})
   })
 
   it('keeps picks still in use', () => {
@@ -425,7 +517,7 @@ describe('multi-output machines', () => {
   const catalog = buildCatalog({ saved: [saved], machines: {}, mods, fertilizer: 'BasicFertilizer' })
   const targets = [{ item: 'Vitae', rate: 15 }]
   const result = solvePlan(plan({ targets, producers: { Vitae: 'cauldron:v' } }), catalog, mods)
-  const [root] = buildTree(result, targets)
+  const [root] = result.tree
   const all = (n: TreeNode): TreeNode[] => [n, ...n.children.flatMap(all)]
 
   it('offers the nursery as the producer of its side product', () => {
@@ -728,7 +820,7 @@ describe('Paradox Crucible (any item → Oblivion Essence)', () => {
     const targets = [{ item: 'Mors', rate: 10 }]
     const result = solvePlan(plan({ targets, producers: { Mors: 'paradox:SteelGear' } }), catalog, mods)
     expectBalanced(result)
-    const [root] = buildTree(result, targets)
+    const [root] = result.tree
     expect(root.run?.process.id).toBe('paradox:SteelGear')
     const gear = root.children.find((c) => c.item === 'SteelGear')!
     expect(gear.rate).toBeCloseTo(10)
@@ -854,7 +946,7 @@ describe('World Tree nursery', () => {
     const targets = [{ item: 'Sol', rate: 0.25 }]
     const result = solvePlan(plan({ targets }), catalog, mods)
     const all = (n: TreeNode): TreeNode[] => [n, ...n.children.flatMap(all)]
-    const nodes = buildTree(result, targets).flatMap(all)
+    const nodes = result.tree.flatMap(all)
     for (const run of result.runs.filter((r) => r.machines > 0 && r.process.machine)) {
       const shown = nodes.filter((n) => n.run?.process.id === run.process.id).reduce((sum, n) => sum + n.machines, 0)
       expect(shown, run.process.label).toBeCloseTo(run.machines)

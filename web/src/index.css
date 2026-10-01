@@ -446,6 +446,45 @@ h2 {
   margin-bottom: 6px;
 }
 
+/* Whether a pick covers this row's branch or every row of the item. */
+.recipe-scope {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  padding: 2px 2px 8px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.scope-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px;
+}
+
+.scope-toggle button {
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  padding: 3px 12px;
+  font-size: 13px;
+}
+
+.scope-toggle button[aria-checked='true'] {
+  background: var(--accent);
+  color: var(--panel);
+}
+
+.tag.branch-tag {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .recipe-option {
   display: flex;
   align-items: center;

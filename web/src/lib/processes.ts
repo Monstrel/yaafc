@@ -357,16 +357,24 @@ export interface ProcessCatalog {
   byId: Map<string, Process>
   /** Producer options per product item, game recipes first, then saved cauldron recipes. */
   byProduct: Map<string, Process[]>
-  /** The process as it would run on another of its machines (for previewing the choice). */
-  onMachine: (p: Process, machine: string) => Process
+  /**
+   * The process as it runs on another of its machines (for previewing the choice), and with the
+   * catalysts loaded in one row of the plan.
+   */
+  variant: (p: Process, change: { machine?: string; catalysts?: string[] }) => Process
 }
 
 export function buildCatalog(ctx: ProcessContext): ProcessCatalog {
   const recipes = new Map(gameRecipes.map((r) => [`recipe:${r.key}`, r]))
-  const onMachine = (p: Process, machine: string) => {
+  const variant = (p: Process, { machine = p.machine?.key, catalysts = p.catalysts }: { machine?: string; catalysts?: string[] }) => {
     const r = recipes.get(p.id)
-    if (!r || p.machine?.key === machine) return p
-    return recipeProcess(r, { ...ctx, machines: { ...ctx.machines, [p.id]: machine } })
+    const same = (a: string[], b: string[]) => a.length === b.length && a.every((k) => b.includes(k))
+    if (!r || (p.machine?.key === machine && same(p.catalysts, catalysts))) return p
+    return recipeProcess(r, {
+      ...ctx,
+      machines: machine ? { ...ctx.machines, [p.id]: machine } : ctx.machines,
+      catalysts: { ...ctx.catalysts, [p.id]: catalysts },
+    })
   }
   const all: Process[] = [
     ...gameRecipes.filter((r) => !r.hidden).map((r) => recipeProcess(r, ctx)),
@@ -381,7 +389,7 @@ export function buildCatalog(ctx: ProcessContext): ProcessCatalog {
   for (const p of all) byProduct.set(p.product, [...(byProduct.get(p.product) ?? []), p])
   // Multi-output processes are also offered for their side products, after the main producers.
   for (const p of all) for (const item of p.secondary) byProduct.set(item, [...(byProduct.get(item) ?? []), p])
-  return { byId, byProduct, onMachine }
+  return { byId, byProduct, variant }
 }
 
 /**
@@ -406,6 +414,16 @@ export function defaultProducer(catalog: ProcessCatalog, item: string): string {
     all[0]
   return pick?.id ?? 'import'
 }
+
+/**
+ * Identifies a process on its machine with its catalysts: branches can run one recipe on
+ * different machines, or load different catalysts.
+ */
+export const runKey = (p: Process) =>
+  [p.machine && p.machineOptions.length > 1 ? `${p.id}@${p.machine.key}` : p.id, ...[...p.catalysts].sort()].join('+')
+
+/** The same recipe on the same machine (catalysts aside): what a row loops back to. */
+export const sameRecipe = (a: Process, b: Process) => a.id === b.id && a.machine?.key === b.machine?.key
 
 /**
  * Short name for a producer option shown next to its product: the machine, or what sets the

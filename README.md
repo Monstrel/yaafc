@@ -11,8 +11,10 @@ cauldron recipes as steps in production chains, including self-feeding loops.
 - **Saved recipes**: name and annotate them, then "Use in planner".
 - **Planner**: set targets in items/min. The planner works backward to every step's rate and
   (fractional) machine count, and shows it as a foldable production tree. Any step's producer can
-  be a game recipe, a nursery, a saved ★ cauldron recipe, or a purchase. Loops are solved with a
-  linear program. When a chain can't be met, the shortfall is reported where it breaks, and
+  be a game recipe, a nursery, a saved ★ cauldron recipe, or a purchase, picked per branch (a
+  row and the rows of its item below it) or for every row at once. Each row's machines feed the
+  row above them, as built in the factory; only by-products cross branches, going to the nearest
+  rows that use them. Loops are solved with a linear program. When a chain can't be met, the shortfall is reported where it breaks, and
   everything above it is still sized.
 
 Saved recipes and plans live in the browser (localStorage). Use Export/Import to back them up.
@@ -65,7 +67,7 @@ dotnet run -- export     # writes web/src/data/game-data.json and web/public/ico
 - Recipe outcomes follow each recipe's `ProductSequence` (0 = product, k = fail product k; e.g.
   Steel [1,1,1,0] = 75% fail), averaged per craft.
 - Advanced Athanor: it runs Athanor recipes with the standard Athanor's heat, as its description
-  says. Catalysts are toggled per recipe. Unstable uses `UnstableSequence`, Fertile doubles every
+  says. Catalysts are toggled per tree row. Unstable uses `UnstableSequence`, Fertile doubles every
   output, Resonant yields every product each craft, and Eternal consumes no materials. Each
   catalyst uses the recipe's `CatalystCost` charges per craft, out of 180 / 240 / 1500 / 99999
   charges per item. Those counts come from an int32 table in the game executable. Catalysts are belt
