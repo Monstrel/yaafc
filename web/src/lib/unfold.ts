@@ -1,7 +1,7 @@
-import { HEAT, NUTRIENTS, realItem } from './gameData'
+import { HEAT, NUTRIENTS, buyTier, itemsByKey, realItem } from './gameData'
 import { defaultProducer, sameRecipe, type Process, type ProcessCatalog } from './processes'
 import { separationsOf } from './separate'
-import type { Plan, Separation } from './types'
+import type { MyDefault, Plan, Separation } from './types'
 
 export const IMPORT = 'import'
 const MAX_DEPTH = 40
@@ -29,6 +29,10 @@ export interface PlanNode {
   process?: Process
   /** The row has a producer picked for it alone (not inherited from above or the plan). */
   ownChoice: boolean
+  /** The row follows one of the player's saved defaults. */
+  mine: boolean
+  /** Catalysts the row loads unless it sets its own (a saved default's). */
+  defaultCatalysts: string[]
   /** Row that supplies a `loop` or `separate` row. */
   ref?: PlanNode
   /** For a `separate` row: the item whose row gathers it (none: the top of the plan). */
@@ -53,7 +57,13 @@ export interface ResolvedChoice {
   process?: Process
   /** Picked for this row itself. */
   own: boolean
+  /** One of the player's saved defaults. */
+  mine: boolean
+  /** Catalysts the row loads unless it sets its own. */
+  defaultCatalysts: string[]
 }
+
+const picked = (c: ResolvedChoice) => ({ ownChoice: c.own, mine: c.mine, defaultCatalysts: c.defaultCatalysts })
 
 const parentId = (id: string) => {
   const k = id.lastIndexOf('/')
@@ -68,13 +78,36 @@ export const rowItem = (id: string) => {
 
 const makes = (p: Process | undefined, item: string) => !!p && (p.product === item || p.secondary.includes(item))
 
-/** The plan-wide producer of an item: the plan's pick if it still makes the item, else the default. */
-export function planProducer(plan: Plan, catalog: ProcessCatalog, item: string): string {
-  const choice = plan.producers[item]
-  if (choice === IMPORT) return choice
-  if (choice && makes(catalog.byId.get(choice), item)) return choice
-  return defaultProducer(catalog, item)
+const knownMachine = (p: Process, machine: string | undefined) =>
+  machine && p.machineOptions.some((m) => m.key === machine) ? machine : undefined
+
+/**
+ * The player's saved default for an item, while it still makes the item and the plan's research
+ * tier can run it (its ingredients included).
+ */
+export function myDefault(catalog: ProcessCatalog, item: string): MyDefault | undefined {
+  const mine = catalog.mine[item]
+  if (!mine) return undefined
+  if (mine.producer === IMPORT) return itemsByKey.get(item)?.buyPrice == null || buyTier(item) <= catalog.tier ? mine : undefined
+  const p = catalog.byId.get(mine.producer)
+  if (!makes(p, item)) return undefined
+  const run = catalog.variant(p!, { machine: knownMachine(p!, mine.machine), catalysts: mine.catalysts ?? [] })
+  return catalog.reach(run) <= catalog.tier ? mine : undefined
 }
+
+/**
+ * The plan-wide producer of an item: the plan's pick if it still makes the item, else the player's
+ * saved default (with its machine and catalysts), else the built-in default.
+ */
+export function planChoice(plan: Plan, catalog: ProcessCatalog, item: string): MyDefault & { mine: boolean } {
+  const choice = plan.producers[item]
+  if (choice === IMPORT || (choice && makes(catalog.byId.get(choice), item))) return { producer: choice, mine: false }
+  const mine = myDefault(catalog, item)
+  if (mine) return { ...mine, mine: true }
+  return { producer: defaultProducer(catalog, item), mine: false }
+}
+
+export const planProducer = (plan: Plan, catalog: ProcessCatalog, item: string) => planChoice(plan, catalog, item).producer
 
 /**
  * What a row of `item` with id `id` uses: the nearest pick on it or a row of the same item above
@@ -90,19 +123,20 @@ export function resolveChoice(
   for (let at = inherited ? parentId(id) : id; at !== null; at = parentId(at)) {
     const pick = plan.branches?.[at]
     if (!pick || rowItem(at) !== item) continue
-    if (pick.producer === IMPORT) return { producer: IMPORT, own: at === id }
+    if (pick.producer === IMPORT) return { producer: IMPORT, own: at === id, mine: false, defaultCatalysts: [] }
     const p = catalog.byId.get(pick.producer)
     if (makes(p, item)) return onRow(p!, pick.machine, at === id)
   }
-  const producer = planProducer(plan, catalog, item)
-  const p = catalog.byId.get(producer)
-  return p ? onRow(p, undefined, false) : { producer: IMPORT, own: false }
+  const choice = planChoice(plan, catalog, item)
+  const p = catalog.byId.get(choice.producer)
+  if (!p) return { producer: IMPORT, own: false, mine: choice.mine, defaultCatalysts: [] }
+  return onRow(p, choice.machine, false, choice.mine, choice.mine ? (choice.catalysts ?? []) : [])
 
-  /** The process on the picked machine, with the row's own catalysts. */
-  function onRow(p: Process, machine: string | undefined, own: boolean): ResolvedChoice {
-    const known = machine && p.machineOptions.some((m) => m.key === machine) ? machine : undefined
-    const process = catalog.variant(p, { machine: known, catalysts: plan.rowCatalysts?.[id] ?? [] })
-    return { producer: p.id, process, own }
+  /** The process on the picked machine, with the row's own catalysts (else the default's). */
+  function onRow(p: Process, machine: string | undefined, own: boolean, mine = false, defaults: string[] = []): ResolvedChoice {
+    const catalysts = plan.rowCatalysts?.[id] ?? defaults
+    const process = catalog.variant(p, { machine: knownMachine(p, machine), catalysts })
+    return { producer: p.id, process, own, mine, defaultCatalysts: defaults }
   }
 }
 
@@ -139,7 +173,7 @@ export function unfold(plan: Plan, catalog: ProcessCatalog): PlanShape {
   const pending: PlanNode[] = []
 
   const create = (item: string, id: string, depth: number, parent: PlanNode | undefined, fields: Partial<PlanNode>) => {
-    const n: PlanNode = { id, item, kind: 'import', depth, parent, ownChoice: false, children: [], ...fields }
+    const n: PlanNode = { id, item, kind: 'import', depth, parent, ownChoice: false, mine: false, defaultCatalysts: [], children: [], ...fields }
     nodes.push(n)
     return n
   }
@@ -148,7 +182,7 @@ export function unfold(plan: Plan, catalog: ProcessCatalog): PlanShape {
   const groupRow = (item: string, id: string, depth: number, parent: PlanNode | undefined, separation: Separation) => {
     const choice = resolveChoice(plan, catalog, item, id)
     if (!choice.process) return null
-    return create(item, id, depth, parent, { kind: 'make', process: choice.process, ownChoice: choice.own, separation })
+    return create(item, id, depth, parent, { kind: 'make', process: choice.process, ...picked(choice), separation })
   }
 
   /** Where a separated use goes: the innermost anchor gathering it, else the top of the plan. */
@@ -177,16 +211,15 @@ export function unfold(plan: Plan, catalog: ProcessCatalog): PlanShape {
     const depth = parent.depth + 1
     if (realItem(item) !== item) return create(realItem(item), id, depth, parent, { kind: 'bus' })
     const choice = resolveChoice(plan, catalog, item, id)
-    const own = choice.own
-    if (!choice.process) return create(item, id, depth, parent, { ownChoice: own })
+    if (!choice.process) return create(item, id, depth, parent, { ...picked(choice) })
     for (let a: PlanNode | undefined = parent; a; a = a.parent)
       if (a.item === item && a.kind === 'make' && sameRecipe(a.process!, choice.process))
-        return create(item, id, depth, parent, { kind: 'loop', ref: a, ownChoice: own })
-    if (depth >= MAX_DEPTH) return create(item, id, depth, parent, { kind: 'loop', ownChoice: own })
+        return create(item, id, depth, parent, { kind: 'loop', ref: a, ...picked(choice) })
+    if (depth >= MAX_DEPTH) return create(item, id, depth, parent, { kind: 'loop', ...picked(choice) })
     const gathered = gather(item)
     if (gathered)
-      return create(item, id, depth, parent, { kind: 'separate', ref: gathered.ref, groupAnchor: gathered.anchor, ownChoice: own })
-    const n = create(item, id, depth, parent, { kind: 'make', process: choice.process, ownChoice: own })
+      return create(item, id, depth, parent, { kind: 'separate', ref: gathered.ref, groupAnchor: gathered.anchor, ...picked(choice) })
+    const n = create(item, id, depth, parent, { kind: 'make', process: choice.process, ...picked(choice) })
     expand(n)
     return n
   }
@@ -229,10 +262,10 @@ export function unfold(plan: Plan, catalog: ProcessCatalog): PlanShape {
         ? create(t.item, id, 0, undefined, {
             kind: 'make',
             process: choice.process,
-            ownChoice: choice.own,
+            ...picked(choice),
             ...(sep && { separation: sep }),
           })
-        : create(t.item, id, 0, undefined, { ownChoice: choice.own })
+        : create(t.item, id, 0, undefined, { ...picked(choice) })
       if (sep) topRows.set(t.item, n.kind === 'make' ? n : null)
       roots.push(n)
       targetRows.push(n)

@@ -23,10 +23,10 @@ import { checkLogistics, checkProcess } from './logistics'
 import { craftsPerMachine } from './machineRate'
 import { pruneChoices, solvePlan, type PlanResult } from './solver'
 import type { TreeNode } from './tree'
-import { chooseProducer, clearBranchChoice, migrateCatalysts, setRowCatalysts } from './choices'
+import { chooseProducer, clearBranchChoice, migrateCatalysts, rememberSetup, setRowCatalysts } from './choices'
 import { resolveChoice } from './unfold'
 import { separationsOf, withSeparation } from './separate'
-import type { Plan, SavedRecipe, Separation } from './types'
+import type { MyDefaults, Plan, SavedRecipe, Separation } from './types'
 import { PLANNER_UPGRADES, maxLevel, modifiers, upgradeLevel } from './upgrades'
 
 const round1 = (x: number) => Math.round(x * 10) / 10
@@ -1021,5 +1021,75 @@ describe('research tiers', () => {
     const open = solvePlan(plan({ targets }), at(MAX_TIER), mods)
     const all = solvePlan(plan({ targets }), buildCatalog({ saved: [], machines: {}, mods, fertilizer: 'BasicFertilizer' }), mods)
     expect(open.runs.map((r) => r.key)).toEqual(all.runs.map((r) => r.key))
+  })
+})
+
+describe('my defaults', () => {
+  const mods = modifiers({})
+  const all = (n: TreeNode): TreeNode[] => [n, ...n.children.flatMap(all)]
+  const catalogWith = (mine: MyDefaults = {}, tier?: number) =>
+    buildCatalog({ saved: [], machines: {}, mods, fertilizer: 'BasicFertilizer', mine, tier })
+  const salt = plan({ targets: [{ item: 'Salt', rate: 10 }] })
+
+  it('remembers how a row and everything below it is made, for every plan', () => {
+    const catalog = catalogWith()
+    const picked = chooseProducer(salt, catalog, { item: 'Salt', producer: 'recipe:Salt_Alt', row: '0/Salt' })
+    const [root] = solvePlan(picked, catalog, mods).tree
+    const { mine, plan: cleaned } = rememberSetup(picked, catalog, [root], root)
+    expect(mine.Salt).toEqual({ producer: 'recipe:Salt_Alt' })
+    // Rows made the built-in way aren't saved.
+    expect(Object.keys(mine)).toEqual(['Salt'])
+    // The plan's matching pick goes: the row now follows the saved default.
+    expect(cleaned.branches).toEqual({})
+
+    const other = plan({ targets: [{ item: 'Salt', rate: 5 }] })
+    const [row] = solvePlan(other, catalogWith(mine), mods).tree
+    expect(row.producer).toBe('recipe:Salt_Alt')
+    expect(row.mine).toBe(true)
+  })
+
+  it("loses to the plan's own picks", () => {
+    const catalog = catalogWith({ Salt: { producer: 'recipe:Salt_Alt' } })
+    const [row] = solvePlan({ ...salt, producers: { Salt: 'recipe:Salt' } }, catalog, mods).tree
+    expect(row.producer).toBe('recipe:Salt')
+    expect(row.mine).toBe(false)
+  })
+
+  it('forgets an item once it is remembered the built-in way', () => {
+    const catalog = catalogWith({ Salt: { producer: 'recipe:Salt_Alt' } })
+    const picked = chooseProducer(salt, catalog, { item: 'Salt', producer: 'recipe:Salt', row: '0/Salt' })
+    const [root] = solvePlan(picked, catalog, mods).tree
+    expect(rememberSetup(picked, catalog, [root], root).mine).toEqual({})
+  })
+
+  it('brings its machine and catalysts, which a row can still turn off', () => {
+    const mine = { Coke: { producer: 'recipe:Coke', machine: 'AdvancedAthanor', catalysts: ['Catalyst2'] } }
+    const coke = plan({ targets: [{ item: 'Coke', rate: 10 }] })
+    const [row] = solvePlan(coke, catalogWith(mine), mods).tree
+    expect(row.run?.process.machine?.key).toBe('AdvancedAthanor')
+    expect(row.run?.process.catalysts).toEqual(['Catalyst2'])
+    const off = setRowCatalysts(coke, row.id, [], row.defaultCatalysts)
+    expect(off.rowCatalysts).toEqual({ [row.id]: [] })
+    expect(solvePlan(off, catalogWith(mine), mods).tree[0].run?.process.catalysts).toEqual([])
+    expect(setRowCatalysts(off, row.id, ['Catalyst2'], row.defaultCatalysts).rowCatalysts).toEqual({})
+  })
+
+  it("is skipped below the research tier it needs", () => {
+    const mine = { Coke: { producer: 'recipe:Coke', machine: 'AdvancedAthanor' } }
+    const coke = plan({ targets: [{ item: 'Coke', rate: 10 }] })
+    const [row] = solvePlan(coke, catalogWith(mine, machineTier('AdvancedAthanor') - 1), mods).tree
+    expect(row.mine).toBe(false)
+    expect(row.run?.process.machine?.key).toBe('Athanor')
+  })
+
+  it('follows separate builds into the rows that make them', () => {
+    const catalog = catalogWith()
+    const sol = plan({ targets: [{ item: 'Sol', rate: 0.25 }], separate: [{ item: 'WorldTreeLeaf' }] })
+    const leaf = solvePlan(sol, catalog, mods).tree.find((n) => n.item === 'WorldTreeLeaf')!
+    const picked = chooseProducer(sol, catalog, { item: 'WorldTreeLeaf', producer: 'nursery:TreeStage3', row: leaf.id })
+    const tree = solvePlan(picked, catalog, mods).tree
+    const root = tree[0]
+    expect(all(root).some((n) => n.kind === 'separate' && n.item === 'WorldTreeLeaf')).toBe(true)
+    expect(rememberSetup(picked, catalog, tree, root).mine.WorldTreeLeaf).toEqual({ producer: 'nursery:TreeStage3' })
   })
 })

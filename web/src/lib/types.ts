@@ -70,3 +70,19 @@ export interface Separation {
   /** Tree row id of the one `anchor` row that gathers them; absent = every `anchor` row. */
   at?: string
 }
+
+/**
+ * How the player likes to make an item, saved from a production tree row ("use as my default")
+ * and used by every plan unless the plan picks something else.
+ */
+export interface MyDefault {
+  /** Process id, or 'import'. */
+  producer: string
+  /** Machine to run it on, when it can run on several. */
+  machine?: string
+  /** Catalysts loaded into it (Advanced Athanor). */
+  catalysts?: string[]
+}
+
+/** The player's saved defaults, per item. */
+export type MyDefaults = Record<string, MyDefault>

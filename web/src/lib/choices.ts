@@ -1,5 +1,6 @@
-import type { ProcessCatalog } from './processes'
-import type { Plan } from './types'
+import { defaultMachine, defaultProducer, type ProcessCatalog } from './processes'
+import type { TreeNode } from './tree'
+import type { MyDefault, MyDefaults, Plan } from './types'
 import { resolveChoice, rowItem, unfold } from './unfold'
 
 export interface ProducerPick {
@@ -42,10 +43,15 @@ export function chooseProducer(plan: Plan, catalog: ProcessCatalog, pick: Produc
   return { ...next, branches: { ...next.branches, [row]: { producer, ...(machine && { machine }) } } }
 }
 
-/** Loads catalysts into one row's machines (none: the row runs without). */
-export function setRowCatalysts(plan: Plan, row: string, catalysts: string[]): Plan {
+const sameSet = (a: string[], b: string[]) => a.length === b.length && a.every((k) => b.includes(k))
+
+/**
+ * Loads catalysts into one row's machines. The row keeps its own list only when it differs from
+ * what it loads anyway (`inherited`: a saved default's), so it can also turn those off.
+ */
+export function setRowCatalysts(plan: Plan, row: string, catalysts: string[], inherited: string[] = []): Plan {
   const rest = without(plan.rowCatalysts, (id) => id === row) ?? {}
-  return { ...plan, rowCatalysts: catalysts.length ? { ...rest, [row]: catalysts } : rest }
+  return { ...plan, rowCatalysts: sameSet(catalysts, inherited) ? rest : { ...rest, [row]: catalysts } }
 }
 
 /**
@@ -62,6 +68,77 @@ export function migrateCatalysts(plan: Plan, catalog: ProcessCatalog): Plan | nu
     if (list?.length && !rowCatalysts[n.id]) rowCatalysts[n.id] = list
   }
   return { ...rest, rowCatalysts }
+}
+
+/**
+ * "Use as my default": remembers how a row and everything below it is made (recipe, machine and
+ * catalysts per item, the topmost row winning when an item appears more than once), following
+ * separate builds to the rows that make them. An item made the built-in way drops any saved
+ * default instead. The plan's own picks in that part of the tree that now match the saved
+ * defaults are dropped, so those rows follow the defaults.
+ */
+export function rememberSetup(
+  plan: Plan,
+  catalog: ProcessCatalog,
+  tree: TreeNode[],
+  row: TreeNode,
+): { mine: MyDefaults; plan: Plan } {
+  const rows = new Map<string, TreeNode>()
+  const index = (n: TreeNode) => {
+    rows.set(n.id, n)
+    n.children.forEach(index)
+  }
+  tree.forEach(index)
+
+  // Breadth first, so the row nearest the top sets each item.
+  const setups = new Map<string, MyDefault>()
+  const covered = new Set<string>()
+  const queue = [row]
+  while (queue.length) {
+    const n = queue.shift()!
+    if (covered.has(n.id)) continue
+    covered.add(n.id)
+    if (n.kind === 'separate') {
+      const group = n.groupId && rows.get(n.groupId)
+      if (group) queue.push(group)
+      continue
+    }
+    const p = n.run?.process
+    if (n.producer && !setups.has(n.item))
+      setups.set(n.item, {
+        producer: n.producer,
+        ...(p && p.machineOptions.length > 1 && p.machine && { machine: p.machine.key }),
+        ...(p?.catalysts.length && { catalysts: [...p.catalysts] }),
+      })
+    queue.push(...n.children)
+  }
+
+  const machineOf = (s: MyDefault) => {
+    const p = catalog.byId.get(s.producer)
+    return p && (s.machine ?? defaultMachine(p, catalog.tier))
+  }
+  const builtIn = (item: string, s: MyDefault) => {
+    const p = catalog.byId.get(s.producer)
+    return s.producer === defaultProducer(catalog, item) && (!p || machineOf(s) === defaultMachine(p, catalog.tier)) && !s.catalysts
+  }
+  const mine = { ...catalog.mine }
+  for (const [item, s] of setups) {
+    if (builtIn(item, s)) delete mine[item]
+    else mine[item] = s
+  }
+
+  const matches = (item: string, pick: { producer: string; machine?: string }) => {
+    const s = setups.get(item)
+    return !!s && s.producer === pick.producer && machineOf(s) === machineOf(pick)
+  }
+  const underRow = (id: string) => covered.has(id)
+  const next: Plan = {
+    ...plan,
+    producers: Object.fromEntries(Object.entries(plan.producers).filter(([item, producer]) => !matches(item, { producer }))),
+    branches: without(plan.branches, (id) => underRow(id) && matches(rowItem(id), plan.branches![id])),
+    rowCatalysts: without(plan.rowCatalysts, (id) => underRow(id) && sameSet(plan.rowCatalysts![id], setups.get(rowItem(id))?.catalysts ?? [])),
+  }
+  return { mine, plan: next }
 }
 
 /** Drops a row's own pick, so it follows the rows above it (or the plan) again. */

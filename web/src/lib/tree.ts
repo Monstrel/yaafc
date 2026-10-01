@@ -26,6 +26,10 @@ export interface TreeNode {
   producer: string
   /** The producer was picked for this row's branch, not inherited from above or the plan. */
   ownChoice: boolean
+  /** The row follows one of the player's saved defaults. */
+  mine: boolean
+  /** Catalysts the row loads unless it sets its own. */
+  defaultCatalysts: string[]
   /** Machines working for this row (fractional). */
   machines: number
   /** Heat this row's machines use, P/s. */
@@ -76,6 +80,8 @@ export function buildTree(roots: PlanNode[], flows: Map<PlanNode, RowFlows>, mod
       rate: f.rate,
       producer: n.kind === 'import' ? IMPORT : (n.process?.id ?? ''),
       ownChoice: n.ownChoice,
+      mine: n.mine,
+      defaultCatalysts: n.defaultCatalysts,
       machines: 0,
       heat: 0,
       nutrients: 0,

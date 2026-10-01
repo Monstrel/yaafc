@@ -25,7 +25,7 @@ import {
   type Stack,
 } from './gameData'
 import { itemsPerSlot } from './machineRate'
-import type { SavedRecipe } from './types'
+import type { MyDefaults, SavedRecipe } from './types'
 import type { Modifiers } from './upgrades'
 
 export type ProcessKind = 'recipe' | 'cauldron' | 'nursery' | 'paradox' | 'fuel' | 'fertilizer'
@@ -75,6 +75,8 @@ export interface ProcessContext {
   catalysts?: Record<string, string[]>
   /** Research tier reached: defaults stick to what it unlocks (all tiers when absent). */
   tier?: number
+  /** The player's saved defaults, used where a plan picks nothing. */
+  mine?: MyDefaults
 }
 
 function merge(stacks: Stack[]): Stack[] {
@@ -378,6 +380,10 @@ function fertilizerProcesses(mods: Modifiers): Process[] {
     }))
 }
 
+/** The machine a process runs on unless one is picked: the first one the research tier unlocks. */
+export const defaultMachine = (p: Process, tier: number) =>
+  (p.machineOptions.find((m) => machineTier(m.key) <= tier) ?? p.machineOptions[0])?.key
+
 /** Items a building makes natively, outside the recipe tables. */
 const BUILDING_MADE: Record<string, string> = { Steam: 'SteamBoiler' }
 
@@ -396,6 +402,8 @@ export interface ProcessCatalog {
   itemReach: (item: string) => number
   /** Earliest research tier a process can run at: its own, and its ingredients'. */
   reach: (p: Process) => number
+  /** The player's saved defaults. */
+  mine: MyDefaults
 }
 
 export function buildCatalog(ctx: ProcessContext): ProcessCatalog {
@@ -446,7 +454,7 @@ export function buildCatalog(ctx: ProcessContext): ProcessCatalog {
         }
     }
   }
-  return { byId, byProduct, variant, tier: ctx.tier ?? MAX_TIER, itemReach, reach }
+  return { byId, byProduct, variant, tier: ctx.tier ?? MAX_TIER, itemReach, reach, mine: ctx.mine ?? {} }
 }
 
 /**

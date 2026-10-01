@@ -485,6 +485,30 @@ h2 {
   color: var(--accent);
 }
 
+.tag.mine-tag {
+  border-color: var(--green);
+  color: var(--green);
+}
+
+/* The player's saved defaults, in the planner sidebar. */
+.my-defaults {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.my-defaults li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+}
+
+.my-defaults .hint-inline {
+  flex: 1;
+  min-width: 0;
+}
+
 .recipe-option {
   display: flex;
   align-items: center;
@@ -1216,7 +1240,22 @@ tr.kind-separate .item-label .name {
   color: var(--muted);
 }
 
-/* Quiet icon button beside the item name: there's one on most rows. */
+/* Row actions (build separately, use as my default) at the right end of each row. */
+.production.tree td.row-actions,
+.production.tree th.row-actions {
+  width: 1%;
+  white-space: nowrap;
+  text-align: right;
+  padding-left: 4px;
+}
+
+.row-action-slot {
+  display: inline-block;
+  width: 22px;
+  text-align: center;
+}
+
+/* Quiet icon button on most rows. */
 .tree-action {
   display: inline-flex;
   align-items: center;

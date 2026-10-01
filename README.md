@@ -17,7 +17,9 @@ cauldron recipes as steps in production chains, including self-feeding loops.
   rows that use them. Loops are solved with a linear program. When a chain can't be met, the
   shortfall is reported where it breaks, and everything above it is still sized. Each plan has a
   research tier (I–IX): default recipes, machines and fuel stick to what it unlocks, and steps
-  beyond it are flagged, so you can plan ahead for a tier you haven't reached.
+  beyond it are flagged, so you can plan ahead for a tier you haven't reached. Once you've found
+  a way you like to make something, "use as my default" (the bookmark on a row) remembers the
+  recipe, machine and catalysts for that row and everything below it, for every plan.
 
 Saved recipes and plans live in the browser (localStorage). Use Export/Import to back them up.
 

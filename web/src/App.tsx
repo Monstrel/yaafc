@@ -4,7 +4,7 @@ import { planGroups } from './lib/itemGroups'
 import { usePlanModel } from './lib/planModel'
 import { gameVersion } from './lib/gameData'
 import { emptyPlan, newId, readBackup, useBackup, usePersistentState } from './lib/store'
-import type { Plan, SavedRecipe } from './lib/types'
+import type { MyDefaults, Plan, SavedRecipe } from './lib/types'
 import { useUpdateAvailable } from './lib/updateCheck'
 import { CauldronPage } from './pages/CauldronPage'
 import { HomePage } from './pages/HomePage'
@@ -18,14 +18,15 @@ export default function App() {
   const [saved, setSaved] = usePersistentState<SavedRecipe[]>('saved-recipes', [])
   const [plans, setPlans] = usePersistentState<Plan[]>('plans', () => [emptyPlan('My factory')])
   const [activePlanId, setActivePlanId] = usePersistentState<string>('active-plan', '')
+  const [myDefaults, setMyDefaults] = usePersistentState<MyDefaults>('my-defaults', {})
   const [status, setStatus] = useState<string | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
-  const downloadBackup = useBackup(saved, plans)
+  const downloadBackup = useBackup(saved, plans, myDefaults)
   const updateAvailable = useUpdateAvailable()
 
   const plan = plans.find((p) => p.id === activePlanId) ?? plans[0]
   // What the active plan makes and overflows, offered as ingredient groups in the recipe finder.
-  const { result: planResult } = usePlanModel(plan, saved)
+  const { result: planResult } = usePlanModel(plan, saved, myDefaults)
   const activePlanGroups = useMemo(
     () =>
       planGroups(
@@ -59,6 +60,7 @@ export default function App() {
     try {
       const backup = await readBackup(file)
       setSaved(backup.savedRecipes)
+      if (backup.myDefaults) setMyDefaults(backup.myDefaults)
       if (backup.plans.length) {
         setPlans(backup.plans)
         setActivePlanId(backup.plans[0].id)
@@ -93,7 +95,7 @@ export default function App() {
           </button>
         </nav>
         <div className="header-actions">
-          <button onClick={downloadBackup} title="Download saved recipes and plans">
+          <button onClick={downloadBackup} title="Download saved recipes, plans and your default recipes">
             Export
           </button>
           <button onClick={() => fileInput.current?.click()} title="Restore from an exported file">
@@ -141,6 +143,8 @@ export default function App() {
           plans={plans}
           plan={plan}
           saved={saved}
+          myDefaults={myDefaults}
+          onMyDefaults={setMyDefaults}
           onSelectPlan={setActivePlanId}
           onUpdatePlan={updatePlan}
           onNewPlan={() => {

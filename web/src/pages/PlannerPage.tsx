@@ -3,7 +3,7 @@ import { ItemIcon, ItemLabel } from '../components/ItemIcon'
 import { ItemPicker } from '../components/ItemPicker'
 import { Money } from '../components/Money'
 import { ProducerSelect, TierTag } from '../components/ProducerSelect'
-import { ProductionTree } from '../components/ProductionTree'
+import { BookmarkIcon, ProductionTree } from '../components/ProductionTree'
 import { busLines, type BusLine, type BusUse } from '../lib/baseInputs'
 import {
   HEAT,
@@ -21,13 +21,21 @@ import {
 } from '../lib/gameData'
 import { fmt } from '../lib/format'
 import { checkLogistics, type LogisticsCheck } from '../lib/logistics'
+import type { ProcessCatalog } from '../lib/processes'
 import { usePlanModel } from '../lib/planModel'
-import { chooseProducer, clearBranchChoice, migrateCatalysts, setRowCatalysts, type ProducerPick } from '../lib/choices'
+import {
+  chooseProducer,
+  clearBranchChoice,
+  migrateCatalysts,
+  rememberSetup,
+  setRowCatalysts,
+  type ProducerPick,
+} from '../lib/choices'
 import { pruneChoices, type ResolvedTarget } from '../lib/solver'
 import { separationsOf, withSeparation, withoutSeparation } from '../lib/separate'
-import { planProducer } from '../lib/unfold'
+import { IMPORT, planProducer } from '../lib/unfold'
 import type { TreeNode } from '../lib/tree'
-import type { Plan, PlanTarget, SavedRecipe, Separation } from '../lib/types'
+import type { MyDefaults, Plan, PlanTarget, SavedRecipe, Separation } from '../lib/types'
 import { MAX_COIN_STACK, PLANNER_UPGRADES, maxLevel, upgradeLevel, type Modifiers } from '../lib/upgrades'
 
 /** What each planner upgrade series currently does, shown under its name. */
@@ -43,6 +51,9 @@ interface Props {
   plans: Plan[]
   plan: Plan
   saved: SavedRecipe[]
+  /** How the player likes to make items, for every plan. */
+  myDefaults: MyDefaults
+  onMyDefaults: (defaults: MyDefaults) => void
   onSelectPlan: (id: string) => void
   onUpdatePlan: (update: (p: Plan) => Plan) => void
   onNewPlan: () => void
@@ -52,8 +63,19 @@ interface Props {
 
 const visibleItems = items.filter((i) => !i.hidden)
 
-export function PlannerPage({ plans, plan, saved, onSelectPlan, onUpdatePlan, onNewPlan, onDuplicatePlan, onDeletePlan }: Props) {
-  const { mods, catalog, result } = usePlanModel(plan, saved)
+export function PlannerPage({
+  plans,
+  plan,
+  saved,
+  myDefaults,
+  onMyDefaults,
+  onSelectPlan,
+  onUpdatePlan,
+  onNewPlan,
+  onDuplicatePlan,
+  onDeletePlan,
+}: Props) {
+  const { mods, catalog, result } = usePlanModel(plan, saved, myDefaults)
   // Forget recipe, machine, catalyst, branch and build-separately picks for anything that has left
   // the plan (and build-separately picks that no longer gather anything).
   useEffect(() => {
@@ -86,7 +108,14 @@ export function PlannerPage({ plans, plan, saved, onSelectPlan, onUpdatePlan, on
       />
     )
   }
-  const setCatalysts = (row: string, catalysts: string[]) => onUpdatePlan((p) => setRowCatalysts(p, row, catalysts))
+  const setCatalysts = (row: string, catalysts: string[], inherited: string[]) =>
+    onUpdatePlan((p) => setRowCatalysts(p, row, catalysts, inherited))
+  const remember = (row: TreeNode) => {
+    const next = rememberSetup(plan, catalog, result.tree, row)
+    onMyDefaults(next.mine)
+    onUpdatePlan(() => next.plan)
+  }
+  const forget = (item: string) => onMyDefaults(Object.fromEntries(Object.entries(myDefaults).filter(([k]) => k !== item)))
   const setSeparate = (s: Separation, on: boolean) =>
     onUpdatePlan((p) => {
       const list = separationsOf(p.separate)
@@ -238,6 +267,7 @@ export function PlannerPage({ plans, plan, saved, onSelectPlan, onUpdatePlan, on
               </label>
             )}
           </section>
+          <MyDefaultsPanel defaults={myDefaults} catalog={catalog} onForget={forget} />
         </aside>
 
         <main className="planner-main">
@@ -365,6 +395,7 @@ export function PlannerPage({ plans, plan, saved, onSelectPlan, onUpdatePlan, on
                   catalog={catalog}
                   onProducer={setProducer}
                   onResetProducer={resetProducer}
+                  onRemember={remember}
                   onCatalysts={setCatalysts}
                   onSeparate={setSeparate}
                   unused={new Map(surplus.map((b) => [b.item, b.surplus]))}
@@ -589,5 +620,59 @@ function ResearchTier({ tier, onChange }: { tier: number; onChange: (tier: numbe
       </span>
       <input type="range" min={1} max={MAX_TIER} step={1} value={tier} onChange={(e) => onChange(Number(e.target.value))} />
     </label>
+  )
+}
+
+/** The player's saved defaults: how they like each item made, in every plan. */
+function MyDefaultsPanel({
+  defaults,
+  catalog,
+  onForget,
+}: {
+  defaults: MyDefaults
+  catalog: ProcessCatalog
+  onForget: (item: string) => void
+}) {
+  const entries = Object.entries(defaults).sort(([a], [b]) => itemName(a).localeCompare(itemName(b)))
+  return (
+    <section className="panel">
+      <h2>My defaults</h2>
+      {entries.length === 0 ? (
+        <p className="hint">
+          Set up a row the way you like to build it, then use <BookmarkIcon /> on it to remember how it and everything
+          below it is made. Every plan will start from it.
+        </p>
+      ) : (
+        <>
+          <p className="hint">How you like these made, in every plan (a plan's own picks still come first).</p>
+          <ul className="my-defaults">
+            {entries.map(([item, d]) => {
+              const p = catalog.byId.get(d.producer)
+              const machine = d.machine ? machinesByKey.get(d.machine)?.name : p?.machine?.name
+              const how =
+                d.producer === IMPORT
+                  ? 'bought'
+                  : !p
+                    ? 'recipe no longer available'
+                    : [p.kind === 'cauldron' ? (p.name ?? 'saved mix') : (machine ?? p.label), p.alternate ? 'alt' : '']
+                        .filter(Boolean)
+                        .join(' · ')
+              return (
+                <li key={item}>
+                  <ItemLabel item={item} />
+                  <span className="hint-inline">
+                    {how}
+                    {d.catalysts?.length ? ` + ${d.catalysts.map(itemName).join(', ')}` : ''}
+                  </span>
+                  <button className="icon-button" title={`Forget how you make ${itemName(item)}`} onClick={() => onForget(item)}>
+                    ×
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        </>
+      )}
+    </section>
   )
 }

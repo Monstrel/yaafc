@@ -17,7 +17,10 @@ interface Props {
   /** Drops a row's own producer pick. */
   onResetProducer: (row: string) => void
   /** Loads catalysts into one row's machines. */
-  onCatalysts: (row: string, catalysts: string[]) => void
+  /** Loads catalysts into a row ('inherited': what it loads without its own setting). */
+  onCatalysts: (row: string, catalysts: string[], inherited: string[]) => void
+  /** Use as my default: remember how this row and everything below it is made. */
+  onRemember: (row: TreeNode) => void
   onSeparate: (s: Separation, on: boolean) => void
   /** Plan-wide unused amount per item (per minute), to flag overflowing by-products. */
   unused: Map<string, number>
@@ -41,6 +44,7 @@ export function ProductionTree({
   onProducer,
   onResetProducer,
   onCatalysts,
+  onRemember,
   onSeparate,
   unused,
   logistics,
@@ -98,7 +102,8 @@ export function ProductionTree({
       .map((id) => byId.get(id)!.node)
       .filter((a) => a.kind === 'produce' && a.item !== node.item)
       .reverse()
-    setMenu({ node, anchors, x: Math.min(rect.left, window.innerWidth - 300), y: rect.bottom + 4 })
+    // The button sits at the right end of its row: line the 280px menu up with its right edge.
+    setMenu({ node, anchors, x: Math.max(8, Math.min(rect.right - 280, window.innerWidth - 288)), y: rect.bottom + 4 })
   }
 
   // Picking an anchor built in several places asks whether to gather under all of them.
@@ -205,6 +210,7 @@ export function ProductionTree({
               <th>Recipe</th>
               <th className="num">Machines</th>
               <th className="num">Heat</th>
+              <th className="row-actions" aria-label="Row actions" />
             </tr>
           </thead>
           <tbody ref={tbody}>
@@ -215,7 +221,7 @@ export function ProductionTree({
                   key={`${line.anchorId}/with`}
                   style={cardStyle(line.depth)}
                 >
-                  <td colSpan={5}>
+                  <td colSpan={6}>
                     <Edges edges={line.edges} />
                     <div className="tree-with-label" style={{ marginLeft: line.depth * 20 + 4 }}>
                       with
@@ -243,6 +249,7 @@ export function ProductionTree({
                   onProducer={onProducer}
                   onResetProducer={onResetProducer}
                   onCatalysts={onCatalysts}
+                  onRemember={onRemember}
                   onSeparate={onSeparate}
                   onSeparateMenu={openMenu}
                   unused={unused}
@@ -311,6 +318,7 @@ function TreeRow({
   onProducer,
   onResetProducer,
   onCatalysts,
+  onRemember,
   onSeparate,
   onSeparateMenu,
   unused,
@@ -333,7 +341,10 @@ function TreeRow({
   onProducer: (pick: ProducerPick) => void
   onResetProducer: (row: string) => void
   /** Loads catalysts into one row's machines. */
-  onCatalysts: (row: string, catalysts: string[]) => void
+  /** Loads catalysts into a row ('inherited': what it loads without its own setting). */
+  onCatalysts: (row: string, catalysts: string[], inherited: string[]) => void
+  /** Use as my default: remember how this row and everything below it is made. */
+  onRemember: (row: TreeNode) => void
   onSeparate: (s: Separation, on: boolean) => void
   onSeparateMenu: (node: TreeNode, button: HTMLElement) => void
   unused: Map<string, number>
@@ -356,7 +367,7 @@ function TreeRow({
             <span className="plan-root-name">All targets</span>
           </div>
         </td>
-        <td colSpan={4} />
+        <td colSpan={5} />
       </tr>
     )
 
@@ -397,31 +408,6 @@ function TreeRow({
             <span className="fold-spacer" />
           )}
           <ItemLabel item={node.item} />
-          {node.separation ? (
-            <button
-              type="button"
-              className="tree-action"
-              title={`Merge back: ${mergeHint(node.separation, name)}`}
-              aria-label={`Merge ${name} back into the tree`}
-              onClick={() => onSeparate(node.separation!, false)}
-            >
-              <BoxArrowIcon inward />
-            </button>
-          ) : (
-            node.kind === 'produce' &&
-            depth > 0 && (
-              <button
-                type="button"
-                className="tree-action"
-                title={`Build separately: gather the uses of ${name} into one place, at the top of the plan or with an item above it`}
-                aria-label={`Build ${name} separately`}
-                aria-haspopup="menu"
-                onClick={(e) => onSeparateMenu(node, e.currentTarget)}
-              >
-                <BoxArrowIcon />
-              </button>
-            )
-          )}
         </div>
       </td>
       <td className="num rate-cell">{fmt(node.rate)}</td>
@@ -451,7 +437,7 @@ function TreeRow({
                 onChange={(producer, machine, everywhere) =>
                   onProducer({ item: node.item, producer, machine, row: node.id, everywhere })
                 }
-                branch={{ rows, own: node.ownChoice, onReset: () => onResetProducer(node.id) }}
+                branch={{ rows, own: node.ownChoice, mine: node.mine, onReset: () => onResetProducer(node.id) }}
                 compact
               />
             )}
@@ -488,7 +474,11 @@ function TreeRow({
                       aria-pressed={on}
                       title={`${itemsByKey.get(c.key)?.name}: ${c.description} (${c.charges.toLocaleString()} charges)`}
                       onClick={() =>
-                        onCatalysts(node.id, on ? p.catalysts.filter((k) => k !== c.key) : [...p.catalysts, c.key])
+                        onCatalysts(
+                          node.id,
+                          on ? p.catalysts.filter((k) => k !== c.key) : [...p.catalysts, c.key],
+                          node.defaultCatalysts,
+                        )
                       }
                     >
                       <ItemIcon item={c.key} size={16} />
@@ -569,7 +559,70 @@ function TreeRow({
         {node.heat > 0 && `${fmt(node.heat)} P/s`}
         {node.nutrients > 0 && <div className="machine-meta">{fmt(node.nutrients)} nutrients/s</div>}
       </td>
+      <td className="row-actions">
+        {/* One slot per action, kept when empty, so the icons line up down the table. */}
+        <span className="row-action-slot">
+          {node.separation ? (
+            <button
+              type="button"
+              className="tree-action"
+              title={`Merge back: ${mergeHint(node.separation, name)}`}
+              aria-label={`Merge ${name} back into the tree`}
+              onClick={() => onSeparate(node.separation!, false)}
+            >
+              <BoxArrowIcon inward />
+            </button>
+          ) : (
+            node.kind === 'produce' &&
+            depth > 0 && (
+              <button
+                type="button"
+                className="tree-action"
+                title={`Build separately: gather the uses of ${name} into one place, at the top of the plan or with an item above it`}
+                aria-label={`Build ${name} separately`}
+                aria-haspopup="menu"
+                onClick={(e) => onSeparateMenu(node, e.currentTarget)}
+              >
+                <BoxArrowIcon />
+              </button>
+            )
+          )}
+        </span>
+        <span className="row-action-slot">
+          {node.kind === 'produce' && (
+            <button
+              type="button"
+              className="tree-action"
+              title={`Use as my default: remember how ${name} and everything below it is made, for every plan`}
+              aria-label={`Use this way of making ${name} as my default`}
+              onClick={() => onRemember(node)}
+            >
+              <BookmarkIcon />
+            </button>
+          )}
+        </span>
+      </td>
     </tr>
+  )
+}
+
+/** A bookmark: use this row's setup as my default. */
+export function BookmarkIcon() {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      width="14"
+      height="14"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      style={{ verticalAlign: '-2px' }}
+    >
+      <path d="M4 2.5h8a.5.5 0 0 1 .5.5v10.5L8 10.5l-4.5 3V3a.5.5 0 0 1 .5-.5Z" />
+    </svg>
   )
 }
 
@@ -690,6 +743,8 @@ function viewOf(tree: TreeNode[]): TreeNode[] {
     shortfall: 0,
     producer: '',
     ownChoice: false,
+    mine: false,
+    defaultCatalysts: [],
     children: [...targets, ...groups],
   }
   return [plan]

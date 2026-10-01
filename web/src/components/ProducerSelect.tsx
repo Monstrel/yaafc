@@ -49,6 +49,8 @@ export interface BranchScope {
   rows: number
   /** The row has its own pick. */
   own: boolean
+  /** The row follows one of the player's saved defaults. */
+  mine?: boolean
   onReset: () => void
 }
 
@@ -225,6 +227,11 @@ export function ProducerSelect({
         {branch?.own && (
           <span className="tag branch-tag" title="Picked for this branch: other rows of this item can differ">
             branch
+          </span>
+        )}
+        {branch?.mine && (
+          <span className="tag mine-tag" title="Your default way of making this, saved from a plan">
+            mine
           </span>
         )}
         {ambiguous && selected.process && selected.value !== CRUCIBLE && (
