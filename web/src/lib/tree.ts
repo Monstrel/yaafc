@@ -26,8 +26,8 @@ export interface TreeNode {
   byproducts: Stack[]
   /** Part of the rate covered by side outputs of other machines, per minute. */
   fromByproduct: number
-  /** Processes (labels) whose side output covers `fromByproduct`. */
-  byproductSources: string[]
+  /** Processes whose side output covers `fromByproduct`. */
+  byproductSources: { id: string; label: string }[]
   /** Part of the rate bought, per minute. */
   purchased: number
   /** Part of the rate nothing can supply, per minute. */
@@ -42,13 +42,15 @@ const isPseudo = (item: string) => item.startsWith('@')
 const demandOf = (b: ItemBalance | undefined) => (b ? b.consumed + b.target : 0)
 
 /**
- * The output that decides how much a process runs: the one whose demand uses the largest share of
- * what the plan makes of it. Its other outputs are by-products.
+ * The output that decides how much a process runs: of the outputs it was chosen to make, the one
+ * whose demand uses the largest share of what the plan makes of it. Its other outputs are by-products.
+ * (An output another process was chosen for would never show this process's machines in the tree.)
  */
 function drivingOutput(run: ProcessRun, balances: Map<string, ItemBalance>): string {
   let best = run.process.product
   let bestNeed = -1
-  for (const s of run.process.outputs) {
+  const chosenFor = run.process.outputs.filter((s) => balances.get(s.item)?.producer === run.process.id)
+  for (const s of chosenFor.length ? chosenFor : run.process.outputs) {
     if (isPseudo(s.item)) continue
     const b = balances.get(s.item)
     const need = b && b.produced > 0 ? Math.min(1, demandOf(b) / b.produced) : 0
@@ -97,12 +99,12 @@ export function buildTree(result: PlanResult, targets: { item: string; rate: num
 
     // Supplies of this item across the plan.
     let bySupply = 0
-    const sources: string[] = []
+    const sources: { id: string; label: string }[] = []
     for (const r of result.runs) {
       const out = r.outputs.find((s) => s.item === item)?.count ?? 0
       if (out <= 0 || (drivenHere && r === producerRun)) continue
       bySupply += out
-      sources.push(r.process.label)
+      sources.push({ id: r.process.id, label: r.process.label })
     }
     const madeHere = drivenHere ? (producerRun.outputs.find((s) => s.item === item)?.count ?? 0) : 0
 

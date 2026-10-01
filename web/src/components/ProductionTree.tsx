@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { CATALYSTS, itemsByKey } from '../lib/gameData'
 import { fmt } from '../lib/format'
 import type { LogisticsCheck } from '../lib/logistics'
@@ -21,6 +21,16 @@ interface Props {
   logistics: Map<string, LogisticsCheck>
 }
 
+/** Where a link points: every row it matches, largest share first. */
+type Jump = (n: TreeNode) => boolean
+/** Renders a link from a row to the rows `match` picks out (see `ProductionTree`). */
+type LinkFn = (from: TreeNode, key: string, match: Jump, label: ReactNode, title: string) => ReactNode
+/** The link last followed, and which of its rows is showing. */
+interface JumpState {
+  link: string
+  index: number
+}
+
 /** Foldable tree-table: one root per target, each ingredient a child branch with its share of machines. */
 export function ProductionTree({ tree, plan, catalog, onProducer, onMachine, onCatalysts, unused, logistics }: Props) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
@@ -31,6 +41,78 @@ export function ProductionTree({ tree, plan, catalog, onProducer, onMachine, onC
       else next.add(id)
       return next
     })
+
+  // Every node with the ids of the branches above it, folded or not.
+  const all = useMemo(() => {
+    const out: { node: TreeNode; ancestors: string[] }[] = []
+    const visit = (nodes: TreeNode[], ancestors: string[]) => {
+      for (const node of nodes) {
+        out.push({ node, ancestors })
+        visit(node.children, [...ancestors, node.id])
+      }
+    }
+    visit(tree, [])
+    return out
+  }, [tree])
+
+  const [jump, setJump] = useState<JumpState | null>(null)
+  // Bumped on every jump so following the same row twice pulses it again.
+  const [pulse, setPulse] = useState<{ id: string; n: number } | null>(null)
+  const tbody = useRef<HTMLTableSectionElement>(null)
+
+  /** Rows a link would go to, biggest share first. */
+  const targetsOf = (match: Jump, from: string) =>
+    all
+      .filter(({ node }) => node.id !== from && match(node))
+      .sort((a, b) => b.node.machines - a.node.machines || b.node.rate - a.node.rate)
+
+  /** Follows a link: the next of its rows (cycling), unfolded, scrolled to and pulsed. */
+  const follow = (link: string, match: Jump, from: string) => {
+    const targets = targetsOf(match, from)
+    if (!targets.length) return
+    const index = jump?.link === link ? (jump.index + 1) % targets.length : 0
+    const { node, ancestors } = targets[index]
+    setJump({ link, index })
+    setCollapsed((c) => (ancestors.some((a) => c.has(a)) ? new Set([...c].filter((id) => !ancestors.includes(id))) : c))
+    setPulse((p) => ({ id: node.id, n: (p?.n ?? 0) + 1 }))
+  }
+
+  useEffect(() => {
+    if (!pulse) return
+    const row = tbody.current?.querySelector<HTMLElement>(`[data-node-id="${CSS.escape(pulse.id)}"]`)
+    if (!row) return
+    const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    row.scrollIntoView({ block: 'center', behavior: still ? 'auto' : 'smooth' })
+    row.classList.remove('pulse')
+    void row.offsetWidth // restart the animation
+    row.classList.add('pulse')
+    const done = () => row.classList.remove('pulse')
+    row.addEventListener('animationend', done, { once: true })
+    return () => row.removeEventListener('animationend', done)
+  }, [pulse])
+
+  /** A link from `from` to the rows `match` picks out; plain text when there are none. */
+  const link: LinkFn = (from, key, match, label, title) => {
+    const id = `${from.id}|${key}`
+    const count = targetsOf(match, from.id).length
+    if (!count) return label
+    const active = jump?.link === id
+    return (
+      <button
+        type="button"
+        className="tree-link"
+        title={count > 1 ? `${title} (${count} places, click again for the next)` : title}
+        onClick={() => follow(id, match, from.id)}
+      >
+        {label}
+        {active && count > 1 && (
+          <span className="tree-link-count">
+            {jump.index + 1}/{count}
+          </span>
+        )}
+      </button>
+    )
+  }
 
   const rows: { node: TreeNode; depth: number }[] = []
   const walk = (nodes: TreeNode[], depth: number) => {
@@ -62,22 +144,23 @@ export function ProductionTree({ tree, plan, catalog, onProducer, onMachine, onC
               <th className="num">Heat</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody ref={tbody}>
             {rows.map(({ node, depth }) => (
               <TreeRow
                 key={node.id}
-                  node={node}
-                  depth={depth}
-                  open={!collapsed.has(node.id)}
-                  onToggle={() => toggle(node.id)}
-                  plan={plan}
-                  catalog={catalog}
-                  onProducer={onProducer}
-                  onMachine={onMachine}
-                  onCatalysts={onCatalysts}
-                  unused={unused}
-                  logistics={logistics}
-                />
+                node={node}
+                depth={depth}
+                open={!collapsed.has(node.id)}
+                onToggle={() => toggle(node.id)}
+                plan={plan}
+                catalog={catalog}
+                onProducer={onProducer}
+                onMachine={onMachine}
+                onCatalysts={onCatalysts}
+                unused={unused}
+                logistics={logistics}
+                link={link}
+              />
             ))}
           </tbody>
         </table>
@@ -98,6 +181,7 @@ function TreeRow({
   onCatalysts,
   unused,
   logistics,
+  link,
 }: {
   node: TreeNode
   depth: number
@@ -110,15 +194,28 @@ function TreeRow({
   onCatalysts: (processId: string, catalysts: string[]) => void
   unused: Map<string, number>
   logistics: Map<string, LogisticsCheck>
+  link: LinkFn
 }) {
   const p = node.run?.process
   const belts = p ? logistics.get(p.id) : undefined
   const limited = !!belts && belts.utilization < 1 && node.machines > 0
   const canChoose = node.kind !== 'bus' && (catalog.byProduct.get(node.item)?.length ?? 0) > 0
   const price = itemsByKey.get(node.item)?.buyPrice
+  const sources = node.byproductSources.map((s, i) => (
+    <span key={s.id}>
+      {i > 0 && ', '}
+      {link(
+        node,
+        `from:${s.id}`,
+        (n) => n.kind === 'produce' && n.run?.process.id === s.id && n.machines > 0,
+        s.label,
+        `Show the ${s.label} machines`,
+      )}
+    </span>
+  ))
 
   return (
-    <tr className={`kind-${node.kind} depth-${Math.min(depth, 1)} ${node.rate === 0 ? 'idle' : ''}`}>
+    <tr data-node-id={node.id} className={`kind-${node.kind} depth-${Math.min(depth, 1)} ${node.rate === 0 ? 'idle' : ''}`}>
       <td className="tree-item">
         <div className="tree-cell" style={{ paddingLeft: depth * 20 }}>
           {node.children.length > 0 ? (
@@ -182,12 +279,10 @@ function TreeRow({
                 })}
               </div>
             )}
-            {node.kind === 'byproduct' && (
-              <div className="note-line">♻ by-product of {node.byproductSources.join(', ')}</div>
-            )}
+            {node.kind === 'byproduct' && <div className="note-line">♻ by-product of {sources}</div>}
             {node.kind !== 'byproduct' && node.fromByproduct > 0 && (
               <div className="note-line">
-                ♻ {fmt(node.fromByproduct)}/min from by-product of {node.byproductSources.join(', ')}
+                ♻ {fmt(node.fromByproduct)}/min from by-product of {sources}
               </div>
             )}
             {node.kind === 'produce' && node.purchased > 0 && (
@@ -198,7 +293,13 @@ function TreeRow({
                 also makes{' '}
                 {node.byproducts.map((b) => (
                   <span key={b.item} className="byproduct">
-                    <ItemLabel item={b.item} count={fmt(b.count)} size={16} />
+                    {link(
+                      node,
+                      `uses:${b.item}`,
+                      (n) => n.item === b.item && n.rate > 0 && (n.kind === 'byproduct' || n.fromByproduct > 0),
+                      <ItemLabel item={b.item} count={fmt(b.count)} size={16} />,
+                      `Show where ${itemsByKey.get(b.item)?.name ?? b.item} is used`,
+                    )}
                     {(unused.get(b.item) ?? 0) > 0 && (
                       <span className="warn-text"> ({fmt(unused.get(b.item)!)}/min unused overall)</span>
                     )}

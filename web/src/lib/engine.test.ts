@@ -666,6 +666,18 @@ describe('World Tree nursery', () => {
     expect(craftsPerMachine(tree, mods) / craftsPerMachine(tree, modifiers({}))).toBeCloseTo(mods.factorySpeed)
   })
 
+  it('lists the stage 3 trees grown for cores, though leaves come from stage 2', () => {
+    const mods = modifiers({})
+    const targets = [{ item: 'Sol', rate: 0.25 }]
+    const result = solvePlan(plan({ targets }), catalog, mods)
+    const all = (n: TreeNode): TreeNode[] => [n, ...n.children.flatMap(all)]
+    const nodes = buildTree(result, targets).flatMap(all)
+    for (const run of result.runs.filter((r) => r.machines > 0 && r.process.machine)) {
+      const shown = nodes.filter((n) => n.run?.process.id === run.process.id).reduce((sum, n) => sum + n.machines, 0)
+      expect(shown, run.process.label).toBeCloseTo(run.machines)
+    }
+  })
+
   it('five trees fall just short of one Sol shaper (tester report)', () => {
     const sol = catalog.byId.get('recipe:Sol')!
     const coresNeeded = perMinute(sol, 'WorldTreeCore', sol.inputs)
