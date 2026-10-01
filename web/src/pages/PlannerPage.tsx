@@ -391,6 +391,8 @@ export function PlannerPage({
               <section className="panel">
                 <h2>Production</h2>
                 <ProductionTree
+                  key={plan.id}
+                  planId={plan.id}
                   tree={result.tree}
                   catalog={catalog}
                   onProducer={setProducer}

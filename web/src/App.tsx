@@ -3,7 +3,7 @@ import { recipeSignature, type CauldronMode } from './lib/cauldron'
 import { planGroups } from './lib/itemGroups'
 import { usePlanModel } from './lib/planModel'
 import { gameVersion } from './lib/gameData'
-import { emptyPlan, newId, readBackup, useBackup, usePersistentState } from './lib/store'
+import { emptyPlan, foldKey, forget, newId, readBackup, useBackup, usePersistentState } from './lib/store'
 import type { MyDefaults, Plan, SavedRecipe } from './lib/types'
 import { useUpdateAvailable } from './lib/updateCheck'
 import { CauldronPage } from './pages/CauldronPage'
@@ -159,6 +159,7 @@ export default function App() {
           }}
           onDeletePlan={() => {
             const rest = plans.filter((p) => p.id !== plan.id)
+            forget(foldKey(plan.id))
             setPlans(rest)
             setActivePlanId(rest[0]?.id ?? '')
           }}

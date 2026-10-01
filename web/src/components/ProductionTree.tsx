@@ -1,6 +1,7 @@
 import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { CATALYSTS, itemsByKey } from '../lib/gameData'
 import { fmt } from '../lib/format'
+import { foldKey, usePersistentState } from '../lib/store'
 import type { LogisticsCheck } from '../lib/logistics'
 import type { ProcessCatalog } from '../lib/processes'
 import { branchIds, type TreeNode } from '../lib/tree'
@@ -11,6 +12,8 @@ import { Money } from './Money'
 import { ProducerSelect } from './ProducerSelect'
 
 interface Props {
+  /** Fold state is remembered per plan. */
+  planId: string
   tree: TreeNode[]
   catalog: ProcessCatalog
   onProducer: (pick: ProducerPick) => void
@@ -39,6 +42,7 @@ interface JumpState {
 
 /** Foldable tree-table: one root per target, each ingredient a child branch with its share of machines. */
 export function ProductionTree({
+  planId,
   tree,
   catalog,
   onProducer,
@@ -49,7 +53,15 @@ export function ProductionTree({
   unused,
   logistics,
 }: Props) {
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  // Folded rows survive leaving the planner and reloads (row ids are stable paths).
+  const [collapsedIds, setCollapsedIds] = usePersistentState<string[]>(foldKey(planId), [])
+  const collapsed = useMemo(() => new Set(collapsedIds), [collapsedIds])
+  const setCollapsed = (next: Set<string> | ((c: Set<string>) => Set<string>)) =>
+    setCollapsedIds((ids) => {
+      const prev = new Set(ids)
+      const out = typeof next === 'function' ? next(prev) : next
+      return out === prev ? ids : [...out]
+    })
   const toggle = (id: string) =>
     setCollapsed((c) => {
       const next = new Set(c)
@@ -76,6 +88,10 @@ export function ProductionTree({
     return out
   }, [view])
   const byId = useMemo(() => new Map(all.map((e) => [e.node.id, e])), [all])
+  // Forget folds on rows that left the plan (but not while it fails to solve and shows nothing).
+  useEffect(() => {
+    if (byId.size) setCollapsedIds((ids) => (ids.every((id) => byId.has(id)) ? ids : ids.filter((id) => byId.has(id))))
+  }, [byId, setCollapsedIds])
   // Rows per item that use a producer of their own: a pick can cover one branch or all of them.
   const rowsOf = useMemo(() => {
     const counts = new Map<string, number>()

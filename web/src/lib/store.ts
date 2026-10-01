@@ -27,6 +27,18 @@ export function usePersistentState<T>(key: string, initial: T | (() => T)) {
   return [value, setValue] as const
 }
 
+/** Drops a value stored by `usePersistentState`. */
+export function forget(key: string) {
+  try {
+    localStorage.removeItem(PREFIX + key)
+  } catch {
+    // Storage blocked: nothing to drop.
+  }
+}
+
+/** Where a plan's folded production rows are kept. */
+export const foldKey = (planId: string) => `tree-collapsed:${planId}`
+
 export function newId(): string {
   return Math.random().toString(36).slice(2, 10)
 }
