@@ -26,15 +26,16 @@ export default function App() {
 
   const plan = plans.find((p) => p.id === activePlanId) ?? plans[0]
   // What the active plan makes and overflows, offered as ingredient groups in the recipe finder.
-  const { result: planResult } = usePlanModel(plan, saved, myDefaults)
+  // Also solved for the planner page, from here so each change is solved once.
+  const model = usePlanModel(plan, saved, myDefaults)
   const activePlanGroups = useMemo(
     () =>
       planGroups(
         plan.name,
-        planResult.balances.filter((b) => b.produced > 0).map((b) => b.item),
-        planResult.balances.filter((b) => b.surplus > 0).map((b) => b.item),
+        model.result?.balances.filter((b) => b.produced > 0).map((b) => b.item) ?? [],
+        model.result?.balances.filter((b) => b.surplus > 0).map((b) => b.item) ?? [],
       ),
-    [plan.name, planResult],
+    [plan.name, model.result],
   )
   const updatePlan = (update: (p: Plan) => Plan) => setPlans((ps) => ps.map((p) => (p.id === plan.id ? update(p) : p)))
 
@@ -142,7 +143,7 @@ export default function App() {
         <PlannerPage
           plans={plans}
           plan={plan}
-          saved={saved}
+          model={model}
           myDefaults={myDefaults}
           onMyDefaults={setMyDefaults}
           onSelectPlan={setActivePlanId}

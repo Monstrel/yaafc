@@ -8,6 +8,8 @@ const buildId = process.env.GITHUB_SHA ?? `local-${Date.now()}`
 export default defineConfig({
   base: './',
   define: { __BUILD_ID__: JSON.stringify(buildId) },
+  // The solver's worker loads HiGHS with a top-level await, which needs an ES module worker.
+  worker: { format: 'es' },
   plugins: [
     react(),
     {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react'
+import { startTransition, useEffect, useMemo, useOptimistic } from 'react'
 import { ItemIcon, ItemLabel } from '../components/ItemIcon'
 import { ItemPicker } from '../components/ItemPicker'
 import { Money } from '../components/Money'
@@ -22,20 +22,21 @@ import {
 import { fmt } from '../lib/format'
 import { checkLogistics, type LogisticsCheck } from '../lib/logistics'
 import type { ProcessCatalog } from '../lib/processes'
-import { usePlanModel } from '../lib/planModel'
+import type { PlanModel } from '../lib/planModel'
 import {
   chooseProducer,
   clearBranchChoice,
   migrateCatalysts,
+  pruneChoices,
   rememberSetup,
   setRowCatalysts,
   type ProducerPick,
 } from '../lib/choices'
-import { pruneChoices, type ResolvedTarget } from '../lib/solver'
+import type { PlanResult, ResolvedTarget } from '../lib/solver'
 import { separationsOf, withSeparation, withoutSeparation } from '../lib/separate'
 import { IMPORT, planProducer } from '../lib/unfold'
 import type { TreeNode } from '../lib/tree'
-import type { MyDefaults, Plan, PlanTarget, SavedRecipe, Separation } from '../lib/types'
+import type { MyDefaults, Plan, PlanTarget, Separation } from '../lib/types'
 import { MAX_COIN_STACK, PLANNER_UPGRADES, maxLevel, upgradeLevel, type Modifiers } from '../lib/upgrades'
 
 /** What each planner upgrade series currently does, shown under its name. */
@@ -50,7 +51,7 @@ const UPGRADE_EFFECTS: Record<string, (m: Modifiers) => string> = {
 interface Props {
   plans: Plan[]
   plan: Plan
-  saved: SavedRecipe[]
+  model: PlanModel
   /** How the player likes to make items, for every plan. */
   myDefaults: MyDefaults
   onMyDefaults: (defaults: MyDefaults) => void
@@ -63,10 +64,13 @@ interface Props {
 
 const visibleItems = items.filter((i) => !i.hidden)
 
+/** Stands in until the plan's first solve comes back. */
+const UNSOLVED: PlanResult = { status: 'ok', targets: [], runs: [], balances: [], tree: [] }
+
 export function PlannerPage({
   plans,
   plan,
-  saved,
+  model,
   myDefaults,
   onMyDefaults,
   onSelectPlan,
@@ -75,7 +79,8 @@ export function PlannerPage({
   onDuplicatePlan,
   onDeletePlan,
 }: Props) {
-  const { mods, catalog, result } = usePlanModel(plan, saved, myDefaults)
+  const { mods, catalog } = model
+  const result = model.result ?? UNSOLVED
   // Forget recipe, machine, catalyst, branch and build-separately picks for anything that has left
   // the plan (and build-separately picks that no longer gather anything).
   useEffect(() => {
@@ -280,6 +285,10 @@ export function PlannerPage({
                 Pick what you want to make and how many per minute. Every item uses its standard recipe by default; switch any
                 step to one of your saved cauldron recipes (★) in the production tree.
               </p>
+            </div>
+          ) : !model.result ? (
+            <div className="panel empty-state" aria-busy>
+              <p>Solving…</p>
             </div>
           ) : (
             <>
@@ -608,7 +617,9 @@ function beyondTier(tree: TreeNode[], tier: number): { item: string; tier: numbe
 }
 
 /** The research tier the plan assumes, with the tier's icon and the machines it unlocks. */
-function ResearchTier({ tier, onChange }: { tier: number; onChange: (tier: number) => void }) {
+function ResearchTier({ tier: planTier, onChange }: { tier: number; onChange: (tier: number) => void }) {
+  // The slider moves at once; the plan re-renders in a transition React can interrupt mid-drag.
+  const [tier, setTier] = useOptimistic(planTier)
   const icon = iconUrl(tierIcon(tier))
   const unlocks = [...machinesByKey.values()]
     .filter((m) => machineTier(m.key) === tier && !m.key.endsWith('_Sym'))
@@ -620,7 +631,20 @@ function ResearchTier({ tier, onChange }: { tier: number; onChange: (tier: numbe
         Research tier {tierName(tier)}
         <span className="upgrade-effect">{unlocks.length ? `unlocks ${unlocks.join(', ')}` : 'defaults use what it unlocks'}</span>
       </span>
-      <input type="range" min={1} max={MAX_TIER} step={1} value={tier} onChange={(e) => onChange(Number(e.target.value))} />
+      <input
+        type="range"
+        min={1}
+        max={MAX_TIER}
+        step={1}
+        value={tier}
+        onChange={(e) => {
+          const next = Number(e.target.value)
+          startTransition(() => {
+            setTier(next)
+            onChange(next)
+          })
+        }}
+      />
     </label>
   )
 }

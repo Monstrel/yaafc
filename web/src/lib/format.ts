@@ -1,9 +1,12 @@
+// Made once: toLocaleString() builds a new formatter on every call, which shows on big plans.
+const grouped = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 })
+
 /** Compact number for rates: 3 significant digits, thousands grouped. */
 export function fmt(n: number): string {
   if (!Number.isFinite(n)) return '–'
   const a = Math.abs(n)
   if (a === 0) return '0'
-  if (a >= 1000) return Math.round(n).toLocaleString()
+  if (a >= 1000) return grouped.format(Math.round(n))
   if (a >= 100) return n.toFixed(0)
   if (a >= 10) return n.toFixed(1).replace(/\.0$/, '')
   if (a >= 0.01) return n.toFixed(2).replace(/\.?0+$/, '')

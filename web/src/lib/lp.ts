@@ -8,8 +8,9 @@ import wasmUrl from '../../node_modules/highs/build/highs.wasm?url'
  * over-production or false "infeasible" results on badly scaled plans (a Flax nursery craft moves
  * one item in 0.004 s while heat rows run to tens of thousands of P).
  */
+// In the browser (the solver's worker) it loads from the bundle; under Node (tests) it finds its own.
 const highs = await highsLoader(
-  typeof window === 'undefined' ? undefined : { locateFile: (file) => (file.endsWith('.wasm') ? wasmUrl : file) },
+  typeof location === 'undefined' ? undefined : { locateFile: (file) => (file.endsWith('.wasm') ? wasmUrl : file) },
 )
 
 export interface LinearProgram {

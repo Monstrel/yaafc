@@ -2,7 +2,6 @@ import { HEAT, NUTRIENTS, baseInputKey, realItem, type Stack } from './gameData'
 import { solveLP } from './lp'
 import { craftsPerMachine } from './machineRate'
 import { runKey, type Process, type ProcessCatalog } from './processes'
-import { separationKey, separationsOf } from './separate'
 import { NO_FLOWS, buildTree, type RowFlows, type TreeNode } from './tree'
 import type { Plan } from './types'
 import { planProducer, unfold, type PlanNode, type PlanShape } from './unfold'
@@ -97,36 +96,6 @@ function resolveTargets(plan: Plan, shape: PlanShape, mods: Modifiers): Resolved
         machineName: perMachine !== null ? (p?.machine?.name ?? null) : null,
       }
     })
-}
-
-/**
- * Drops producer, machine, catalyst, branch and build-separately choices for items, processes and
- * rows no longer in the plan, so an item that's removed and added back starts from its default
- * recipe instead of whatever was last picked for it. A build-separately choice that gathers
- * nothing (its anchor no longer sits above the item, say) goes too. Fuel and fertilizer choices
- * are plan-wide settings and always kept. Returns null when there's nothing to drop.
- */
-export function pruneChoices(plan: Plan, catalog: ProcessCatalog): Plan | null {
-  const { nodes } = unfold(plan, catalog)
-  const rows = new Set(nodes.map((n) => n.id))
-  const items = new Set(nodes.map((n) => n.item))
-  const processes = new Set(nodes.flatMap((n) => (n.process ? [n.process.id] : [])))
-  const gathering = new Set(nodes.flatMap((n) => (n.separation ? [separationKey(n.separation)] : [])))
-  const keep = <T>(record: Record<string, T> | undefined, test: (key: string) => boolean) => {
-    if (!record) return { record, dropped: false }
-    const kept = Object.fromEntries(Object.entries(record).filter(([k]) => test(k)))
-    return { record: kept, dropped: Object.keys(kept).length !== Object.keys(record).length }
-  }
-  const p = keep(plan.producers, (item) => item === HEAT || item === NUTRIENTS || items.has(item))
-  const m = keep(plan.machines, (id) => processes.has(id))
-  // Catalysts stay with a row only while its machines can take them.
-  const loadable = new Set(nodes.flatMap((n) => (n.process?.acceptsCatalysts ? [n.id] : [])))
-  const c = keep(plan.rowCatalysts, (id) => loadable.has(id))
-  const b = keep(plan.branches, (id) => rows.has(id))
-  const separate = plan.separate && separationsOf(plan.separate).filter((s) => gathering.has(separationKey(s)))
-  const s = separate?.length !== plan.separate?.length
-  if (!p.dropped && !m.dropped && !c.dropped && !b.dropped && !s) return null
-  return { ...plan, producers: p.record!, machines: m.record!, rowCatalysts: c.record, branches: b.record, separate }
 }
 
 /** The row that supplies a row: itself, or the row a loop or separate build points to. */

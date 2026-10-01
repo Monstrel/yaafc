@@ -21,9 +21,16 @@ import { allowedIngredients, builtinGroups, emptyPrefs, onlyGroup, preferredCoun
 import { countRecipes, diagnoseNoResults, type FinderQuery } from './diagnose'
 import { checkLogistics, checkProcess } from './logistics'
 import { craftsPerMachine } from './machineRate'
-import { pruneChoices, solvePlan, type PlanResult } from './solver'
+import { solvePlan, type PlanResult } from './solver'
 import type { TreeNode } from './tree'
-import { chooseProducer, clearBranchChoice, migrateCatalysts, rememberSetup, setRowCatalysts } from './choices'
+import {
+  chooseProducer,
+  clearBranchChoice,
+  migrateCatalysts,
+  pruneChoices,
+  rememberSetup,
+  setRowCatalysts,
+} from './choices'
 import { resolveChoice } from './unfold'
 import { separationsOf, withSeparation } from './separate'
 import type { MyDefaults, Plan, SavedRecipe, Separation } from './types'
