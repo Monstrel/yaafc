@@ -68,7 +68,13 @@ interface Props {
   onDeletePlan: () => void
 }
 
-const visibleItems = items.filter((i) => !i.hidden)
+/**
+ * Items a plan can't aim for: the Automatic Cashier is only bought from the shop in person, and
+ * Steam is heat on its way from boilers (counted from the fuel line, see BoilerRoom).
+ */
+const NOT_TARGETS = new Set(['CashRegister', 'Steam'])
+
+const targetItems = items.filter((i) => !i.hidden && !NOT_TARGETS.has(i.key))
 
 /** Stands in until the plan's first solve comes back. */
 const UNSOLVED: PlanResult = { status: 'ok', targets: [], runs: [], balances: [], tree: [] }
@@ -556,7 +562,7 @@ function TargetRow({
   return (
     <div className="target">
       <div className="target-row">
-        <ItemPicker value={target.item || null} options={visibleItems} onChange={(k) => onChange({ item: k ?? '' })} />
+        <ItemPicker value={target.item || null} options={targetItems} onChange={(k) => onChange({ item: k ?? '' })} />
         <button className="icon-button" title="Remove target" onClick={onRemove}>
           ×
         </button>
