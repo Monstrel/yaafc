@@ -322,6 +322,20 @@ h2 {
   min-width: 200px;
 }
 
+/* Beside a compact recipe button: the same height, padding and type size. */
+.picker.compact {
+  min-width: 0;
+  max-width: 240px;
+  margin-top: 4px;
+}
+
+.picker.compact .picker-button {
+  gap: 6px;
+  min-height: 0;
+  padding: 3px 8px;
+  font-size: 13px;
+}
+
 .picker-button {
   display: flex;
   align-items: center;

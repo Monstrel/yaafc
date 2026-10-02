@@ -391,6 +391,7 @@ export function ProducerSelect({
           onChange={(key) => key && crucible.has(key) && onChange(crucible.get(key)!.id)}
           placeholder="Crucible input…"
           detail={(i) => fmtSeconds(crucible.get(i.key)?.seconds ?? 0)}
+          compact={compact}
         />
       )}
     </span>

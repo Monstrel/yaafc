@@ -10,9 +10,11 @@ interface Props {
   allowClear?: boolean
   /** Extra text shown on the right of each option (e.g. cauldron value). */
   detail?: (item: Item) => string
+  /** Sized to sit beside a compact recipe button (in the production tree). */
+  compact?: boolean
 }
 
-export function ItemPicker({ value, options, onChange, placeholder = 'Choose item…', allowClear, detail }: Props) {
+export function ItemPicker({ value, options, onChange, placeholder = 'Choose item…', allowClear, detail, compact }: Props) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
@@ -41,11 +43,11 @@ export function ItemPicker({ value, options, onChange, placeholder = 'Choose ite
   }
 
   return (
-    <div className="picker" ref={root}>
+    <div className={`picker ${compact ? 'compact' : ''}`} ref={root}>
       <button type="button" className={`picker-button ${selected ? '' : 'empty'}`} onClick={() => setOpen(!open)}>
         {selected ? (
           <>
-            <ItemIcon item={selected.key} size={22} />
+            <ItemIcon item={selected.key} size={compact ? 20 : 22} />
             <span className="name">{selected.name}</span>
           </>
         ) : (
