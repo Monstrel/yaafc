@@ -3,7 +3,7 @@ import { NUTRIENTS } from './gameData'
 import { buildCatalog, type ProcessCatalog, type ProcessContext } from './processes'
 import type { SolveRequest } from './solve.worker'
 import type { PlanResult } from './solver'
-import type { MyDefaults, Plan, SavedRecipe } from './types'
+import type { MyDefaults, Plan, Progress, SavedRecipe } from './types'
 import { modifiers, type Modifiers } from './upgrades'
 
 let worker: Worker | undefined
@@ -54,13 +54,13 @@ export interface PlanModel {
  * Upgrades and process catalog for a plan, recomputed only when inputs change, and its solved
  * result: the newest one back from the solver, or null until the first one for this plan is.
  */
-export function usePlanModel(plan: Plan, saved: SavedRecipe[], mine: MyDefaults): PlanModel {
-  const mods = useMemo(() => modifiers(plan.upgrades, plan.coinStack), [plan.upgrades, plan.coinStack])
+export function usePlanModel(plan: Plan, progress: Progress, saved: SavedRecipe[], mine: MyDefaults): PlanModel {
+  const mods = useMemo(() => modifiers(progress.upgrades, plan.coinStack), [progress.upgrades, plan.coinStack])
   const fertChoice = plan.producers[NUTRIENTS]
   const fertilizer = fertChoice?.startsWith('fert:') ? fertChoice.slice(5) : 'BasicFertilizer'
   const context = useMemo<ProcessContext>(
-    () => ({ saved, machines: plan.machines, mods, fertilizer, tier: plan.tier, mine }),
-    [saved, plan.machines, mods, fertilizer, plan.tier, mine],
+    () => ({ saved, machines: plan.machines, mods, fertilizer, tier: progress.tier, mine }),
+    [saved, plan.machines, mods, fertilizer, progress.tier, mine],
   )
   const catalog = useMemo(() => buildCatalog(context), [context])
 

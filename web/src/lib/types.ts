@@ -44,8 +44,9 @@ export interface Plan {
    * it, the deepest pick winning.
    */
   branches?: Record<string, BranchChoice>
-  upgrades: UpgradeLevels
-  /** Research tier reached (1–9): defaults only use what it unlocks. Absent = every tier. */
+  /** Plans saved before upgrades were global: their levels (moved to `Progress` on load). */
+  upgrades?: UpgradeLevels
+  /** Plans saved before upgrades were global: their research tier (moved to `Progress` on load). */
   tier?: number
   /**
    * Fuel and fertilizer are base inputs. With feedback on, the plan's own output of the preferred
@@ -60,6 +61,14 @@ export interface Plan {
   catalysts?: Record<string, string[]>
   /** Items the production tree builds separately, gathering their uses instead of a copy per branch. */
   separate?: Separation[]
+}
+
+/** How far the player has got in their game: shared by every plan, since they play one game. */
+export interface Progress {
+  /** Level per improvement series (e.g. FactorySpeed: 14). */
+  upgrades: UpgradeLevels
+  /** Research tier reached (1–9): defaults only use what it unlocks. Absent = every tier. */
+  tier?: number
 }
 
 /** Where the production tree gathers the uses of an item built separately. */

@@ -1,10 +1,20 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { recipeSignature, type CauldronMode } from './lib/cauldron'
 import { planGroups } from './lib/itemGroups'
 import { usePlanModel } from './lib/planModel'
 import { gameVersion } from './lib/gameData'
-import { emptyPlan, foldKey, forget, newId, readBackup, useBackup, usePersistentState } from './lib/store'
-import type { MyDefaults, Plan, SavedRecipe } from './lib/types'
+import {
+  emptyPlan,
+  foldKey,
+  forget,
+  legacyProgress,
+  newId,
+  readBackup,
+  useBackup,
+  usePersistentState,
+  withoutLegacyProgress,
+} from './lib/store'
+import type { MyDefaults, Plan, Progress, SavedRecipe } from './lib/types'
 import { useUpdateAvailable } from './lib/updateCheck'
 import { CauldronPage } from './pages/CauldronPage'
 import { HomePage } from './pages/HomePage'
@@ -19,15 +29,24 @@ export default function App() {
   const [plans, setPlans] = usePersistentState<Plan[]>('plans', () => [emptyPlan('My factory')])
   const [activePlanId, setActivePlanId] = usePersistentState<string>('active-plan', '')
   const [myDefaults, setMyDefaults] = usePersistentState<MyDefaults>('my-defaults', {})
+  // One game, so one set of upgrades for every plan. Plans saved before that each had their own:
+  // start from the open plan's, then drop them from the plans.
+  const [progress, setProgress] = usePersistentState<Progress>(
+    'progress',
+    () => legacyProgress(plans, activePlanId) ?? { upgrades: {} },
+  )
+  useEffect(() => {
+    if (plans.some((p) => withoutLegacyProgress(p) !== p)) setPlans((ps) => ps.map(withoutLegacyProgress))
+  }, [plans, setPlans])
   const [status, setStatus] = useState<string | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
-  const downloadBackup = useBackup(saved, plans, myDefaults)
+  const downloadBackup = useBackup(saved, plans, progress, myDefaults)
   const updateAvailable = useUpdateAvailable()
 
   const plan = plans.find((p) => p.id === activePlanId) ?? plans[0]
   // What the active plan makes and overflows, offered as ingredient groups in the recipe finder.
   // Also solved for the planner page, from here so each change is solved once.
-  const model = usePlanModel(plan, saved, myDefaults)
+  const model = usePlanModel(plan, progress, saved, myDefaults)
   const activePlanGroups = useMemo(
     () =>
       planGroups(
@@ -62,6 +81,7 @@ export default function App() {
       const backup = await readBackup(file)
       setSaved(backup.savedRecipes)
       if (backup.myDefaults) setMyDefaults(backup.myDefaults)
+      if (backup.progress) setProgress(backup.progress)
       if (backup.plans.length) {
         setPlans(backup.plans)
         setActivePlanId(backup.plans[0].id)
@@ -144,6 +164,8 @@ export default function App() {
           plans={plans}
           plan={plan}
           model={model}
+          progress={progress}
+          onProgress={setProgress}
           myDefaults={myDefaults}
           onMyDefaults={setMyDefaults}
           onSelectPlan={setActivePlanId}

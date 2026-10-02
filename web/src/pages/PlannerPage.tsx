@@ -36,7 +36,7 @@ import type { PlanResult, ResolvedTarget } from '../lib/solver'
 import { separationsOf, withSeparation, withoutSeparation } from '../lib/separate'
 import { IMPORT, planProducer } from '../lib/unfold'
 import type { TreeNode } from '../lib/tree'
-import type { MyDefaults, Plan, PlanTarget, Separation } from '../lib/types'
+import type { MyDefaults, Plan, PlanTarget, Progress, Separation } from '../lib/types'
 import { MAX_COIN_STACK, PLANNER_UPGRADES, maxLevel, upgradeLevel, type Modifiers } from '../lib/upgrades'
 
 /** What each planner upgrade series currently does, shown under its name. */
@@ -52,6 +52,9 @@ interface Props {
   plans: Plan[]
   plan: Plan
   model: PlanModel
+  /** Upgrade levels and research tier, for every plan. */
+  progress: Progress
+  onProgress: (update: (p: Progress) => Progress) => void
   /** How the player likes to make items, for every plan. */
   myDefaults: MyDefaults
   onMyDefaults: (defaults: MyDefaults) => void
@@ -71,6 +74,8 @@ export function PlannerPage({
   plans,
   plan,
   model,
+  progress,
+  onProgress,
   myDefaults,
   onMyDefaults,
   onSelectPlan,
@@ -220,9 +225,10 @@ export function PlannerPage({
 
           <section className="panel">
             <h2>Upgrades</h2>
+            <p className="hint">Your game&apos;s progress: shared by every plan.</p>
             <ResearchTier
               tier={catalog.tier}
-              onChange={(tier) => onUpdatePlan((p) => ({ ...p, tier: tier === MAX_TIER ? undefined : tier }))}
+              onChange={(tier) => onProgress((p) => ({ ...p, tier: tier === MAX_TIER ? undefined : tier }))}
             />
             {PLANNER_UPGRADES.map((u) => (
               <label
@@ -244,9 +250,9 @@ export function PlannerPage({
                   type="number"
                   min={0}
                   max={Number.isFinite(maxLevel(u)) ? maxLevel(u) : undefined}
-                  value={upgradeLevel(plan.upgrades, u)}
+                  value={upgradeLevel(progress.upgrades, u)}
                   onChange={(e) =>
-                    onUpdatePlan((p) => ({
+                    onProgress((p) => ({
                       ...p,
                       upgrades: { ...p.upgrades, [u.key]: upgradeLevel({ [u.key]: Number(e.target.value) || 0 }, u) },
                     }))

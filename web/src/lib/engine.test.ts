@@ -33,13 +33,14 @@ import {
 } from './choices'
 import { resolveChoice } from './unfold'
 import { separationsOf, withSeparation } from './separate'
+import { legacyProgress, withoutLegacyProgress } from './store'
 import type { MyDefaults, Plan, SavedRecipe, Separation } from './types'
 import { PLANNER_UPGRADES, maxLevel, modifiers, upgradeLevel } from './upgrades'
 
 const round1 = (x: number) => Math.round(x * 10) / 10
 
 function plan(partial: Partial<Plan>): Plan {
-  return { id: 't', name: 't', targets: [], producers: {}, machines: {}, upgrades: {}, ...partial }
+  return { id: 't', name: 't', targets: [], producers: {}, machines: {}, ...partial }
 }
 
 function expectBalanced(result: PlanResult) {
@@ -893,6 +894,17 @@ describe('upgrade levels (DT_Improvements)', () => {
       expect(upgradeLevel({ [u.key]: -2 }, u)).toBe(0)
       expect(upgradeLevel({ [u.key]: 2.7 }, u)).toBe(2)
     }
+  })
+
+  it('moves per-plan upgrades from older saves to one shared set, preferring the open plan', () => {
+    const a = plan({ id: 'a', upgrades: { FactorySpeed: 3 }, tier: 4 })
+    const b = plan({ id: 'b', upgrades: { FactorySpeed: 9 } })
+    const fresh = plan({ id: 'c', upgrades: undefined })
+    expect(legacyProgress([a, b], 'b')).toEqual({ upgrades: { FactorySpeed: 9 }, tier: undefined })
+    expect(legacyProgress([fresh, a, b], 'c')).toEqual({ upgrades: { FactorySpeed: 3 }, tier: 4 })
+    expect(legacyProgress([fresh])).toBeUndefined()
+    expect(withoutLegacyProgress(a)).toEqual({ id: 'a', name: 't', targets: [], producers: {}, machines: {} })
+    expect(withoutLegacyProgress(fresh)).toBe(fresh)
   })
 })
 
