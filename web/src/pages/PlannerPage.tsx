@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useMemo, useOptimistic } from 'react'
+import { startTransition, useEffect, useMemo, useOptimistic, useState } from 'react'
 import { ItemIcon, ItemLabel } from '../components/ItemIcon'
 import { ItemPicker } from '../components/ItemPicker'
 import { Money } from '../components/Money'
@@ -17,6 +17,7 @@ import {
   itemsByKey,
   machineTier,
   machinesByKey,
+  realItem,
   tierIcon,
   tierName,
 } from '../lib/gameData'
@@ -28,6 +29,7 @@ import {
   chooseProducer,
   clearBranchChoice,
   keepDefaultInPlan,
+  addProvider,
   migrateCatalysts,
   migrateFeedback,
   moveTarget,
@@ -212,6 +214,7 @@ export function PlannerPage({
             {plan.targets.map((t, i) => (
               <TargetRow
                 key={i}
+                index={i}
                 target={t}
                 resolved={resolvedByRow[i]}
                 feedsInto={t.item ? feedsInto(t.item) : ''}
@@ -438,7 +441,9 @@ export function PlannerPage({
                         key={l.resource}
                         ledger={l}
                         plan={plan}
+                        catalog={catalog}
                         onItemFeedback={(item, on) => onUpdatePlan((p) => setItemFeedback(p, item, on))}
+                        onProvide={(item) => onUpdatePlan((p) => addProvider(p, item))}
                       />
                     ))}
                   {machineTier(STEAM_BOILER) <= catalog.tier && (
@@ -535,23 +540,27 @@ const STEAM_BOILER = 'SteamBoiler'
 function LedgerPanel({
   ledger,
   plan,
+  catalog,
   onItemFeedback,
+  onProvide,
 }: {
   ledger: ResourceLedger
   plan: Plan
+  catalog: ProcessCatalog
   onItemFeedback: (item: string, on: boolean) => void
+  onProvide: (item: string) => void
 }) {
   const { title, unit, verb } = RESOURCE[ledger.resource]
   const perSecond = (perMinute: number) => `${fmt(perMinute / 60)} ${unit}`
   const byItem = new Map<string, LedgerSource[]>()
   for (const s of ledger.sources) byItem.set(s.item, [...(byItem.get(s.item) ?? []), s])
   const source = (s: LedgerSource) => {
-    const what = s.target === null ? 'Overflow' : `Target ${s.target + 1}${s.target === ledger.absorbedBy ? ' (net)' : ''}`
     const own = s.target !== null && plan.targets[s.target]?.feedback !== undefined
     return (
       <li key={`${s.target}:${s.item}`} className="ledger-source">
         <span>
-          {what} · {fmt(s.amount)}/min
+          {s.target === null ? 'Overflow' : <TargetLink index={s.target} />}
+          {s.target !== null && s.target === ledger.absorbedBy && ' (net)'} · {fmt(s.amount)}/min
         </span>
         <span className="hint-inline">
           {!s.fedBack
@@ -604,6 +613,101 @@ function LedgerPanel({
           </li>
         )}
       </ul>
+      {ledger.need > 0 &&
+        (ledger.absorbedBy !== null ? (
+          <p className="ledger-provider hint">
+            {ledger.resource === 'heat' ? 'Heat' : 'Fertilizer'} provided by <TargetLink index={ledger.absorbedBy} /> (
+            {itemName(plan.targets[ledger.absorbedBy].item)}, net)
+          </p>
+        ) : (
+          <Provider resource={ledger.resource} plan={plan} catalog={catalog} onProvide={onProvide} />
+        ))}
+    </div>
+  )
+}
+
+/** Scrolls to a target in the list and pulses it. */
+function TargetLink({ index }: { index: number }) {
+  const show = () => {
+    const el = document.getElementById(`target-${index}`)
+    if (!el) return
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    el.classList.remove('pulse')
+    void el.offsetWidth // restart the animation
+    el.classList.add('pulse')
+  }
+  return (
+    <button className="tree-link" onClick={show}>
+      Target {index + 1}
+    </button>
+  )
+}
+
+/**
+ * Sets the plan up to provide its own heat or fertilizer: adds a fed-back target at 0 net per
+ * minute of a fuel the player picks (the bus fuel to start with), or of the nurseries' fertilizer.
+ */
+function Provider({
+  resource,
+  plan,
+  catalog,
+  onProvide,
+}: {
+  resource: 'heat' | 'fertilizer'
+  plan: Plan
+  catalog: ProcessCatalog
+  onProvide: (item: string) => void
+}) {
+  const key = resource === 'heat' ? HEAT : NUTRIENTS
+  const [picked, setPicked] = useState<string | null>(null)
+  const itemOf = (producer: string) => {
+    const input = catalog.byId.get(producer)?.inputs[0]?.item
+    return input ? realItem(input) : null
+  }
+  if (picked === null)
+    return (
+      <p className="ledger-provider">
+        <button onClick={() => setPicked(planProducer(plan, catalog, key))}>Provide from this plan…</button>
+      </p>
+    )
+  const item = itemOf(picked)
+  return (
+    <div className="ledger-provider provider-form">
+      {resource === 'heat' ? (
+        <label className="stacked">
+          Fuel to make
+          <ProducerSelect
+            item={HEAT}
+            current={{ producer: picked, process: catalog.byId.get(picked) }}
+            catalog={catalog}
+            onChange={(producer) => setPicked(producer)}
+            noImport
+            oneLine
+          />
+        </label>
+      ) : (
+        <p className="hint">
+          Nurseries grow at the speed of the fertilizer they get, so this makes {item ? itemName(item) : 'it'}. To make
+          another, change the fertilizer from the bus first.
+        </p>
+      )}
+      <p className="hint">
+        Adds a target of 0 net /min, fed back: the planner builds what the plan {resource === 'heat' ? 'burns' : 'spreads'}{' '}
+        after the targets above it. Raise it for a surplus, or remove it to go back to the bus.
+      </p>
+      <div className="provider-actions">
+        <button
+          className="primary"
+          disabled={!item}
+          onClick={() => {
+            if (item) onProvide(item)
+            setPicked(null)
+          }}
+        >
+          Add {item ? itemName(item) : ''} target
+        </button>
+        <button onClick={() => setPicked(null)}>Cancel</button>
+      </div>
     </div>
   )
 }
@@ -637,6 +741,7 @@ function BoilerRoom({ heat, factorySpeed }: { heat: number; factorySpeed: number
 type Unit = NonNullable<PlanTarget['unit']>
 
 function TargetRow({
+  index,
   target,
   resolved,
   feedsInto,
@@ -650,6 +755,7 @@ function TargetRow({
   last,
   onRemove,
 }: {
+  index: number
   target: PlanTarget
   resolved: ResolvedTarget | undefined
   /** What the item could feed back into ('heat', 'fertilizer', both, or '' when nothing). */
@@ -671,7 +777,7 @@ function TargetRow({
   const perMachine = resolved?.perMachine ?? null
   const made = resolved?.made ?? 0
   return (
-    <div className="target">
+    <div className="target" id={`target-${index}`}>
       <div className="target-row">
         <ItemPicker value={target.item || null} options={targetItems} onChange={(k) => onChange({ item: k ?? '' })} />
         {onMove && (

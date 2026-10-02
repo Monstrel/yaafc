@@ -144,6 +144,19 @@ export function setTargetFeedback(plan: Plan, index: number, on: boolean): Plan 
 }
 
 /**
+ * Makes the plan provide its own heat or fertilizer: a target of `item` at 0 net per minute, fed
+ * back, at the end of the list, so it covers whatever the sources ahead of it leave. It's an
+ * ordinary target from then on; removing it puts the plan back as it was.
+ */
+export const addProvider = (plan: Plan, item: string): Plan => ({
+  ...plan,
+  targets: [
+    ...plan.targets,
+    { item, rate: 0, unit: 'net', ...(!plan.feedbackItems?.includes(item) && { feedback: true }) },
+  ],
+})
+
+/**
  * Puts the targets in a new order (`order` lists old indexes; leaving one out removes it). Tree
  * row ids start with their target's place, so per-row picks, catalysts and build-separately rows
  * move with their target, and a removed target's go with it.

@@ -26,6 +26,7 @@ import type { TreeNode } from './tree'
 import {
   chooseProducer,
   clearBranchChoice,
+  addProvider,
   migrateCatalysts,
   migrateFeedback,
   moveTarget,
@@ -1027,6 +1028,19 @@ describe('net-surplus targets', () => {
     expect(overflow.used * overflow.per + net.used * net.per).toBeCloseTo(heat.need)
     expect(net.amount - net.used).toBeCloseTo(10)
     expect(net.used).toBeLessThan(solved(p).heat.sources.find((s) => s.target === 0)!.used)
+  })
+
+  it('sets up a provider as an ordinary target that removing undoes', () => {
+    const bus = plan({ targets: [steel], producers: { [HEAT]: 'fuel:CokePowder' } })
+    const provided = addProvider(bus, 'CokePowder')
+    expect(provided.targets[1]).toEqual({ item: 'CokePowder', rate: 0, unit: 'net', feedback: true })
+    const { heat } = solved(provided)
+    expect(heat.absorbedBy).toBe(1)
+    expect(heat.covered).toBeCloseTo(heat.need)
+    expect(heat.sources[0].amount - heat.sources[0].used).toBeCloseTo(0)
+    expect(removeTarget(provided, 1)).toEqual(bus)
+    // Already fed back for the whole plan: the target just follows that.
+    expect(addProvider({ ...bus, feedbackItems: ['CokePowder'] }, 'CokePowder').targets[1]).not.toHaveProperty('feedback')
   })
 
   it('is a plain items target unless it is fed back', () => {

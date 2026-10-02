@@ -2145,3 +2145,26 @@ tr.kind-separate .item-label .name {
   gap: 6px;
   max-width: 760px;
 }
+
+.ledger-provider {
+  margin: 10px 0 0;
+}
+
+.provider-form {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.provider-form .hint {
+  margin: 6px 0;
+}
+
+.provider-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.target.pulse {
+  animation: tree-pulse 1.2s ease-in-out 3;
+}
