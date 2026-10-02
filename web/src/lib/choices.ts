@@ -143,6 +143,13 @@ export function setTargetFeedback(plan: Plan, index: number, on: boolean): Plan 
   }
 }
 
+/** Runs a row on a whole number of machines (rounded up), or on just what it needs. */
+export function setRoundUp(plan: Plan, row: string, on: boolean): Plan {
+  const rest = (plan.roundUp ?? []).filter((id) => id !== row)
+  const roundUp = on ? [...rest, row] : rest
+  return { ...plan, roundUp: roundUp.length ? roundUp : undefined }
+}
+
 /**
  * Makes the plan provide its own heat or fertilizer: a target of `item` at 0 net per minute, fed
  * back, at the end of the list, so it covers whatever the sources ahead of it leave. It's an
@@ -190,7 +197,15 @@ export function reorderTargets(plan: Plan, order: number[]): Plan {
       const at = remap(s.at)
       return at === null ? [] : [{ ...s, at }]
     })
-  return { ...plan, targets, branches: rows(plan.branches), rowCatalysts: rows(plan.rowCatalysts), separate }
+  const roundUp = plan.roundUp?.flatMap((id) => remap(id) ?? [])
+  return {
+    ...plan,
+    targets,
+    branches: rows(plan.branches),
+    rowCatalysts: rows(plan.rowCatalysts),
+    separate,
+    roundUp: roundUp?.length ? roundUp : undefined,
+  }
 }
 
 export const moveTarget = (plan: Plan, from: number, to: number) => {
@@ -377,7 +392,11 @@ export function pruneChoices(plan: Plan, catalog: ProcessCatalog): Plan | null {
   const made = new Set([...items, ...nodes.flatMap((n) => n.process?.outputs.map((o) => o.item) ?? [])])
   const feedbackItems = plan.feedbackItems?.filter((item) => made.has(item))
   const f = feedbackItems?.length !== plan.feedbackItems?.length
-  if (!p.dropped && !m.dropped && !c.dropped && !b.dropped && !s && !r && !f) return null
+  // Rounding stays with rows its machines still run on.
+  const running = new Set(nodes.flatMap((n) => (n.kind === 'make' ? [n.id] : [])))
+  const roundUp = plan.roundUp?.filter((id) => running.has(id))
+  const u = roundUp?.length !== plan.roundUp?.length
+  if (!p.dropped && !m.dropped && !c.dropped && !b.dropped && !s && !r && !f && !u) return null
   return {
     ...plan,
     producers: p.record!,
@@ -387,5 +406,6 @@ export function pruneChoices(plan: Plan, catalog: ProcessCatalog): Plan | null {
     separate,
     noReuse: noReuse?.length ? noReuse : undefined,
     feedbackItems: feedbackItems?.length ? feedbackItems : undefined,
+    roundUp: roundUp?.length ? roundUp : undefined,
   }
 }

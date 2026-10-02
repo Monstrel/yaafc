@@ -106,3 +106,14 @@ export function checkLogistics(runs: ProcessRun[], mods: Modifiers): Map<string,
   }
   return checks
 }
+
+/**
+ * Machines a row builds (input belt limits included, as the player builds them) and that rounded
+ * up to a whole number; null when its belts can't feed it at all.
+ */
+export function wholeMachines(p: Process, machines: number, mods: Modifiers): { exact: number; count: number } | null {
+  const utilization = checkProcess(p, mods)?.utilization ?? 1
+  if (utilization <= 0) return null
+  const exact = machines / utilization
+  return { exact, count: Math.ceil(exact - 1e-9) }
+}

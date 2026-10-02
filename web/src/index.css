@@ -2165,3 +2165,40 @@ tr.kind-separate .item-label .name {
 .stat-label .negative {
   color: var(--red);
 }
+
+.tree-menu-check {
+  display: inline-flex;
+  justify-content: center;
+  width: 18px;
+  color: var(--accent);
+}
+
+/* A row's machine count opens its rounding menu; rounded rows show it in the accent color. */
+.machines-button {
+  border: none;
+  background: none;
+  padding: 0 2px;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  border-bottom: 1px dotted var(--muted);
+  border-radius: 0;
+}
+
+.machines-button:hover {
+  color: var(--accent);
+}
+
+.machines-button.rounded {
+  color: var(--accent);
+}
+
+.rounded-mark {
+  margin-left: 2px;
+  font-weight: 700;
+}
+
+/* Overflow the plan feeds back into its own heat or fertilizer: used, so not a warning. */
+.fed-text {
+  color: var(--muted);
+}

@@ -1,4 +1,5 @@
 import { HEAT, NUTRIENTS, baseInputKey, realItem, type Stack } from './gameData'
+import { wholeMachines } from './logistics'
 import { solveLP } from './lp'
 import { craftsPerMachine } from './machineRate'
 import { runKey, type Process, type ProcessCatalog } from './processes'
@@ -119,15 +120,48 @@ interface Absorbing {
 /** Rounds of solving before the supply ahead of a net-surplus target settles (overflow moves with it). */
 const MAX_FEEDBACK_ROUNDS = 8
 
+/** Rounds of solving before rows rounded up to whole machines settle (rounding one can grow another below it). */
+const MAX_ROUNDING_ROUNDS = 12
+
 /**
- * Solves the plan. A net-surplus target that's fed back makes the plan cover its own heat or
- * nutrients: its row grows to burn what the sources ahead of it (overflow, then fed-back targets
- * in order) leave of the need, and still delivers its rate. Overflow depends on the solution, so
- * the solve repeats until what those sources supply settles.
+ * Solves the plan. Rows rounded up (`plan.roundUp`) run on the next whole number of the machines
+ * built (with input belt limits), the extra output overflowing: each solve gives them a floor on
+ * their crafts, and the plan is solved again until no rounded row needs more. Floors only grow.
  */
 export function solvePlan(plan: Plan, catalog: ProcessCatalog, mods: Modifiers): PlanResult {
+  const rounded = new Set(plan.roundUp ?? [])
+  const floors = new Map<string, number>()
+  let result = solveFed(plan, catalog, mods, floors)
+  for (let round = 0; rounded.size && round < MAX_ROUNDING_ROUNDS && result.status === 'ok'; round++) {
+    let raised = false
+    const visit = (n: TreeNode) => {
+      const p = n.run?.process
+      if (rounded.has(n.id) && n.kind === 'produce' && p?.machine && p.seconds > 0) {
+        const built = wholeMachines(p, n.machines, mods)
+        if (built !== null && built.count > built.exact + 1e-9) {
+          floors.set(n.id, (built.count / built.exact) * n.run!.craftsPerMinute)
+          raised = true
+        }
+      }
+      n.children.forEach(visit)
+    }
+    result.tree.forEach(visit)
+    if (!raised) break
+    result = solveFed(plan, catalog, mods, floors)
+  }
+  return result
+}
+
+/**
+ * Solves the plan with rows held to at least `floors` crafts per minute (by row id). A net-surplus
+ * target that's fed back makes the plan cover its own heat or nutrients: its row grows to burn what
+ * the sources ahead of it (overflow, then fed-back targets in order) leave of the need, and still
+ * delivers its rate. Overflow depends on the solution, so the solve repeats until what those
+ * sources supply settles.
+ */
+function solveFed(plan: Plan, catalog: ProcessCatalog, mods: Modifiers, floors: Map<string, number>): PlanResult {
   const found = absorbers(plan, catalog)
-  if (!found.size) return solveRound(plan, catalog, mods, new Map())
+  if (!found.size) return solveRound(plan, catalog, mods, new Map(), floors)
   const filtered = plan.targets.map((t, i) => (t.item ? plan.targets.slice(0, i).filter((x) => x.item).length : -1))
   const absorbing = new Map<string, Absorbing>()
   for (const [resource, { target, item }] of found) {
@@ -135,7 +169,7 @@ export function solvePlan(plan: Plan, catalog: ProcessCatalog, mods: Modifiers):
     const process = catalog.byProduct.get(pseudo)?.find((p) => realItem(p.inputs[0]?.item ?? '') === item)
     if (process) absorbing.set(pseudo, { target: filtered[target], process, ahead: 0 })
   }
-  let result = solveRound(plan, catalog, mods, absorbing)
+  let result = solveRound(plan, catalog, mods, absorbing, floors)
   for (let round = 1; round < MAX_FEEDBACK_ROUNDS && result.status === 'ok'; round++) {
     const ahead = supplyAhead(plan, catalog, result)
     let settled = true
@@ -145,7 +179,7 @@ export function solvePlan(plan: Plan, catalog: ProcessCatalog, mods: Modifiers):
       a.ahead = next
     }
     if (settled) break
-    result = solveRound(plan, catalog, mods, absorbing)
+    result = solveRound(plan, catalog, mods, absorbing, floors)
   }
   return result
 }
@@ -183,8 +217,15 @@ const outputOf = (p: Process, item: string) => p.outputs.find((s) => s.item === 
  * By-products are the one exception: each row's side outputs can feed any row of their item,
  * the nearest first, and what's left over is surplus. Heat and nutrients are plan-wide: fuel and
  * fertilizer come off the bus for every machine, unless a net-surplus target covers them (`absorbing`).
+ * A row with a floor runs at least that many crafts per minute; what nothing uses overflows.
  */
-function solveRound(plan: Plan, catalog: ProcessCatalog, mods: Modifiers, absorbing: Map<string, Absorbing>): PlanResult {
+function solveRound(
+  plan: Plan,
+  catalog: ProcessCatalog,
+  mods: Modifiers,
+  absorbing: Map<string, Absorbing>,
+  floors: Map<string, number>,
+): PlanResult {
   const shape = unfold(plan, catalog)
   const targets = resolveTargets(plan, shape, mods)
   const index = new Map(shape.nodes.map((n, k) => [n, k]))
@@ -262,6 +303,12 @@ function solveRound(plan: Plan, catalog: ProcessCatalog, mods: Modifiers, absorb
       cost: CRAFT_COST * Math.max(p.seconds, 1) * (p.product === n.item ? 1 : SIDE_RUN_FACTOR),
     }
     columns[`x:${k}`] = col
+    const floor = floors.get(n.id)
+    if (floor) {
+      equalities[`r:${k}`] = floor
+      col[`r:${k}`] = 1
+      columns[`rs:${k}`] = { [`r:${k}`]: -1, cost: 0 }
+    }
     add(col, `b:${k}`, outputOf(p, n.item))
     for (const o of p.outputs) {
       if (o.item === n.item) continue

@@ -81,6 +81,8 @@ export interface Plan {
   separate?: Separation[]
   /** Items whose rows make all of it themselves, taking no other rows' by-products (unless a branch says so). */
   noReuse?: string[]
+  /** Tree row ids that run on a whole number of machines, rounded up; the extra output overflows. */
+  roundUp?: string[]
 }
 
 /** How far the player has got in their game: shared by every plan, since they play one game. */

@@ -3,6 +3,7 @@ import { CATALYSTS, coinValue, itemsByKey } from '../lib/gameData'
 import { fmt } from '../lib/format'
 import { buildingNameFor, machineNameFor, noun } from '../lib/plural'
 import { foldKey, usePersistentState } from '../lib/store'
+import type { Resource } from '../lib/ledger'
 import type { LogisticsCheck } from '../lib/logistics'
 import type { ProcessCatalog } from '../lib/processes'
 import { branchIds, type TreeNode } from '../lib/tree'
@@ -30,6 +31,11 @@ interface Props {
   onForget: (item: string) => void
   onSeparate: (s: Separation, on: boolean) => void
   logistics: Map<string, LogisticsCheck>
+  /** Rows running on a whole number of machines, rounded up. */
+  roundUp: string[]
+  onRoundUp: (row: string, on: boolean) => void
+  /** Per item, the share of its overflow the plan feeds back into its own heat or fertilizer. */
+  fed: Map<string, { share: number; into: Resource[] }>
 }
 
 /** Where a link points: every row it matches, largest share first. */
@@ -54,7 +60,11 @@ export function ProductionTree({
   onForget,
   onSeparate,
   logistics,
+  roundUp,
+  onRoundUp,
+  fed,
 }: Props) {
+  const rounded = useMemo(() => new Set(roundUp), [roundUp])
   // Folded rows survive leaving the planner and reloads (row ids are stable paths).
   const [collapsedIds, setCollapsedIds] = usePersistentState<string[]>(foldKey(planId), [])
   const collapsed = useMemo(() => new Set(collapsedIds), [collapsedIds])
@@ -128,6 +138,21 @@ export function ProductionTree({
       .reverse()
     // The button sits at the right end of its row: line the 280px menu up with its right edge.
     setMenu({ node, anchors, x: Math.max(8, Math.min(rect.right - 280, window.innerWidth - 288)), y: rect.bottom + 4 })
+  }
+
+  // Machines menu: run a row on just what it needs, or round it up to whole machines.
+  const [machinesMenu, setMachinesMenu] = useState<{ node: TreeNode; x: number; y: number } | null>(null)
+  const machinesRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (machinesMenu) machinesRef.current?.showPopover()
+  }, [machinesMenu])
+  const openMachinesMenu = (node: TreeNode, button: HTMLElement) => {
+    const rect = button.getBoundingClientRect()
+    setMachinesMenu({ node, x: Math.max(8, Math.min(rect.right - 280, window.innerWidth - 288)), y: rect.bottom + 4 })
+  }
+  const chooseRounding = (on: boolean) => {
+    machinesRef.current?.hidePopover()
+    if (machinesMenu) onRoundUp(machinesMenu.node.id, on)
   }
 
   // Picking an anchor built in several places asks whether to gather under all of them.
@@ -279,6 +304,9 @@ export function ProductionTree({
                   savable={savable.has(line.node.id)}
                   onSeparate={onSeparate}
                   onSeparateMenu={openMenu}
+                  rounded={rounded.has(line.node.id)}
+                  fed={fed}
+                  onMachinesMenu={openMachinesMenu}
                   logistics={logistics}
                   link={link}
                 />
@@ -325,6 +353,24 @@ export function ProductionTree({
         )}
       </div>
 
+      <div
+        ref={machinesRef}
+        popover="auto"
+        className="tree-menu"
+        role="menu"
+        style={machinesMenu ? { left: machinesMenu.x, top: machinesMenu.y } : undefined}
+        onToggle={(e) => e.newState === 'closed' && setMachinesMenu(null)}
+      >
+        {machinesMenu && (
+          <MachinesMenu
+            node={machinesMenu.node}
+            rounded={rounded.has(machinesMenu.node.id)}
+            belts={machinesMenu.node.run ? logistics.get(machinesMenu.node.run.key) : undefined}
+            onChoose={chooseRounding}
+          />
+        )}
+      </div>
+
       <dialog ref={dialogRef} className="tree-dialog" onClose={() => setConfirm(null)}>
         {confirm && (
           <AnchorChoice node={confirm.node} anchor={confirm.anchor} count={confirm.count} onDecide={decide} />
@@ -349,6 +395,9 @@ function TreeRow({
   savable,
   onSeparate,
   onSeparateMenu,
+  rounded,
+  onMachinesMenu,
+  fed,
   logistics,
   link,
   edges,
@@ -380,6 +429,10 @@ function TreeRow({
   savable: boolean
   onSeparate: (s: Separation, on: boolean) => void
   onSeparateMenu: (node: TreeNode, button: HTMLElement) => void
+  /** The row runs on a whole number of machines, rounded up. */
+  rounded: boolean
+  onMachinesMenu: (node: TreeNode, button: HTMLElement) => void
+  fed: Map<string, { share: number; into: Resource[] }>
   logistics: Map<string, LogisticsCheck>
   link: LinkFn
   edges: Edge[]
@@ -555,11 +608,7 @@ function TreeRow({
             {node.kind === 'produce' && node.purchased > 0 && (
               <div className="note-line">{fmt(node.purchased)}/min bought</div>
             )}
-            {node.overflow > 0 && node.kind === 'produce' && (
-              <div className="note-line warn-text" title="Made by this row's machines but used nowhere in the plan">
-                +{fmt(node.overflow)}/min overflow
-              </div>
-            )}
+            {node.overflow > 0 && node.kind === 'produce' && <OverflowNote item={node.item} amount={node.overflow} fed={fed} />}
             {node.byproducts.map((b) => (
               <div key={b.item} className="note-line">
                 also makes <ItemLabel item={b.item} count={b.count} size={16} /> →{' '}
@@ -577,9 +626,10 @@ function TreeRow({
                   </span>
                 ))}
                 {b.overflow > 0 && (
-                  <span className="warn-text">
-                    {b.to.length > 0 && `, ${fmt(b.overflow)} `}overflow
-                  </span>
+                  <>
+                    {b.to.length > 0 && ', '}
+                    <OverflowNote item={b.item} amount={b.overflow} fed={fed} inline counted={b.to.length > 0} />
+                  </>
                 )}
               </div>
             ))}
@@ -604,7 +654,20 @@ function TreeRow({
       <td className="num">
         {node.kind === 'produce' && p?.machine && (
           <>
-            <span className="machines-value">{fmt(node.machines)}</span>
+            <button
+              type="button"
+              className={`machines-button${rounded ? ' rounded' : ''}`}
+              title={rounded ? 'Rounded up to whole machines: the extra output overflows' : 'Round up to whole machines'}
+              aria-haspopup="menu"
+              onClick={(e) => onMachinesMenu(node, e.currentTarget)}
+            >
+              <span className="machines-value">{fmt(node.machines)}</span>
+              {rounded && (
+                <span className="rounded-mark" aria-label="rounded up">
+                  ↑
+                </span>
+              )}
+            </button>
             {limited && (
               <div className="belt-limited" title="Machines needed once conveyor limits slow them down">
                 → {belts.utilization > 0 ? fmt(node.machines / belts.utilization) : '∞'} (belts)
@@ -928,3 +991,96 @@ function Edges({ edges }: { edges: Edge[] }) {
 /** Where a "with" card's tint starts: at its edge, so the margin outside stays clear. */
 const cardStyle = (level?: number) =>
   level === undefined ? undefined : ({ '--card-x': `${edgeX(level)}px` } as CSSProperties)
+
+/**
+ * Choices for a row's machine count: just what the plan needs, or the next whole number of
+ * machines (as built, input belt limits included), the extra output overflowing.
+ */
+function MachinesMenu({
+  node,
+  rounded,
+  belts,
+  onChoose,
+}: {
+  node: TreeNode
+  rounded: boolean
+  belts: LogisticsCheck | undefined
+  onChoose: (round: boolean) => void
+}) {
+  const machine = node.run?.process.machine
+  const utilization = belts?.utilization ?? 1
+  const built = utilization > 0 ? node.machines / utilization : node.machines
+  const whole = Math.ceil(built - 1e-9)
+  const names = (n: number) => (machine ? buildingNameFor(machine.key, n) : noun(n, 'machine'))
+  const extra = built > 0 ? node.rate * (whole / built - 1) : 0
+  return (
+    <>
+      <div className="tree-menu-title">Machines for {itemsByKey.get(node.item)?.name}</div>
+      <button type="button" role="menuitemradio" aria-checked={!rounded} onClick={() => onChoose(false)}>
+        <span className="tree-menu-check" aria-hidden>
+          {rounded ? '' : '✓'}
+        </span>
+        <span>
+          As needed
+          <span className="tree-menu-hint">{rounded ? 'just what the plan uses, no overflow' : `${fmt(built)} ${names(built)}`}</span>
+        </span>
+      </button>
+      <button type="button" role="menuitemradio" aria-checked={rounded} onClick={() => onChoose(true)}>
+        <span className="tree-menu-check" aria-hidden>
+          {rounded ? '✓' : ''}
+        </span>
+        <span>
+          Round up to whole machines
+          <span className="tree-menu-hint">
+            {rounded
+              ? 'the extra output overflows'
+              : whole === built || Math.abs(whole - built) < 1e-9
+                ? 'already a whole number'
+                : `${whole} ${names(whole)}, +${fmt(extra)}/min overflow`}
+          </span>
+        </span>
+      </button>
+    </>
+  )
+}
+
+const FED_INTO: Record<Resource, string> = { heat: 'burned for heat', fertilizer: 'spread as fertilizer' }
+
+/**
+ * What a row makes of an item that nothing uses: the part the plan feeds back into its own heat or
+ * fertilizer (not overflow: it's used), and the rest, overflowing.
+ */
+function OverflowNote({
+  item,
+  amount,
+  fed,
+  inline,
+  counted,
+}: {
+  item: string
+  amount: number
+  fed: Map<string, { share: number; into: Resource[] }>
+  /** Part of a by-product line rather than a line of its own. */
+  inline?: boolean
+  /** Show the amount even inline (the by-product also goes elsewhere). */
+  counted?: boolean
+}) {
+  const f = fed.get(item)
+  const used = amount * (f?.share ?? 0)
+  const left = amount - used
+  const parts: ReactNode[] = []
+  if (used > 1e-9 * amount)
+    parts.push(
+      <span key="fed" className="fed-text">
+        {fmt(used)}/min {f!.into.map((r) => FED_INTO[r]).join(' and ')}
+      </span>,
+    )
+  if (left > 1e-9 * amount)
+    parts.push(
+      <span key="left" className="warn-text" title="Made by this row's machines but used nowhere in the plan">
+        {inline ? `${counted || used > 0 ? `${fmt(left)} ` : ''}overflow` : `+${fmt(left)}/min overflow`}
+      </span>,
+    )
+  const joined = parts.flatMap((p, i) => (i ? [', ', p] : [p]))
+  return inline ? <>{joined}</> : <div className="note-line">{joined}</div>
+}

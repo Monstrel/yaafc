@@ -19,6 +19,8 @@ export interface LedgerSource {
   /** Heat (P) or nutrients one item supplies. */
   per: number
   fedBack: boolean
+  /** Items per minute of it left for this resource (fertilizer takes its share first). */
+  available: number
   /** Items per minute the plan burns or spreads of it (0 unless fed back). */
   used: number
 }
@@ -31,6 +33,11 @@ export interface ResourceLedger {
   sources: LedgerSource[]
   /** Part of the need its own output covers, per minute. */
   covered: number
+  /**
+   * Heat or nutrients per minute everything the plan feeds back holds, used or not: with `need`,
+   * the plan's own balance (made − need: positive when it makes more than it uses).
+   */
+  made: number
   /**
    * The net-surplus target (index in the plan's targets) that covers what's left of the need,
    * instead of the bus; null when the bus does.
@@ -97,15 +104,16 @@ export function ledgers(plan: Plan, catalog: ProcessCatalog, result: PlanResult)
     const sources: LedgerSource[] = []
     const overflow = result.balances.filter((b) => b.surplus > 0 && per.has(b.item))
     for (const b of overflow)
-      sources.push({ item: b.item, target: null, amount: b.surplus, per: per.get(b.item)!, fedBack: itemFedBack(plan, b.item), used: 0 })
+      sources.push({ item: b.item, target: null, amount: b.surplus, per: per.get(b.item)!, fedBack: itemFedBack(plan, b.item), available: 0, used: 0 })
     plan.targets.forEach((t, i) => {
       if (t.item && per.has(t.item) && made[i] > 0)
-        sources.push({ item: t.item, target: i, amount: made[i], per: per.get(t.item)!, fedBack: targetFedBack(plan, t), used: 0 })
+        sources.push({ item: t.item, target: i, amount: made[i], per: per.get(t.item)!, fedBack: targetFedBack(plan, t), available: 0, used: 0 })
     })
 
     let remaining = need
     for (const s of sources) {
       const available = left.get(sourceKey(s)) ?? s.amount
+      s.available = available
       if (s.fedBack && s.per > 0 && remaining > 0) {
         s.used = Math.min(available, remaining / s.per)
         remaining -= s.used * s.per
@@ -120,7 +128,8 @@ export function ledgers(plan: Plan, catalog: ProcessCatalog, result: PlanResult)
     const busPer = busProcess?.outputs[0]?.count ?? 0
     const bus =
       absorbedBy === null && busItem && busPer > 0 ? { item: realItem(busItem), per: busPer, count: remaining / busPer } : null
-    return { resource, need, sources, covered: need - remaining, absorbedBy, bus, short: bus ? 0 : remaining }
+    const held = sources.reduce((t, s) => t + (s.fedBack ? s.available * s.per : 0), 0)
+    return { resource, need, sources, covered: need - remaining, made: held, absorbedBy, bus, short: bus ? 0 : remaining }
   })
 }
 
@@ -140,4 +149,19 @@ export function supplyAhead(plan: Plan, catalog: ProcessCatalog, result: PlanRes
     }
   }
   return ahead
+}
+
+/**
+ * Per item, the share of its overflow the plan feeds back into its own heat or fertilizer, and
+ * what into: that part isn't overflow, since the plan burns or spreads it.
+ */
+export function fedOverflow(ledgers: ResourceLedger[]): Map<string, { share: number; into: Resource[] }> {
+  const fed = new Map<string, { share: number; into: Resource[] }>()
+  for (const l of ledgers)
+    for (const s of l.sources) {
+      if (s.target !== null || s.used <= 0 || s.amount <= 0) continue
+      const f = fed.get(s.item) ?? { share: 0, into: [] }
+      fed.set(s.item, { share: Math.min(1, f.share + s.used / s.amount), into: [...f.into, l.resource] })
+    }
+  return fed
 }

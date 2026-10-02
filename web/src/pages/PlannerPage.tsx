@@ -4,7 +4,7 @@ import { ItemPicker } from '../components/ItemPicker'
 import { Money } from '../components/Money'
 import { ProducerSelect, TierTag } from '../components/ProducerSelect'
 import { BookmarkIcon, ProductionTree } from '../components/ProductionTree'
-import { carriers, itemFedBack, ledgers, targetFedBack, type LedgerSource, type ResourceLedger } from '../lib/ledger'
+import { carriers, fedOverflow, itemFedBack, ledgers, targetFedBack, type LedgerSource, type ResourceLedger } from '../lib/ledger'
 import {
   HEAT,
   MAX_TIER,
@@ -39,6 +39,7 @@ import {
   setTargetFeedback,
   pruneChoices,
   rememberSetup,
+  setRoundUp,
   setRowCatalysts,
   type ProducerPick,
 } from '../lib/choices'
@@ -84,6 +85,8 @@ interface Props {
 const NOT_TARGETS = new Set(['CashRegister', 'Steam'])
 
 const targetItems = items.filter((i) => !i.hidden && !NOT_TARGETS.has(i.key))
+
+const NO_ROWS: string[] = []
 
 /** Stands in until the plan's first solve comes back. */
 const UNSOLVED: PlanResult = { status: 'ok', targets: [], runs: [], balances: [], tree: [] }
@@ -163,7 +166,12 @@ export function PlannerPage({
   const feedsInto = (item: string) =>
     [fuels.has(item) && 'heat', fertilizers.has(item) && 'fertilizer'].filter(Boolean).join(' & ')
 
-  const surplus = result.balances.filter((b) => b.surplus > 0 && !b.item.startsWith('@'))
+  // Overflow the plan feeds back into its own heat or fertilizer isn't overflow: it gets used.
+  const fed = useMemo(() => fedOverflow(ledger), [ledger])
+  const surplus = result.balances
+    .filter((b) => b.surplus > 0 && !b.item.startsWith('@'))
+    .map((b) => ({ item: b.item, left: b.surplus * (1 - (fed.get(b.item)?.share ?? 0)) }))
+    .filter((b) => b.left > 1e-9 * Math.max(1, b.left))
   const overflowSources = useMemo(() => overflowRows(result.tree), [result.tree])
   const deficits = result.balances.filter((b) => b.deficit > 0)
   const heat = result.balances.find((b) => b.item === HEAT)
@@ -393,7 +401,7 @@ export function PlannerPage({
                     {surplus.map((b) => (
                       <li key={b.item}>
                         <ItemLabel item={b.item} />
-                        <span className="rate">+{fmt(b.surplus)}/min</span>
+                        <span className="rate">+{fmt(b.left)}/min</span>
                         <span className="hint-inline">from {(overflowSources.get(b.item) ?? []).join(', ')}</span>
                       </li>
                     ))}
@@ -470,6 +478,9 @@ export function PlannerPage({
                   onCatalysts={setCatalysts}
                   onSeparate={setSeparate}
                   logistics={logistics}
+                  roundUp={plan.roundUp ?? NO_ROWS}
+                  fed={fed}
+                  onRoundUp={(row, on) => onUpdatePlan((p) => setRoundUp(p, row, on))}
                 />
               </section>
 
@@ -572,6 +583,8 @@ function LedgerPanel({
 }) {
   const { title, unit, verb } = RESOURCE[ledger.resource]
   const perSecond = (perMinute: number) => `${fmt(perMinute / 60)} ${unit}`
+  // The plan's own balance, from zero: what it feeds back, less what its machines use.
+  const net = Math.abs(ledger.made - ledger.need) < 1e-9 * Math.max(1, ledger.need) ? 0 : ledger.made - ledger.need
   const byItem = new Map<string, LedgerSource[]>()
   for (const s of ledger.sources) byItem.set(s.item, [...(byItem.get(s.item) ?? []), s])
   const source = (s: LedgerSource) => {
@@ -631,10 +644,14 @@ function LedgerPanel({
             </span>
           </li>
         )}
-        {ledger.need > 0 && ledger.covered > 0 && (
+        {(ledger.need > 0 || ledger.made > 0) && (
           <li className="ledger-total">
-            <span className="rate positive">
-              The plan covers {perSecond(ledger.covered)} of {perSecond(ledger.need)} itself
+            <span title="What the plan feeds back holds, less what its machines use">
+              Plan makes {perSecond(ledger.made)}, uses {perSecond(ledger.need)}:{' '}
+              <strong className={`rate ${net >= 0 ? 'positive' : 'negative'}`}>
+                {net >= 0 ? '+' : '−'}
+                {perSecond(Math.abs(net))}
+              </strong>
             </span>
           </li>
         )}

@@ -16,7 +16,7 @@ import {
   upgrades,
 } from './gameData'
 import { buildCatalog, defaultProducer, paradoxSeconds, type ProcessCatalog } from './processes'
-import { ledgers } from './ledger'
+import { fedOverflow, ledgers } from './ledger'
 import { moneyLedger } from './money'
 import { allowedIngredients, builtinGroups, emptyPrefs, onlyGroup, preferredCount, setPrefs } from './itemGroups'
 import { countRecipes, diagnoseNoResults, type FinderQuery } from './diagnose'
@@ -39,6 +39,7 @@ import {
   rememberChanges,
   rememberSetup,
   rowsById,
+  setRoundUp,
   setRowCatalysts,
 } from './choices'
 import { resolveChoice } from './unfold'
@@ -1031,6 +1032,19 @@ describe('net-surplus targets', () => {
     expect(net.used).toBeLessThan(solved(p).heat.sources.find((s) => s.target === 0)!.used)
   })
 
+  it("doesn't count fed-back overflow as overflow, and balances heat from zero", () => {
+    const p = { ...fed([steel]), noReuse: ['Charcoal'], feedbackItems: ['Charcoal'] }
+    const { heat } = solved(p)
+    const [overflow] = heat.sources
+    expect(overflow.item).toBe('Charcoal')
+    // Steel's Coke Athanors make Charcoal on the side; the share burned stops being overflow.
+    expect(fedOverflow([heat]).get('Charcoal')!.share).toBeCloseTo(overflow.used / overflow.amount)
+    // Made counts all of it, burned or not; the plan covers whichever is smaller of that and its need.
+    expect(heat.made).toBeCloseTo(overflow.amount * overflow.per)
+    expect(heat.covered).toBeCloseTo(Math.min(heat.need, heat.made))
+    expect(fedOverflow([solved({ ...p, feedbackItems: [] }).heat]).size).toBe(0)
+  })
+
   it('sets up a provider as an ordinary target that removing undoes', () => {
     const bus = plan({ targets: [steel], producers: { [HEAT]: 'fuel:CokePowder' } })
     const provided = addProvider(bus, 'CokePowder')
@@ -1101,6 +1115,46 @@ describe('money', () => {
     expect(used).toBeGreaterThan(0)
     const sold = moneyLedger(result, l).sales.find((s) => s.item === 'PanaceaElixir')!
     expect(sold.count).toBeCloseTo(12.5 - used)
+  })
+})
+
+describe('rounding rows up to whole machines', () => {
+  const mods = modifiers({})
+  const catalog = buildCatalog({ saved: [], machines: {}, mods, fertilizer: null })
+  const rowOf = (r: PlanResult, id: string) => [...rowsById(r.tree).values()].find((n) => n.id === id)!
+  const bandages = plan({ targets: [{ item: 'Bandage', rate: 10 }] })
+
+  it('runs a rounded row on the next whole machine, overflowing the extra and feeding it from below', () => {
+    const exact = solvePlan(bandages, catalog, mods)
+    expect(rowOf(exact, '0/Bandage').machines).toBeCloseTo(5 / 3)
+    const rounded = solvePlan(setRoundUp(bandages, '0/Bandage', true), catalog, mods)
+    expectBalanced(rounded)
+    const row = rowOf(rounded, '0/Bandage')
+    expect(row.machines).toBeCloseTo(2)
+    expect(row.overflow).toBeCloseTo(2) // 12/min made, 10 wanted
+    expect(rowOf(rounded, '0/Bandage/Linen').rate).toBeCloseTo(rowOf(exact, '0/Bandage/Linen').rate * 1.2)
+  })
+
+  it('rounds rows below a rounded row after it grows', () => {
+    const both = setRoundUp(setRoundUp(bandages, '0/Bandage', true), '0/Bandage/Linen', true)
+    const r = solvePlan(both, catalog, mods)
+    expectBalanced(r)
+    expect(rowOf(r, '0/Bandage').machines).toBeCloseTo(2)
+    const linen = rowOf(r, '0/Bandage/Linen').machines
+    expect(linen).toBeCloseTo(Math.round(linen))
+    expect(linen).toBeGreaterThanOrEqual(rowOf(solvePlan(bandages, catalog, mods), '0/Bandage/Linen').machines)
+  })
+
+  it('leaves whole numbers alone and undoes cleanly', () => {
+    const whole = plan({ targets: [{ item: 'Bandage', rate: 12 }] })
+    expect(rowOf(solvePlan(setRoundUp(whole, '0/Bandage', true), catalog, mods), '0/Bandage').machines).toBeCloseTo(2)
+    expect(setRoundUp(setRoundUp(bandages, '0/Bandage', true), '0/Bandage', false)).toEqual(bandages)
+  })
+
+  it('keeps rounding with its row when targets move, and forgets rows that left the plan', () => {
+    const two = setRoundUp(plan({ targets: [{ item: 'WoodBoard', rate: 10 }, { item: 'Bandage', rate: 10 }] }), '1/Bandage', true)
+    expect(moveTarget(two, 1, 0).roundUp).toEqual(['0/Bandage'])
+    expect(pruneChoices({ ...bandages, roundUp: ['0/Bandage', '0/Gone'] }, catalog)!.roundUp).toEqual(['0/Bandage'])
   })
 })
 
