@@ -46,7 +46,7 @@ import {
 import type { PlanResult, ResolvedTarget } from '../lib/solver'
 import { separationsOf, withSeparation, withoutSeparation } from '../lib/separate'
 import { buildingNameFor, machineNameFor, noun } from '../lib/plural'
-import { BOILER_SETTINGS, boilerHeat } from '../lib/steamBoiler'
+import { boilerHeat, boilersFor } from '../lib/steamBoiler'
 import { IMPORT, planProducer } from '../lib/unfold'
 import type { TreeNode } from '../lib/tree'
 import type { MyDefaults, Plan, PlanTarget, Progress, Separation } from '../lib/types'
@@ -457,7 +457,7 @@ export function PlannerPage({
                         onProvide={(item) => onUpdatePlan((p) => addProvider(p, item))}
                       >
                         {l.resource === 'heat' && machineTier(STEAM_BOILER) <= catalog.tier && (
-                          <BoilerRoom heat={l.need / 60} factorySpeed={mods.factorySpeed} />
+                          <BoilerRoom ledger={l} mods={mods} />
                         )}
                       </LedgerPanel>
                     ))}
@@ -757,28 +757,68 @@ function Provider({
 }
 
 /**
- * The plan's heat as steam: how many Steam Boilers on each setting carry it, burning the plan's
- * fuel (steam carries heat without loss).
+ * The plan's heat as steam (which carries heat without loss): per fuel it burns, the bus fuel and
+ * any it feeds back, how many Steam Boilers on each setting carry that fuel's heat. A boiler sits on
+ * a furnace fed by one belt, so a fuel with little heat per item can't keep a setting going.
  */
-function BoilerRoom({ heat, factorySpeed }: { heat: number; factorySpeed: number }) {
-  if (heat <= 0) return null
+function BoilerRoom({ ledger, mods }: { ledger: ResourceLedger; mods: Modifiers }) {
+  const fuels = new Map<string, { heat: number; per: number }>()
+  const burn = (item: string, count: number, per: number) => {
+    if (count <= 0) return
+    const f = fuels.get(item) ?? { heat: 0, per }
+    fuels.set(item, { heat: f.heat + (count * per) / 60, per })
+  }
+  for (const s of ledger.sources) burn(s.item, s.used, s.per)
+  if (ledger.bus) burn(ledger.bus.item, ledger.bus.count, ledger.bus.per)
+  if (!fuels.size) return null
   const icon = iconUrl(buildingsByKey.get(STEAM_BOILER)?.icon)
   return (
-    <p className="boiler-room">
-      {icon && <img src={icon} width={20} height={20} alt="" />}
-      <span>As steam:</span>
-      {BOILER_SETTINGS.map((s, i) => {
-        const each = boilerHeat(s, factorySpeed)
-        const count = Math.ceil(heat / each - 1e-9)
+    <div className="boiler-room">
+      {[...fuels].map(([item, { heat, per }]) => {
+        const beltHeat = (mods.beltSpeed / 60) * per
+        const boilers = boilersFor(heat, per, mods.factorySpeed, mods.beltSpeed)
+        const why = `A furnace's belt brings ${fmt(mods.beltSpeed)} ${itemName(item)}/min, ${fmt(beltHeat)} P/s`
+        const amount = (count: number) => (
+          <>
+            <strong>{Number.isFinite(count) ? count : '∞'}</strong> {buildingNameFor(STEAM_BOILER, count)}
+          </>
+        )
         return (
-          <span key={s.name} title={`${fmt(heat / each)} at ${fmt(each)} P/s each`}>
-            {i > 0 && '· '}
-            <strong>{count}</strong> {buildingNameFor(STEAM_BOILER, count)} on {s.name}
-          </span>
+          <div key={item} className="boiler-line">
+            <div className="boiler-fuel">
+              {icon && <img src={icon} width={20} height={20} alt="" />}
+              <span>As steam, burning</span>
+              <ItemLabel item={item} size={16} />
+              <span className="hint-inline">{fmt(heat)} P/s</span>
+            </div>
+            <div className="boiler-counts">
+              {boilers.every((b) => b.beltLimited) ? (
+                // The belt sets the pace whatever the setting: the counts are all the same.
+                <span className="belt-limited" title={`${why}: less than a boiler draws on any setting`}>
+                  {amount(boilers[0].count)} on any setting (belt-limited)
+                </span>
+              ) : (
+                boilers.map(({ setting, each, count, beltLimited }, i) => (
+                  <span
+                    key={setting.name}
+                    className={beltLimited ? 'belt-limited' : undefined}
+                    title={
+                      beltLimited
+                        ? `${why}: less than a boiler on ${setting.name} draws (${fmt(boilerHeat(setting, mods.factorySpeed))} P/s)`
+                        : `${fmt(heat / each)} at ${fmt(each)} P/s each`
+                    }
+                  >
+                    {i > 0 && '· '}
+                    {amount(count)} on {setting.name}
+                    {beltLimited && ' (belt-limited)'}
+                  </span>
+                ))
+              )}
+            </div>
+          </div>
         )
       })}
-      <span className="hint-inline">burning the plan's fuel</span>
-    </p>
+    </div>
   )
 }
 

@@ -1182,13 +1182,29 @@ tr.idle {
 
 .boiler-room {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 8px;
+  flex-direction: column;
+  gap: 6px;
   margin: 10px 0 0;
   padding-top: 8px;
   border-top: 1px solid var(--border);
   font-size: 13px;
+}
+
+.boiler-fuel,
+.boiler-counts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+
+.boiler-fuel .item-label {
+  flex: 0 0 auto;
+}
+
+/* Counts sit under the fuel, lined up past the boiler icon. */
+.boiler-counts {
+  padding-left: 28px;
 }
 
 .boiler-room strong {

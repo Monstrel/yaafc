@@ -45,7 +45,7 @@ import {
 import { resolveChoice } from './unfold'
 import { separationsOf, withSeparation } from './separate'
 import { buildingNameFor, itemNameFor, noun } from './plural'
-import { BOILER_SETTINGS, boilerHeat } from './steamBoiler'
+import { BOILER_SETTINGS, boilerHeat, boilersFor } from './steamBoiler'
 import { legacyProgress, withoutLegacyProgress } from './store'
 import type { MyDefaults, Plan, SavedRecipe, Separation } from './types'
 import { PLANNER_UPGRADES, maxLevel, modifiers, upgradeLevel } from './upgrades'
@@ -610,6 +610,21 @@ describe('forgetting choices', () => {
   it('sizes Steam Boilers from the game’s Low/Medium/High settings, scaled by Factory Efficiency', () => {
     expect(BOILER_SETTINGS.map((s) => boilerHeat(s, 1))).toEqual([100, 500, 3000])
     expect(boilerHeat(BOILER_SETTINGS[2], modifiers({ FactorySpeed: 4 }).factorySpeed)).toBeCloseTo(6000)
+  })
+
+  it("caps each boiler at what one belt of its fuel brings the furnace under it", () => {
+    // Planks: 20 P each, 60/min on a belt = 20 P/s per furnace, below every setting.
+    expect(boilersFor(100, 20, 1, 60).map((b) => [b.each, b.count, b.beltLimited])).toEqual([
+      [20, 5, true],
+      [20, 5, true],
+      [20, 5, true],
+    ])
+    // Coke Powder: 660 P each = 660 P/s per belt, enough for Low and Medium but not High.
+    expect(boilersFor(1000, 660, 1, 60).map((b) => [b.each, b.count, b.beltLimited])).toEqual([
+      [100, 10, false],
+      [500, 2, false],
+      [660, 2, true],
+    ])
   })
 
   it('drops a fuel pick that is no longer a fuel (Steam)', () => {

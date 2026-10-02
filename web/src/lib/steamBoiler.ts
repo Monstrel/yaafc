@@ -18,3 +18,27 @@ export const STEAM_HEAT = 20
 /** Heat (P/s) one boiler turns into steam on a setting, at a Factory Efficiency speed multiplier. */
 export const boilerHeat = (setting: (typeof BOILER_SETTINGS)[number], factorySpeed: number) =>
   (setting.steam / setting.seconds) * STEAM_HEAT * factorySpeed
+
+/** Boilers on one setting carrying some heat. */
+export interface BoilerCount {
+  setting: (typeof BOILER_SETTINGS)[number]
+  /** Heat (P/s) each boiler carries: its setting's draw, or less when its fuel belt can't keep up. */
+  each: number
+  count: number
+  /** One belt of the fuel brings its furnace less heat than the setting draws. */
+  beltLimited: boolean
+}
+
+/**
+ * Boilers per setting carrying `heat` P/s from one fuel. Each sits on a furnace (Stone or Blast
+ * Furnace) fed by a single belt, so it gets at most a belt's worth of the fuel: `beltSpeed` items per
+ * minute × `heatPerItem` P.
+ */
+export function boilersFor(heat: number, heatPerItem: number, factorySpeed: number, beltSpeed: number): BoilerCount[] {
+  const belt = (beltSpeed / 60) * heatPerItem
+  return BOILER_SETTINGS.map((setting) => {
+    const draw = boilerHeat(setting, factorySpeed)
+    const each = Math.min(draw, belt)
+    return { setting, each, count: each > 0 ? Math.ceil(heat / each - 1e-9) : Infinity, beltLimited: belt < draw }
+  })
+}
