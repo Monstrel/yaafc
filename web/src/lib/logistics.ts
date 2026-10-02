@@ -1,6 +1,7 @@
 import { craftsPerMachine, itemsPerSlot, onBelt, outputCap } from './machineRate'
 import { runKey, type Process } from './processes'
 import type { ProcessRun } from './solver'
+import type { TreeNode } from './tree'
 import type { Modifiers } from './upgrades'
 
 /** One ingredient on a machine's input belts. */
@@ -116,4 +117,36 @@ export function wholeMachines(p: Process, machines: number, mods: Modifiers): { 
   if (utilization <= 0) return null
   const exact = machines / utilization
   return { exact, count: Math.ceil(exact - 1e-9) }
+}
+
+/** Whole machines of one building type a plan builds. */
+export interface BuildingCount {
+  name: string
+  /** Whole machines, input belt limits included. */
+  count: number
+  /** Whole machines if every one ran at full speed (fewer when belts hold some back). */
+  atFullSpeed: number
+}
+
+/**
+ * Whole machines per building type. Every row of the production tree is its own group of machines
+ * in the factory, so each rounds up on its own (as built, input belt limits included) before they're
+ * added up: two rows of 0.5 Grinders are two Grinders, not one.
+ */
+export function buildingCounts(tree: TreeNode[], logistics: Map<string, LogisticsCheck>): BuildingCount[] {
+  const counts = new Map<string, BuildingCount>()
+  const whole = (x: number) => Math.ceil(x - 1e-9)
+  const visit = (n: TreeNode) => {
+    const machine = n.run?.process.machine
+    if (n.kind === 'produce' && machine && n.machines > 0) {
+      const utilization = logistics.get(n.run!.key)?.utilization ?? 1
+      const c = counts.get(machine.name) ?? { name: machine.name, count: 0, atFullSpeed: 0 }
+      c.count += utilization > 0 ? whole(n.machines / utilization) : Infinity
+      c.atFullSpeed += whole(n.machines)
+      counts.set(machine.name, c)
+    }
+    n.children.forEach(visit)
+  }
+  tree.forEach(visit)
+  return [...counts.values()]
 }

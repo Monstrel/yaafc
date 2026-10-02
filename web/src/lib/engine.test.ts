@@ -20,7 +20,7 @@ import { fedOverflow, ledgers } from './ledger'
 import { moneyLedger } from './money'
 import { allowedIngredients, builtinGroups, emptyPrefs, onlyGroup, preferredCount, setPrefs } from './itemGroups'
 import { countRecipes, diagnoseNoResults, type FinderQuery } from './diagnose'
-import { checkLogistics, checkProcess } from './logistics'
+import { buildingCounts, checkLogistics, checkProcess } from './logistics'
 import { craftsPerMachine } from './machineRate'
 import { solvePlan, type PlanResult } from './solver'
 import type { TreeNode } from './tree'
@@ -1164,6 +1164,16 @@ describe('rounding rows up to whole machines', () => {
     const whole = plan({ targets: [{ item: 'Bandage', rate: 12 }] })
     expect(rowOf(solvePlan(setRoundUp(whole, '0/Bandage', true), catalog, mods), '0/Bandage').machines).toBeCloseTo(2)
     expect(setRoundUp(setRoundUp(bandages, '0/Bandage', true), '0/Bandage', false)).toEqual(bandages)
+  })
+
+  it('counts whole buildings, each row rounding up on its own', () => {
+    const r = solvePlan(bandages, catalog, mods)
+    const rows = [...rowsById(r.tree).values()].filter((n) => n.kind === 'produce' && n.run?.process.machine?.name === 'Assembler')
+    const fractional = rows.reduce((t, n) => t + n.machines, 0)
+    const assemblers = buildingCounts(r.tree, checkLogistics(r.runs, mods)).find((b) => b.name === 'Assembler')!
+    expect(assemblers.count).toBe(rows.reduce((t, n) => t + Math.ceil(n.machines - 1e-9), 0))
+    expect(fractional).toBeCloseTo(4.5) // 1.67 + 0.83 + 2 in use, built as 2 + 1 + 2
+    expect(assemblers.count).toBe(5)
   })
 
   it('keeps rounding with its row when targets move, and forgets rows that left the plan', () => {

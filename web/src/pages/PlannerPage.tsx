@@ -22,7 +22,7 @@ import {
   tierName,
 } from '../lib/gameData'
 import { fmt } from '../lib/format'
-import { checkLogistics, type LogisticsCheck } from '../lib/logistics'
+import { buildingCounts, checkLogistics, type LogisticsCheck } from '../lib/logistics'
 import { moneyLedger, type MoneyLine } from '../lib/money'
 import { processTitle, type ProcessCatalog } from '../lib/processes'
 import type { PlanModel } from '../lib/planModel'
@@ -177,16 +177,9 @@ export function PlannerPage({
   const heat = result.balances.find((b) => b.item === HEAT)
   const money = useMemo(() => moneyLedger(result, ledger), [result, ledger])
 
-  // Machines per building type across the whole plan, with and without belt limits.
-  const buildings = new Map<string, { full: number; limited: number }>()
-  for (const r of result.runs)
-    if (r.machines > 0 && r.process.machine) {
-      const b = buildings.get(r.process.machine.name) ?? { full: 0, limited: 0 }
-      b.full += r.machines
-      b.limited += logistics.get(r.process.id)?.machinesNeeded ?? r.machines
-      buildings.set(r.process.machine.name, b)
-    }
-  const totalMachines = [...buildings.values()].reduce((a, b) => a + b.limited, 0)
+  // Whole machines per building type, as built: each tree row rounds up on its own.
+  const buildings = useMemo(() => buildingCounts(result.tree, logistics), [result.tree, logistics])
+  const totalMachines = buildings.reduce((t, b) => t + b.count, 0)
 
   return (
     <div className="page planner">
@@ -530,13 +523,13 @@ export function PlannerPage({
                 <section className="panel">
                   <h2>Buildings</h2>
                   <ul className="flow-list">
-                    {[...buildings].map(([name, count]) => {
-                      const slowed = count.limited > count.full + 1e-9
+                    {buildings.map((b) => {
+                      const slowed = b.count > b.atFullSpeed
                       return (
-                        <li key={name}>
-                          <span className="building-name">{name}</span>
-                          {slowed && <span className="hint-inline">{fmt(count.full)} at full speed →</span>}
-                          <span className={slowed ? 'rate belt-limited' : 'rate'}>{fmt(count.limited)}</span>
+                        <li key={b.name}>
+                          <span className="building-name">{b.name}</span>
+                          {slowed && <span className="hint-inline">{fmt(b.atFullSpeed)} at full speed →</span>}
+                          <span className={slowed ? 'rate belt-limited' : 'rate'}>{fmt(b.count)}</span>
                         </li>
                       )
                     })}
