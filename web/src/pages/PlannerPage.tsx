@@ -215,6 +215,10 @@ export function PlannerPage({
                 target={t}
                 resolved={resolvedByRow[i]}
                 feedsInto={t.item ? feedsInto(t.item) : ''}
+                absorbs={ledger
+                  .filter((l) => l.absorbedBy === i)
+                  .map((l) => l.resource)
+                  .join(' & ')}
                 fedBack={targetFedBack(plan, t)}
                 ownFeedback={t.feedback !== undefined}
                 onFeedback={(on) => onUpdatePlan((p) => setTargetFeedback(p, i, on))}
@@ -542,7 +546,7 @@ function LedgerPanel({
   const byItem = new Map<string, LedgerSource[]>()
   for (const s of ledger.sources) byItem.set(s.item, [...(byItem.get(s.item) ?? []), s])
   const source = (s: LedgerSource) => {
-    const what = s.target === null ? 'Overflow' : `Target ${s.target + 1}`
+    const what = s.target === null ? 'Overflow' : `Target ${s.target + 1}${s.target === ledger.absorbedBy ? ' (net)' : ''}`
     const own = s.target !== null && plan.targets[s.target]?.feedback !== undefined
     return (
       <li key={`${s.target}:${s.item}`} className="ledger-source">
@@ -585,6 +589,13 @@ function LedgerPanel({
             <span className="hint-inline">/min for {perSecond(ledger.bus.count * ledger.bus.per)}</span>
           </li>
         )}
+        {ledger.short > 0 && (
+          <li className="ledger-total">
+            <span className="rate negative">
+              {perSecond(ledger.short)} can&apos;t be covered: the net target&apos;s own chain uses more than it gives
+            </span>
+          </li>
+        )}
         {ledger.need > 0 && ledger.covered > 0 && (
           <li className="ledger-total">
             <span className="rate positive">
@@ -623,10 +634,13 @@ function BoilerRoom({ heat, factorySpeed }: { heat: number; factorySpeed: number
   )
 }
 
+type Unit = NonNullable<PlanTarget['unit']>
+
 function TargetRow({
   target,
   resolved,
   feedsInto,
+  absorbs,
   fedBack,
   ownFeedback,
   onFeedback,
@@ -640,6 +654,8 @@ function TargetRow({
   resolved: ResolvedTarget | undefined
   /** What the item could feed back into ('heat', 'fertilizer', both, or '' when nothing). */
   feedsInto: string
+  /** What this net-surplus target covers the rest of ('heat', 'fertilizer', both, or ''). */
+  absorbs: string
   fedBack: boolean
   /** The target sets its own feedback instead of following its item's. */
   ownFeedback: boolean
@@ -653,6 +669,7 @@ function TargetRow({
 }) {
   const unit = target.unit ?? 'items'
   const perMachine = resolved?.perMachine ?? null
+  const made = resolved?.made ?? 0
   return (
     <div className="target">
       <div className="target-row">
@@ -683,14 +700,12 @@ function TargetRow({
         <select
           value={unit}
           onChange={(e) => {
-            const next = e.target.value as 'items' | 'machines'
-            // Keep the same output when switching units.
+            const next = e.target.value as Unit
+            // Keep the same output when switching between machines and items (net counts as items).
+            const toMachines = next === 'machines' && unit !== 'machines'
+            const fromMachines = unit === 'machines' && next !== 'machines'
             const rate =
-              perMachine && next !== unit
-                ? next === 'machines'
-                  ? target.rate / perMachine
-                  : target.rate * perMachine
-                : target.rate
+              perMachine && toMachines ? made / perMachine : perMachine && fromMachines ? target.rate * perMachine : target.rate
             onChange({ unit: next, rate: Math.round(rate * 1000) / 1000 })
           }}
           aria-label="Target unit"
@@ -699,15 +714,34 @@ function TargetRow({
           <option value="machines" disabled={!perMachine}>
             {resolved?.machineName ? machineNameFor(resolved.machineName, target.rate) : 'machines'}
           </option>
+          {(feedsInto || unit === 'net') && (
+            <option value="net" title="Left over after the plan burns or spreads what it needs of it">
+              net /min
+            </option>
+          )}
         </select>
       </div>
       {target.item && (
         <div className="target-hint">
+          {unit === 'net' && absorbs && (
+            <>
+              Makes {fmt(made)}/min, {fmt(made - (resolved?.rate ?? 0))} of it for the plan&apos;s {absorbs}.{' '}
+            </>
+          )}
           {perMachine === null
             ? 'Bought or not made by a machine: set items /min.'
             : unit === 'machines'
-              ? `= ${fmt(resolved?.rate ?? 0)} items /min (${fmt(perMachine)}/min each)`
-              : `≈ ${fmt((resolved?.rate ?? 0) / perMachine)} ${machineNameFor(resolved?.machineName ?? '', (resolved?.rate ?? 0) / perMachine)} (${fmt(perMachine)}/min each)`}
+              ? `= ${fmt(made)} items /min (${fmt(perMachine)}/min each)`
+              : `≈ ${fmt(made / perMachine)} ${machineNameFor(resolved?.machineName ?? '', made / perMachine)} (${fmt(perMachine)}/min each)`}
+        </div>
+      )}
+      {unit === 'net' && !absorbs && target.item && (
+        <div className="target-hint">
+          {!feedsInto
+            ? "Not a fuel or the nurseries' fertilizer: same as items /min."
+            : !fedBack
+              ? 'Not fed back: same as items /min.'
+              : `A net target above covers the plan's ${feedsInto}: same as items /min.`}
         </div>
       )}
       {feedsInto && (

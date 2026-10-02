@@ -7,14 +7,14 @@ import { planProducer } from './unfold'
 /** A bus resource the plan draws on: heat for its machines, nutrients for its nurseries. */
 export type Resource = 'heat' | 'fertilizer'
 
-const PSEUDO: Record<Resource, string> = { heat: HEAT, fertilizer: NUTRIENTS }
+export const PSEUDO: Record<Resource, string> = { heat: HEAT, fertilizer: NUTRIENTS }
 
 /** Something the plan delivers that could cover a resource: a target, or overflow. */
 export interface LedgerSource {
   item: string
   /** Index in the plan's targets; null for overflow (made, but nothing in the plan uses it). */
   target: number | null
-  /** Items per minute it delivers. */
+  /** Items per minute it makes (a net-surplus target: its rate plus what the plan uses of it). */
   amount: number
   /** Heat (P) or nutrients one item supplies. */
   per: number
@@ -31,8 +31,15 @@ export interface ResourceLedger {
   sources: LedgerSource[]
   /** Part of the need its own output covers, per minute. */
   covered: number
-  /** The bus item covering the rest (null: nothing picked), and how many per minute. */
+  /**
+   * The net-surplus target (index in the plan's targets) that covers what's left of the need,
+   * instead of the bus; null when the bus does.
+   */
+  absorbedBy: number | null
+  /** The bus item covering the rest (null: nothing picked, or a target covers it), and how many per minute. */
   bus: { item: string; per: number; count: number } | null
+  /** Heat or nutrients per minute nothing covers (a net-surplus target that can't keep up). */
+  short: number
 }
 
 /** Whether every source of an item is fed back, unless a target says otherwise. */
@@ -54,31 +61,46 @@ export function carriers(plan: Plan, catalog: ProcessCatalog, resource: Resource
 }
 
 /**
- * How the plan's heat and fertilizer needs are met. Accounting only: the factory is the same either
- * way. Fed-back sources cover the need in order (overflow first, then targets in the plan's
- * order) and the bus covers the rest. Fertilizer goes first, since only one item can cover it;
- * an item that's both (Panacea Potion) burns what's left.
+ * Per resource, the net-surplus target that covers what's left of the plan's need: the first one
+ * in the plan's order that's fed back and can (a fuel for heat, the nurseries' fertilizer).
+ */
+export function absorbers(plan: Plan, catalog: ProcessCatalog): Map<Resource, { target: number; item: string }> {
+  const found = new Map<Resource, { target: number; item: string }>()
+  for (const resource of ['fertilizer', 'heat'] as const) {
+    const per = carriers(plan, catalog, resource)
+    const target = plan.targets.findIndex((t) => t.item && t.unit === 'net' && per.has(t.item) && targetFedBack(plan, t))
+    if (target >= 0) found.set(resource, { target, item: plan.targets[target].item })
+  }
+  return found
+}
+
+/**
+ * How the plan's heat and fertilizer needs are met. Fed-back sources cover the need in order:
+ * overflow, then targets in the plan's order. A net-surplus target there covers all that's left
+ * (the solve made its row big enough); otherwise the bus does. Fertilizer goes first, since only
+ * one item can cover it; an item that's both (Panacea Potion) burns what's left.
  */
 export function ledgers(plan: Plan, catalog: ProcessCatalog, result: PlanResult): ResourceLedger[] {
   const balance = (item: string) => result.balances.find((b) => b.item === item)
   // What's still available of each source after earlier resources took their share.
   const left = new Map<string, number>()
   const sourceKey = (s: { item: string; target: number | null }) => `${s.target ?? 'overflow'}:${s.item}`
+  const absorbing = absorbers(plan, catalog)
 
   // result.targets skips targets with no item yet.
   let resolved = 0
-  const targetRates = plan.targets.map((t) => (t.item ? (result.targets[resolved++]?.rate ?? 0) : 0))
+  const made = plan.targets.map((t) => (t.item ? (result.targets[resolved++]?.made ?? 0) : 0))
 
   return (['fertilizer', 'heat'] as const).map((resource) => {
     const per = carriers(plan, catalog, resource)
     const need = balance(PSEUDO[resource])?.consumed ?? 0
     const sources: LedgerSource[] = []
-    const overflow = new Set(result.balances.filter((b) => b.surplus > 0 && per.has(b.item)).map((b) => b.item))
-    for (const item of overflow)
-      sources.push({ item, target: null, amount: balance(item)!.surplus, per: per.get(item)!, fedBack: itemFedBack(plan, item), used: 0 })
+    const overflow = result.balances.filter((b) => b.surplus > 0 && per.has(b.item))
+    for (const b of overflow)
+      sources.push({ item: b.item, target: null, amount: b.surplus, per: per.get(b.item)!, fedBack: itemFedBack(plan, b.item), used: 0 })
     plan.targets.forEach((t, i) => {
-      if (t.item && per.has(t.item) && targetRates[i] > 0)
-        sources.push({ item: t.item, target: i, amount: targetRates[i], per: per.get(t.item)!, fedBack: targetFedBack(plan, t), used: 0 })
+      if (t.item && per.has(t.item) && made[i] > 0)
+        sources.push({ item: t.item, target: i, amount: made[i], per: per.get(t.item)!, fedBack: targetFedBack(plan, t), used: 0 })
     })
 
     let remaining = need
@@ -92,10 +114,30 @@ export function ledgers(plan: Plan, catalog: ProcessCatalog, result: PlanResult)
     }
     if (remaining < need * 1e-9) remaining = 0
 
+    const absorbedBy = absorbing.get(resource)?.target ?? null
     const busProcess = catalog.byId.get(planProducer(plan, catalog, PSEUDO[resource]))
     const busItem = busProcess?.inputs[0]?.item
     const busPer = busProcess?.outputs[0]?.count ?? 0
-    const bus = busItem && busPer > 0 ? { item: realItem(busItem), per: busPer, count: remaining / busPer } : null
-    return { resource, need, sources, covered: need - remaining, bus }
+    const bus =
+      absorbedBy === null && busItem && busPer > 0 ? { item: realItem(busItem), per: busPer, count: remaining / busPer } : null
+    return { resource, need, sources, covered: need - remaining, absorbedBy, bus, short: bus ? 0 : remaining }
   })
+}
+
+/**
+ * Per resource, the heat or nutrients per minute the fed-back sources ahead of its net-surplus
+ * target can supply (all they have, not just what's needed), after fertilizer took its share.
+ */
+export function supplyAhead(plan: Plan, catalog: ProcessCatalog, result: PlanResult): Record<Resource, number> {
+  const ahead: Record<Resource, number> = { heat: 0, fertilizer: 0 }
+  const taken = new Map<string, number>()
+  for (const l of ledgers(plan, catalog, result)) {
+    for (const s of l.sources) {
+      const key = `${s.target ?? 'overflow'}:${s.item}`
+      const isAhead = l.absorbedBy !== null && (s.target === null || s.target < l.absorbedBy)
+      if (s.fedBack && isAhead) ahead[l.resource] += (s.amount - (taken.get(key) ?? 0)) * s.per
+      taken.set(key, (taken.get(key) ?? 0) + s.used)
+    }
+  }
+  return ahead
 }

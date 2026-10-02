@@ -17,8 +17,12 @@ export interface PlanTarget {
   item: string
   /** Amount wanted, in `unit`. */
   rate: number
-  /** 'items' = items per minute (default); 'machines' = that many of the producer's machines' output. */
-  unit?: 'items' | 'machines'
+  /**
+   * 'items' = items per minute (default); 'machines' = that many of the producer's machines' output;
+   * 'net' = items per minute left over after the plan burns or spreads what it needs of a fed-back
+   * fuel or fertilizer (the planner sizes the build).
+   */
+  unit?: 'items' | 'machines' | 'net'
   /**
    * Whether this target's output feeds the plan's own heat or fertilizer need (when the item is a
    * fuel, or the nurseries' fertilizer). Absent = as the plan's `feedbackItems` says for the item.

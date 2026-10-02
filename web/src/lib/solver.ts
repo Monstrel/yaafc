@@ -4,6 +4,7 @@ import { craftsPerMachine } from './machineRate'
 import { runKey, type Process, type ProcessCatalog } from './processes'
 import { NO_FLOWS, buildTree, type ByproductRoute, type RowFlows, type TreeNode } from './tree'
 import type { Plan } from './types'
+import { PSEUDO, absorbers, supplyAhead } from './ledger'
 import { planProducer, unfold, type PlanNode, type PlanShape } from './unfold'
 import type { Modifiers } from './upgrades'
 
@@ -32,6 +33,8 @@ export interface ItemBalance {
 export interface ResolvedTarget {
   item: string
   rate: number
+  /** Items per minute its row makes: `rate`, plus what the plan burns or spreads of a net-surplus target. */
+  made: number
   /** Items per minute one of the chosen producer's machines makes, or null if bought/not made by a machine. */
   perMachine: number | null
   machineName: string | null
@@ -89,13 +92,62 @@ function resolveTargets(plan: Plan, shape: PlanShape, mods: Modifiers): Resolved
       const p = shape.targetRows[i]?.process
       const perMachine = p ? outputPerMachine(p, t.item, mods) : null
       const amount = t.rate || 0
+      const rate = t.unit === 'machines' ? amount * (perMachine ?? 0) : amount
       return {
         item: t.item,
-        rate: t.unit === 'machines' ? amount * (perMachine ?? 0) : amount,
+        rate,
+        made: rate,
         perMachine,
         machineName: perMachine !== null ? (p?.machine?.name ?? null) : null,
       }
     })
+}
+
+/**
+ * Net-surplus targets the solve sizes: per heat or nutrients, the target that covers what's left
+ * of the plan's need, and the heat or nutrients the fed-back sources ahead of it supply.
+ */
+interface Absorbing {
+  /** Index among the targets with an item (as `targets` and `shape.targetRows`). */
+  target: number
+  /** Burning or spreading the target's item: its real item in, heat or nutrients out. */
+  process: Process
+  /** Heat or nutrients per minute the sources ahead of it can supply. */
+  ahead: number
+}
+
+/** Rounds of solving before the supply ahead of a net-surplus target settles (overflow moves with it). */
+const MAX_FEEDBACK_ROUNDS = 8
+
+/**
+ * Solves the plan. A net-surplus target that's fed back makes the plan cover its own heat or
+ * nutrients: its row grows to burn what the sources ahead of it (overflow, then fed-back targets
+ * in order) leave of the need, and still delivers its rate. Overflow depends on the solution, so
+ * the solve repeats until what those sources supply settles.
+ */
+export function solvePlan(plan: Plan, catalog: ProcessCatalog, mods: Modifiers): PlanResult {
+  const found = absorbers(plan, catalog)
+  if (!found.size) return solveRound(plan, catalog, mods, new Map())
+  const filtered = plan.targets.map((t, i) => (t.item ? plan.targets.slice(0, i).filter((x) => x.item).length : -1))
+  const absorbing = new Map<string, Absorbing>()
+  for (const [resource, { target, item }] of found) {
+    const pseudo = PSEUDO[resource]
+    const process = catalog.byProduct.get(pseudo)?.find((p) => realItem(p.inputs[0]?.item ?? '') === item)
+    if (process) absorbing.set(pseudo, { target: filtered[target], process, ahead: 0 })
+  }
+  let result = solveRound(plan, catalog, mods, absorbing)
+  for (let round = 1; round < MAX_FEEDBACK_ROUNDS && result.status === 'ok'; round++) {
+    const ahead = supplyAhead(plan, catalog, result)
+    let settled = true
+    for (const [pseudo, a] of absorbing) {
+      const next = ahead[pseudo === HEAT ? 'heat' : 'fertilizer']
+      if (Math.abs(next - a.ahead) > 1e-9 * Math.max(1, next)) settled = false
+      a.ahead = next
+    }
+    if (settled) break
+    result = solveRound(plan, catalog, mods, absorbing)
+  }
+  return result
 }
 
 /** The row that supplies a row: itself, or the row a loop or separate build points to. */
@@ -130,9 +182,9 @@ const outputOf = (p: Process, item: string) => p.outputs.find((s) => s.item === 
  * A loop row adds its use to the row it loops back to, a separate build to the row gathering it.
  * By-products are the one exception: each row's side outputs can feed any row of their item,
  * the nearest first, and what's left over is surplus. Heat and nutrients are plan-wide: fuel and
- * fertilizer come off the bus for every machine.
+ * fertilizer come off the bus for every machine, unless a net-surplus target covers them (`absorbing`).
  */
-export function solvePlan(plan: Plan, catalog: ProcessCatalog, mods: Modifiers): PlanResult {
+function solveRound(plan: Plan, catalog: ProcessCatalog, mods: Modifiers, absorbing: Map<string, Absorbing>): PlanResult {
   const shape = unfold(plan, catalog)
   const targets = resolveTargets(plan, shape, mods)
   const index = new Map(shape.nodes.map((n, k) => [n, k]))
@@ -160,10 +212,25 @@ export function solvePlan(plan: Plan, catalog: ProcessCatalog, mods: Modifiers):
     if (row) equalities[bal(row)] += t.rate
   })
 
-  // Plan-wide heat and nutrients, supplied by the preferred fuel and fertilizer from the bus.
+  // Plan-wide heat and nutrients, supplied by the preferred fuel and fertilizer from the bus, or
+  // by a net-surplus target's row after the fed-back sources ahead of it.
   const globals = new Map<string, Process | null>()
   const global = (item: string) => {
     if (globals.has(item)) return
+    const a = absorbing.get(item)
+    const row = a && shape.targetRows[a.target]
+    if (a && row) {
+      globals.set(item, null)
+      equalities[`g:${item}`] = 0
+      columns[`gs:${item}`] = { [`g:${item}`]: -1, cost: SURPLUS_COST }
+      columns[`d:g:${item}`] = { [`g:${item}`]: 1, cost: MIN_DEFICIT_COST }
+      // The sources ahead supply up to `ahead`; burning the target's own output costs its crafts.
+      equalities[`ahead:${item}`] = a.ahead
+      columns[`fa:${item}`] = { [`g:${item}`]: 1, [`ahead:${item}`]: 1, cost: 0 }
+      columns[`fu:${item}`] = { [`ahead:${item}`]: 1, cost: 0 }
+      columns[`fb:${item}`] = { [bal(row)]: -1, [`g:${item}`]: a.process.outputs[0]?.count ?? 0, cost: 0 }
+      return
+    }
     const p = realItem(item) !== item ? undefined : catalog.byId.get(planProducer(plan, catalog, item))
     const process = p ? fromBus(p) : null
     globals.set(item, process)
@@ -264,10 +331,12 @@ export function solvePlan(plan: Plan, catalog: ProcessCatalog, mods: Modifiers):
 
   // What each row uses or delivers itself; a supplying row adds what loops and separate builds take.
   const crafts = (n: PlanNode) => (n.kind === 'make' ? v(`x:${index.get(n)}`) : 0)
+  // A net-surplus target's row also makes what the plan burns or spreads of it.
+  for (const [item, a] of absorbing) if (globals.has(item)) targets[a.target].made += v(`fb:${item}`)
   const own = new Map<PlanNode, number>()
   targets.forEach((t, i) => {
     const row = shape.targetRows[i]
-    if (row) own.set(row, (own.get(row) ?? 0) + t.rate)
+    if (row) own.set(row, (own.get(row) ?? 0) + t.made)
   })
   for (const n of shape.nodes)
     if (n.kind === 'make')
@@ -343,6 +412,7 @@ export function solvePlan(plan: Plan, catalog: ProcessCatalog, mods: Modifiers):
   }
   for (const n of shape.nodes) if (n.kind === 'make') count(n.process!, crafts(n))
   for (const [item, p] of globals) if (p) count(p, v(`gx:${item}`))
+  for (const [item, a] of absorbing) if (globals.has(item)) count(a.process, v(`fb:${item}`))
   const runs: ProcessRun[] = [...totals].map(([key, { process: p, crafts: x }]) => ({
     key,
     process: p,
@@ -365,6 +435,8 @@ export function solvePlan(plan: Plan, catalog: ProcessCatalog, mods: Modifiers):
     return b
   }
   for (const t of targets) of(t.item).target += t.rate
+  // What fed-back sources ahead of a net-surplus target supply (the ledger shows which).
+  for (const item of absorbing.keys()) if (globals.has(item)) of(item).produced += v(`fa:${item}`)
   for (const r of runs) {
     for (const s of r.outputs) of(s.item).produced += s.count
     for (const s of r.inputs) of(s.item).consumed += s.count
@@ -380,7 +452,7 @@ export function solvePlan(plan: Plan, catalog: ProcessCatalog, mods: Modifiers):
     if (Math.abs(net) <= RELATIVE_NOISE * Math.max(1, b.produced, b.consumed)) net = 0
     if (globals.has(b.item)) {
       const missing = Math.max(0, -net)
-      if (globals.get(b.item)) b.deficit += missing
+      if (globals.get(b.item) || absorbing.has(b.item)) b.deficit += missing
       else b.imported += missing
     }
     b.surplus = Math.max(0, net)

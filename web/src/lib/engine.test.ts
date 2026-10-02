@@ -963,6 +963,82 @@ describe('heat ledger', () => {
   })
 })
 
+describe('net-surplus targets', () => {
+  const mods = modifiers({})
+  const catalog = buildCatalog({ saved: [], machines: {}, mods, fertilizer: null })
+  const solved = (p: Plan) => {
+    const result = solvePlan(p, catalog, mods)
+    expectBalanced(result)
+    return { result, heat: ledgers(p, catalog, result).find((l) => l.resource === 'heat')! }
+  }
+  const steel = { item: 'SteelIngot', rate: 10 }
+  const fed = (targets: Plan['targets']) =>
+    plan({ targets, producers: { [HEAT]: 'fuel:CokePowder' }, feedbackItems: ['WoodBoard', 'CokePowder'] })
+
+  it('builds enough to cover the heat and still deliver the rate', () => {
+    const { result, heat } = solved(fed([{ item: 'WoodBoard', rate: 50, unit: 'net' }, steel]))
+    const [source] = heat.sources
+    expect(heat.absorbedBy).toBe(0)
+    expect(heat.bus).toBeNull()
+    expect(heat.short).toBe(0)
+    expect(source.used * source.per).toBeCloseTo(heat.need)
+    expect(source.amount - source.used).toBeCloseTo(50)
+    expect(result.targets[0]).toMatchObject({ rate: 50 })
+    expect(result.targets[0].made).toBeCloseTo(source.amount)
+    expect(result.balances.find((b) => b.item === HEAT)!.deficit).toBe(0)
+    expect(result.tree[0].rate).toBeCloseTo(source.amount) // the row is built for all of it
+  })
+
+  it('covers only what the fed-back targets ahead of it leave', () => {
+    const alone = solved(fed([{ item: 'WoodBoard', rate: 50, unit: 'net' }, steel]))
+    const { heat } = solved(fed([{ item: 'WoodBoard', rate: 100 }, steel, { item: 'WoodBoard', rate: 50, unit: 'net' }]))
+    const [ahead, net] = heat.sources
+    expect(ahead.used).toBeCloseTo(100)
+    expect(net.target).toBe(2)
+    expect(net.used * net.per).toBeCloseTo(heat.need - 100 * ahead.per)
+    expect(net.amount - net.used).toBeCloseTo(50)
+    expect(net.amount).toBeCloseTo(alone.heat.sources[0].amount - 100)
+  })
+
+  it('leaves the targets after it unburned', () => {
+    const { heat } = solved(fed([{ item: 'WoodBoard', rate: 50, unit: 'net' }, steel, { item: 'WoodBoard', rate: 100 }]))
+    expect(heat.sources.map((s) => s.target)).toEqual([0, 2])
+    expect(heat.sources[1].used).toBe(0)
+    expect(heat.sources[0].used * heat.sources[0].per).toBeCloseTo(heat.need)
+  })
+
+  it('counts the heat its own chain needs', () => {
+    // Coke Powder comes from Coke, which Athanors make with heat.
+    const { result, heat } = solved(fed([{ item: 'CokePowder', rate: 10, unit: 'net' }]))
+    expect(heat.need).toBeGreaterThan(0)
+    expect(heat.covered).toBeCloseTo(heat.need)
+    expect(heat.sources[0].amount - heat.sources[0].used).toBeCloseTo(10)
+    expect(result.runs.some((r) => r.process.id === 'fuel:CokePowder' && r.inputs[0].item === 'CokePowder')).toBe(true)
+  })
+
+  it('burns overflow first, though it grows with the target', () => {
+    // Without reuse, the Charcoal the Coke Athanors make on the side overflows: more Coke Powder,
+    // more of it. The solve settles on a build where the overflow and the target cover the heat.
+    const p = { ...fed([{ item: 'CokePowder', rate: 10, unit: 'net' as const }]), noReuse: ['Charcoal'] }
+    const { heat } = solved({ ...p, feedbackItems: ['CokePowder', 'Charcoal'] })
+    const [overflow, net] = heat.sources
+    expect(overflow).toMatchObject({ item: 'Charcoal', target: null })
+    expect(overflow.used).toBeCloseTo(overflow.amount)
+    expect(overflow.used * overflow.per + net.used * net.per).toBeCloseTo(heat.need)
+    expect(net.amount - net.used).toBeCloseTo(10)
+    expect(net.used).toBeLessThan(solved(p).heat.sources.find((s) => s.target === 0)!.used)
+  })
+
+  it('is a plain items target unless it is fed back', () => {
+    const net = plan({ targets: [{ item: 'WoodBoard', rate: 50, unit: 'net' }, steel], producers: { [HEAT]: 'fuel:CokePowder' } })
+    const { result, heat } = solved(net)
+    expect(heat.absorbedBy).toBeNull()
+    expect(heat.bus!.count * heat.bus!.per).toBeCloseTo(heat.need)
+    expect(result.targets[0].made).toBe(50)
+    expect(result.tree[0].rate).toBeCloseTo(50)
+  })
+})
+
 describe('reordering targets', () => {
   const base = plan({
     targets: [
