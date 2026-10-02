@@ -218,7 +218,7 @@ export function ProductionTree({
           Collapse to targets
         </button>
       </div>
-      <div className="table-scroll tree-scroll">
+      <div className="tree-scroll">
         <table className="production tree">
           <thead>
             <tr>

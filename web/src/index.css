@@ -1239,9 +1239,13 @@ tr.idle {
 
 /* The tree scrolls in its own panel. A page-tall horizontal scroller makes Chrome repaint every
    row of a big plan (Sol: ~850) on each change, not just the ones on screen. */
-.tree-scroll {
-  overflow: auto;
-  max-height: calc(100vh - 24px);
+/* The tree scrolls with the page, never in a box of its own: a nested scroller is awkward to work
+   in, and a page-tall horizontal one makes Chrome repaint every row of a big plan (Sol: ~850) on
+   each change, not just the ones on screen. When a narrow window can't fit the table, its panel
+   widens and the page scrolls sideways instead. */
+.tree-panel {
+  width: fit-content;
+  min-width: 100%;
 }
 
 .tree-scroll thead th {

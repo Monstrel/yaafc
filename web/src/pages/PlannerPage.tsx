@@ -408,7 +408,7 @@ export function PlannerPage({
                 </section>
               )}
 
-              <section className="panel">
+              <section className="panel tree-panel">
                 <h2>Production</h2>
                 <ProductionTree
                   key={plan.id}
