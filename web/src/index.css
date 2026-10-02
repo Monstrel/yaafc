@@ -1186,14 +1186,6 @@ tr.idle {
   cursor: pointer;
 }
 
-.base-inputs li {
-  flex-wrap: wrap;
-}
-
-.base-inputs .item-label {
-  flex: 0 1 auto;
-}
-
 .boiler-room {
   display: flex;
   flex-direction: column;
@@ -1225,52 +1217,8 @@ tr.idle {
   font-variant-numeric: tabular-nums;
 }
 
-.ledger-list > li {
-  flex-wrap: wrap;
-}
-
-.ledger-list .ledger-item {
-  flex-direction: column;
-  align-items: stretch;
-  gap: 2px;
-}
-
-.ledger-item-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.ledger-item-head .check {
-  margin: 0;
-}
-
-.ledger-sources {
-  list-style: none;
-  margin: 0;
-  padding: 0 0 0 28px;
-  font-size: 13px;
-}
-
-.ledger-sources li {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 10px;
-}
-
-.ledger-bus .item-label {
-  flex: 0 1 auto;
-}
-
 .target-feedback {
   margin: 6px 0 0;
-}
-
-.base-kind {
-  min-width: 96px;
-  white-space: nowrap;
-  color: var(--muted);
-  font-size: 13px;
 }
 
 .hint-inline {
@@ -2165,10 +2113,6 @@ tr.kind-separate .item-label .name {
   max-width: 760px;
 }
 
-.ledger-provider {
-  margin: 10px 0 0;
-}
-
 .provider-form {
   padding: 10px 12px;
   border: 1px solid var(--border);
@@ -2231,4 +2175,169 @@ tr.kind-separate .item-label .name {
 /* Overflow the plan feeds back into its own heat or fertilizer: used, so not a warning. */
 .fed-text {
   color: var(--muted);
+}
+
+/* Heat and fertilizer: balance in the header, then what comes in and what goes out. */
+.ledger-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin-bottom: 12px;
+}
+
+.ledger-head h2 {
+  margin: 0;
+}
+
+.ledger-balance {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.ledger-head .compact-button,
+.ledger-provided {
+  margin-left: auto;
+}
+
+
+
+
+.ledger {
+  container-type: inline-size;
+}
+
+/* Stacked in a narrow panel; side by side, with a line between them, when there's room. */
+.ledger-columns {
+  display: grid;
+  gap: 12px 20px;
+}
+
+@container (min-width: 480px) {
+  .ledger-columns {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .ledger-columns > div + div {
+    padding-left: 20px;
+    border-left: 1px solid var(--border);
+  }
+}
+
+.ledger-columns h3 {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+
+
+
+
+
+
+
+
+.provider-form {
+  margin-bottom: 12px;
+}
+
+/* Into the plan / out to the bus: what, how much, and a button moving it to the other side. */
+.ledger-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ledger-rows > li {
+  display: grid;
+  /* Buttons at the right edge of the column, so stacked ones line up. */
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 2px 14px;
+}
+
+.ledger-what {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-width: 0;
+}
+
+.ledger-what .item-label {
+  flex: 0 0 auto;
+}
+
+.ledger-from {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.ledger-amount {
+  grid-column: 1;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.ledger-rows .move-button {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+
+.move-button {
+  padding: 3px 8px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+
+
+
+/* A producer picked from a line of text: its icon and name, underlined like a link. */
+.recipe-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.recipe-link .recipe-title {
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+
+.recipe-link .chevron {
+  font-size: 11px;
+}
+
+.recipe-link:hover .recipe-title,
+.recipe-link:focus-visible .recipe-title {
+  color: var(--accent);
+}
+
+.resource-users + .resource-users {
+  margin-top: 12px;
+}
+
+.resource-users h3 {
+  margin: 0 0 6px;
+  font-size: 13px;
+}
+
+.resource-users .building-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }

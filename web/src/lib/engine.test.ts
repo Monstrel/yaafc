@@ -20,7 +20,7 @@ import { fedOverflow, ledgers } from './ledger'
 import { moneyLedger } from './money'
 import { allowedIngredients, builtinGroups, emptyPrefs, onlyGroup, preferredCount, setPrefs } from './itemGroups'
 import { countRecipes, diagnoseNoResults, type FinderQuery } from './diagnose'
-import { buildingCounts, checkLogistics, checkProcess } from './logistics'
+import { buildingCounts, checkLogistics, checkProcess, resourceUsers } from './logistics'
 import { craftsPerMachine } from './machineRate'
 import { solvePlan, type PlanResult } from './solver'
 import type { TreeNode } from './tree'
@@ -1174,6 +1174,19 @@ describe('rounding rows up to whole machines', () => {
     expect(assemblers.count).toBe(rows.reduce((t, n) => t + Math.ceil(n.machines - 1e-9), 0))
     expect(fractional).toBeCloseTo(4.5) // 1.67 + 0.83 + 2 in use, built as 2 + 1 + 2
     expect(assemblers.count).toBe(5)
+  })
+
+  it('lists what draws heat by building, adding up to the need', () => {
+    const p = plan({ targets: [{ item: 'SteelIngot', rate: 10 }, { item: 'Bandage', rate: 10 }] })
+    const r = solvePlan(p, catalog, mods)
+    const logistics = checkLogistics(r.runs, mods)
+    const heat = resourceUsers(r.tree, logistics, 'heat')
+    expect(heat.map((u) => u.machine)).toContain('Athanor')
+    expect(heat.reduce((t, u) => t + u.perSecond, 0)).toBeCloseTo(r.balances.find((b) => b.item === HEAT)!.consumed / 60)
+    expect(heat.every((u, i) => i === 0 || heat[i - 1].perSecond >= u.perSecond)).toBe(true)
+    const nutrients = resourceUsers(r.tree, logistics, 'nutrients')
+    expect(nutrients.every((u) => u.item)).toBe(true) // nurseries per plant
+    expect(nutrients.reduce((t, u) => t + u.perSecond, 0)).toBeCloseTo(r.balances.find((b) => b.item === NUTRIENTS)!.consumed / 60)
   })
 
   it('keeps rounding with its row when targets move, and forgets rows that left the plan', () => {

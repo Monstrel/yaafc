@@ -4,7 +4,7 @@ import { ItemPicker } from '../components/ItemPicker'
 import { Money } from '../components/Money'
 import { ProducerSelect, TierTag } from '../components/ProducerSelect'
 import { BookmarkIcon, ProductionTree } from '../components/ProductionTree'
-import { carriers, fedOverflow, itemFedBack, ledgers, targetFedBack, type LedgerSource, type ResourceLedger } from '../lib/ledger'
+import { carriers, fedOverflow, ledgers, targetFedBack, type LedgerSource, type ResourceLedger } from '../lib/ledger'
 import {
   HEAT,
   MAX_TIER,
@@ -22,7 +22,7 @@ import {
   tierName,
 } from '../lib/gameData'
 import { fmt } from '../lib/format'
-import { buildingCounts, checkLogistics, type LogisticsCheck } from '../lib/logistics'
+import { buildingCounts, checkLogistics, resourceUsers, type LogisticsCheck, type ResourceUser } from '../lib/logistics'
 import { moneyLedger, type MoneyLine } from '../lib/money'
 import { processTitle, type ProcessCatalog } from '../lib/processes'
 import type { PlanModel } from '../lib/planModel'
@@ -130,7 +130,7 @@ export function PlannerPage({
   const setProducer = (pick: ProducerPick) => onUpdatePlan((p) => chooseProducer(p, catalog, pick))
   const resetProducer = (row: string) => onUpdatePlan((p) => clearBranchChoice(p, row))
   /** Fuel or fertilizer: picked for the whole plan. */
-  const planWide = (item: string) => {
+  const planWide = (item: string, link?: boolean) => {
     const producer = planProducer(plan, catalog, item)
     return (
       <ProducerSelect
@@ -140,6 +140,7 @@ export function PlannerPage({
         onChange={(producer, machine) => setProducer({ item, producer, machine })}
         noImport
         oneLine
+        link={link}
       />
     )
   }
@@ -180,6 +181,8 @@ export function PlannerPage({
   // Whole machines per building type, as built: each tree row rounds up on its own.
   const buildings = useMemo(() => buildingCounts(result.tree, logistics), [result.tree, logistics])
   const totalMachines = buildings.reduce((t, b) => t + b.count, 0)
+  const heatUsers = useMemo(() => resourceUsers(result.tree, logistics, 'heat'), [result.tree, logistics])
+  const nutrientUsers = useMemo(() => resourceUsers(result.tree, logistics, 'nutrients'), [result.tree, logistics])
 
   return (
     <div className="page planner">
@@ -445,8 +448,12 @@ export function PlannerPage({
                         ledger={l}
                         plan={plan}
                         catalog={catalog}
-                        busPick={planWide(l.resource === 'heat' ? HEAT : NUTRIENTS)}
-                        onItemFeedback={(item, on) => onUpdatePlan((p) => setItemFeedback(p, item, on))}
+                        busPick={planWide(l.resource === 'heat' ? HEAT : NUTRIENTS, true)}
+                        onFeedback={(s, on) =>
+                          onUpdatePlan((p) =>
+                            s.target === null ? setItemFeedback(p, s.item, on) : setTargetFeedback(p, s.target, on),
+                          )
+                        }
                         onProvide={(item) => onUpdatePlan((p) => addProvider(p, item))}
                       >
                         {l.resource === 'heat' && machineTier(STEAM_BOILER) <= catalog.tier && (
@@ -535,6 +542,13 @@ export function PlannerPage({
                     })}
                   </ul>
                 </section>
+                {heatUsers.length + nutrientUsers.length > 0 && (
+                  <section className="panel">
+                    <h2>Heat &amp; nutrients used</h2>
+                    <ResourceUsers title="🔥 Heat" users={heatUsers} unit="P/s" />
+                    <ResourceUsers title="🌱 Nutrients" users={nutrientUsers} unit="nutrients/s" />
+                  </section>
+                )}
               </div>
             </>
           )}
@@ -552,16 +566,18 @@ const RESOURCE = {
 const STEAM_BOILER = 'SteamBoiler'
 
 /**
- * One bus resource: what the plan needs, the fuel or fertilizer it makes that could cover it (fed
- * back per item, or per target from the target list), and what the bus supplies for the rest, with
- * the pick of which fuel or fertilizer that is.
+ * One bus resource. The header balances what the plan makes of it (the fuel or fertilizer it feeds
+ * back) against what its machines use, and offers to provide the rest from the plan. Below, its
+ * effect on the bus: what goes into the plan's machines (the fuel it burns of its own, and the
+ * bus fuel for the rest) and what goes out to the bus (the fuel it makes and doesn't burn), each
+ * movable to the other side.
  */
 function LedgerPanel({
   ledger,
   plan,
   catalog,
   busPick,
-  onItemFeedback,
+  onFeedback,
   onProvide,
   children,
 }: {
@@ -570,7 +586,8 @@ function LedgerPanel({
   catalog: ProcessCatalog
   /** Picks the fuel or fertilizer the bus supplies. */
   busPick: ReactNode
-  onItemFeedback: (item: string, on: boolean) => void
+  /** Feeds a source back (burns it in the plan) or not (sends it to the bus). */
+  onFeedback: (source: LedgerSource, on: boolean) => void
   onProvide: (item: string) => void
   children?: ReactNode
 }) {
@@ -578,88 +595,162 @@ function LedgerPanel({
   const perSecond = (perMinute: number) => `${fmt(perMinute / 60)} ${unit}`
   // The plan's own balance, from zero: what it feeds back, less what its machines use.
   const net = Math.abs(ledger.made - ledger.need) < 1e-9 * Math.max(1, ledger.need) ? 0 : ledger.made - ledger.need
-  const byItem = new Map<string, LedgerSource[]>()
-  for (const s of ledger.sources) byItem.set(s.item, [...(byItem.get(s.item) ?? []), s])
-  const source = (s: LedgerSource) => {
-    const own = s.target !== null && plan.targets[s.target]?.feedback !== undefined
-    return (
-      <li key={`${s.target}:${s.item}`} className="ledger-source">
-        <span>
-          {s.target === null ? 'Overflow' : <TargetLink index={s.target} />}
-          {s.target !== null && s.target === ledger.absorbedBy && ' (net)'} · {fmt(s.amount)}/min
-        </span>
-        <span className="hint-inline">
-          {!s.fedBack
-            ? 'not fed back'
-            : s.used > 0
-              ? `plan ${verb} ${fmt(s.used)}/min for ${perSecond(s.used * s.per)}, ${fmt(s.amount - s.used)}/min left over`
-              : 'fed back, not needed'}
-          {own && ' (set on the target)'}
-        </span>
-      </li>
-    )
-  }
+  const [providing, setProviding] = useState<string | null>(null)
+  const use = ledger.resource === 'heat' ? 'Burn' : 'Spread'
+  const what = (s: LedgerSource) => (
+    <span className="ledger-what">
+      <ItemLabel item={s.item} size={18} />
+      <span className="ledger-from">
+        {s.target === null ? 'overflow' : <TargetLink index={s.target} />}
+        {s.target !== null && s.target === ledger.absorbedBy && ' (net)'}
+      </span>
+    </span>
+  )
+  const fedIn = ledger.sources.filter((s) => s.fedBack)
+  const out = ledger.sources.flatMap((s) => {
+    const left = s.amount - s.used
+    if (!s.fedBack) return [{ source: s, amount: s.amount, leftOver: false }]
+    return left > 1e-9 * s.amount ? [{ source: s, amount: left, leftOver: true }] : []
+  })
   return (
     <section className="panel ledger">
-      <h2>
-        {title} <span className="hint-inline">{perSecond(ledger.need)} needed</span>
-      </h2>
-      <ul className="flow-list ledger-list">
-        {[...byItem].map(([item, sources]) => (
-          <li key={item} className="ledger-item">
-            <div className="ledger-item-head">
-              <ItemLabel item={item} />
-              <label className="check" title={`Feed back every source of ${itemName(item)}; a target can say otherwise`}>
-                <input type="checkbox" checked={itemFedBack(plan, item)} onChange={(e) => onItemFeedback(item, e.target.checked)} />
-                Feed back
-              </label>
-            </div>
-            <ul className="ledger-sources">{sources.map(source)}</ul>
-          </li>
-        ))}
-        <li className="ledger-bus">
-          <span className="base-kind">From the bus</span>
-          {busPick}
-          <span className="hint-inline">
-            {ledger.absorbedBy !== null
-              ? 'not used: a target provides it'
-              : ledger.bus && ledger.bus.count > 0
-                ? `${fmt(ledger.bus.count)}/min for ${perSecond(ledger.bus.count * ledger.bus.per)}`
-                : ledger.need > 0
-                  ? 'not needed: the plan covers it'
-                  : 'nothing needed'}
+      <header className="ledger-head">
+        <h2>{title}</h2>
+        <span className="ledger-balance" title="What the plan feeds back holds, against what its machines use">
+          makes {fmt(ledger.made / 60)} · uses {perSecond(ledger.need)}{' '}
+          <strong className={`rate ${net >= 0 ? 'positive' : 'negative'}`}>
+            {net >= 0 ? '+' : '−'}
+            {perSecond(Math.abs(net))}
+          </strong>
+        </span>
+        {ledger.absorbedBy !== null ? (
+          <span className="ledger-provided hint-inline">
+            provided by <TargetLink index={ledger.absorbedBy} />
           </span>
-        </li>
-        {ledger.short > 0 && (
-          <li className="ledger-total">
-            <span className="rate negative">
-              {perSecond(ledger.short)} can&apos;t be covered: the net target&apos;s own chain uses more than it gives
-            </span>
-          </li>
-        )}
-        {(ledger.need > 0 || ledger.made > 0) && (
-          <li className="ledger-total">
-            <span title="What the plan feeds back holds, less what its machines use">
-              Plan makes {perSecond(ledger.made)}, uses {perSecond(ledger.need)}:{' '}
-              <strong className={`rate ${net >= 0 ? 'positive' : 'negative'}`}>
-                {net >= 0 ? '+' : '−'}
-                {perSecond(Math.abs(net))}
-              </strong>
-            </span>
-          </li>
-        )}
-      </ul>
-      {ledger.need > 0 &&
-        (ledger.absorbedBy !== null ? (
-          <p className="ledger-provider hint">
-            {ledger.resource === 'heat' ? 'Heat' : 'Fertilizer'} provided by <TargetLink index={ledger.absorbedBy} /> (
-            {itemName(plan.targets[ledger.absorbedBy].item)}, net)
-          </p>
         ) : (
-          <Provider resource={ledger.resource} plan={plan} catalog={catalog} onProvide={onProvide} />
-        ))}
+          net < 0 &&
+          providing === null && (
+            <button
+              className="compact-button"
+              title={`Add a target that makes what the plan ${verb} itself`}
+              onClick={() => setProviding(planProducer(plan, catalog, ledger.resource === 'heat' ? HEAT : NUTRIENTS))}
+            >
+              Provide from plan…
+            </button>
+          )
+        )}
+      </header>
+      {providing !== null && (
+        <ProviderForm
+          resource={ledger.resource}
+          picked={providing}
+          catalog={catalog}
+          onPick={setProviding}
+          onProvide={(item) => {
+            onProvide(item)
+            setProviding(null)
+          }}
+          onCancel={() => setProviding(null)}
+        />
+      )}
+      <div className="ledger-columns">
+        <div>
+          <h3>Into the plan</h3>
+          <ul className="ledger-rows">
+            <li>
+              <span className="ledger-what">
+                {busPick}
+                <span className="ledger-from">from the bus</span>
+              </span>
+              <span className="ledger-amount">
+                {ledger.absorbedBy !== null
+                  ? 'not used'
+                  : ledger.bus && ledger.bus.count > 0
+                    ? `${fmt(ledger.bus.count)}/min → ${perSecond(ledger.bus.count * ledger.bus.per)}`
+                    : ledger.need > 0
+                      ? 'not needed'
+                      : 'nothing needed'}
+              </span>
+            </li>
+            {fedIn.map((s) => (
+              <li key={`${s.target}:${s.item}`}>
+                {what(s)}
+                <span className="ledger-amount">
+                  {s.used > 0 ? `${fmt(s.used)}/min → ${perSecond(s.used * s.per)}` : 'not needed'}
+                </span>
+                <button
+                  className="move-button"
+                  title={`Stop ${verb.replace(/s$/, 'ing')} it in the plan: it goes out to the bus`}
+                  onClick={() => onFeedback(s, false)}
+                >
+                  Send to bus →
+                </button>
+              </li>
+            ))}
+            {ledger.short > 0 && (
+              <li className="rate negative">
+                {perSecond(ledger.short)} can&apos;t be covered: the net target&apos;s own chain uses more than it gives
+              </li>
+            )}
+          </ul>
+        </div>
+        <div>
+          <h3>Out to the bus</h3>
+          {out.length === 0 ? (
+            <p className="hint">Nothing: the plan makes no {ledger.resource === 'heat' ? 'fuel' : 'fertilizer'} it doesn&apos;t use.</p>
+          ) : (
+            <ul className="ledger-rows">
+              {out.map(({ source: s, amount, leftOver }) => (
+                <li key={`${s.target}:${s.item}`}>
+                  {what(s)}
+                  <span className="ledger-amount">
+                    {fmt(amount)}/min{leftOver && ' left over'}
+                  </span>
+                  {!leftOver && (
+                    <button
+                      className="move-button"
+                      title={`Feed it back: the plan ${verb} it before taking any from the bus`}
+                      onClick={() => onFeedback(s, true)}
+                    >
+                      ← {use} in plan
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
       {children}
     </section>
+  )
+}
+
+/** What draws heat (per building type) or nutrients (per nursery and plant), biggest first. */
+function ResourceUsers({ title, users, unit }: { title: string; users: ResourceUser[]; unit: string }) {
+  if (!users.length) return null
+  return (
+    <div className="resource-users">
+      <h3>{title}</h3>
+      <ul className="flow-list">
+        {users.map((u) => (
+          <li key={`${u.machine}|${u.item ?? ''}`}>
+            <span className="building-name">
+              <strong>{Number.isFinite(u.count) ? u.count : '∞'}</strong> {buildingNameFor(u.machine, u.count)}
+              {u.item && (
+                <>
+                  {' '}
+                  <ItemLabel item={u.item} size={16} />
+                </>
+              )}
+            </span>
+            <span className="rate">
+              {fmt(u.perSecond)} {unit}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
   )
 }
 
@@ -684,32 +775,26 @@ function TargetLink({ index }: { index: number }) {
  * Sets the plan up to provide its own heat or fertilizer: adds a fed-back target at 0 net per
  * minute of a fuel the player picks (the bus fuel to start with), or of the nurseries' fertilizer.
  */
-function Provider({
+function ProviderForm({
   resource,
-  plan,
+  picked,
   catalog,
+  onPick,
   onProvide,
+  onCancel,
 }: {
   resource: 'heat' | 'fertilizer'
-  plan: Plan
+  /** The fuel or fertilizer process picked so far. */
+  picked: string
   catalog: ProcessCatalog
+  onPick: (producer: string) => void
   onProvide: (item: string) => void
+  onCancel: () => void
 }) {
-  const key = resource === 'heat' ? HEAT : NUTRIENTS
-  const [picked, setPicked] = useState<string | null>(null)
-  const itemOf = (producer: string) => {
-    const input = catalog.byId.get(producer)?.inputs[0]?.item
-    return input ? realItem(input) : null
-  }
-  if (picked === null)
-    return (
-      <p className="ledger-provider">
-        <button onClick={() => setPicked(planProducer(plan, catalog, key))}>Provide from this plan…</button>
-      </p>
-    )
-  const item = itemOf(picked)
+  const input = catalog.byId.get(picked)?.inputs[0]?.item
+  const item = input ? realItem(input) : null
   return (
-    <div className="ledger-provider provider-form">
+    <div className="provider-form">
       {resource === 'heat' ? (
         <label className="stacked">
           Fuel to make
@@ -717,7 +802,7 @@ function Provider({
             item={HEAT}
             current={{ producer: picked, process: catalog.byId.get(picked) }}
             catalog={catalog}
-            onChange={(producer) => setPicked(producer)}
+            onChange={(producer) => onPick(producer)}
             noImport
             oneLine
           />
@@ -733,17 +818,10 @@ function Provider({
         after the targets above it. Raise it for a surplus, or remove it to go back to the bus.
       </p>
       <div className="provider-actions">
-        <button
-          className="primary"
-          disabled={!item}
-          onClick={() => {
-            if (item) onProvide(item)
-            setPicked(null)
-          }}
-        >
+        <button className="primary" disabled={!item} onClick={() => item && onProvide(item)}>
           Add {item ? itemName(item) : ''} target
         </button>
-        <button onClick={() => setPicked(null)}>Cancel</button>
+        <button onClick={onCancel}>Cancel</button>
       </div>
     </div>
   )

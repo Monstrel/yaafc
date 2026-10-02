@@ -86,6 +86,7 @@ export function ProducerSelect({
   catalog,
   onChange,
   compact,
+  link,
   noImport,
   oneLine,
   branch,
@@ -98,6 +99,8 @@ export function ProducerSelect({
   /** `reuse`: true to go back to reusing by-products; false when a producer replaces them. */
   onChange: (producer: string, machine?: string, everywhere?: boolean, reuse?: boolean) => void
   compact?: boolean
+  /** Shown as a link (icon and name, underlined) rather than a button, inside a line of text. */
+  link?: boolean
   noImport?: boolean
   /** Short lists of items with one yield each (fuels, fertilizers): an option per line, yield on the right, no search. */
   oneLine?: boolean
@@ -242,7 +245,7 @@ export function ProducerSelect({
     <span className="producer-select">
       <button
         type="button"
-        className={`recipe-button ${compact ? 'compact' : ''}`}
+        className={link ? 'recipe-link' : `recipe-button ${compact ? 'compact' : ''}`}
         popoverTarget={popoverId}
         aria-haspopup="listbox"
         title={selected.process ? processLabel(selected.process, item) : choiceTitle(selected)}
@@ -251,7 +254,7 @@ export function ProducerSelect({
           setOpen(true)
         }}
       >
-        <ChoiceIcon choice={selected} size={compact ? 20 : 24} />
+        <ChoiceIcon choice={selected} size={link ? 18 : compact ? 20 : 24} />
         <span className="recipe-title">{choiceTitle(selected)}</span>
         <ChoiceTags choice={selected} item={item} />
         {reuse?.on && !reuse.covered && reuse.sources && (

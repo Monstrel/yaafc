@@ -150,3 +150,39 @@ export function buildingCounts(tree: TreeNode[], logistics: Map<string, Logistic
   tree.forEach(visit)
   return [...counts.values()]
 }
+
+/** Machines of one kind drawing heat or nutrients: one building type (nurseries per plant). */
+export interface ResourceUser {
+  /** Building key. */
+  machine: string
+  /** The plant, for nurseries (they draw nutrients per plant); absent for heat. */
+  item?: string
+  /** Whole machines, as built (input belt limits included). */
+  count: number
+  /** Heat (P/s) or nutrients per second they draw. */
+  perSecond: number
+}
+
+/**
+ * What draws the plan's heat (per building type) or nutrients (per nursery and plant), biggest
+ * first, with whole machine counts as in `buildingCounts`.
+ */
+export function resourceUsers(tree: TreeNode[], logistics: Map<string, LogisticsCheck>, use: 'heat' | 'nutrients'): ResourceUser[] {
+  const users = new Map<string, ResourceUser>()
+  const visit = (n: TreeNode) => {
+    const machine = n.run?.process.machine
+    const draw = use === 'heat' ? n.heat : n.nutrients
+    if (n.kind === 'produce' && machine && draw > 0) {
+      // By name: mirrored variants (Athanor_Sym) are the same building.
+      const key = use === 'heat' ? machine.name : `${machine.name}|${n.item}`
+      const utilization = logistics.get(n.run!.key)?.utilization ?? 1
+      const u = users.get(key) ?? { machine: machine.key, ...(use === 'nutrients' && { item: n.item }), count: 0, perSecond: 0 }
+      u.count += utilization > 0 ? Math.ceil(n.machines / utilization - 1e-9) : Infinity
+      u.perSecond += draw
+      users.set(key, u)
+    }
+    n.children.forEach(visit)
+  }
+  tree.forEach(visit)
+  return [...users.values()].sort((a, b) => b.perSecond - a.perSecond)
+}
