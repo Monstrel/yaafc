@@ -1195,17 +1195,6 @@ tr.idle {
   font-variant-numeric: tabular-nums;
 }
 
-.ledger + .ledger {
-  margin-top: 14px;
-  padding-top: 10px;
-  border-top: 1px solid var(--border);
-}
-
-.ledger h3 {
-  margin: 0 0 8px;
-  font-size: 15px;
-}
-
 .ledger-list > li {
   flex-wrap: wrap;
 }

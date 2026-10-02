@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useMemo, useOptimistic, useState } from 'react'
+import { startTransition, useEffect, useMemo, useOptimistic, useState, type ReactNode } from 'react'
 import { ItemIcon, ItemLabel } from '../components/ItemIcon'
 import { ItemPicker } from '../components/ItemPicker'
 import { Money } from '../components/Money'
@@ -253,22 +253,6 @@ export function PlannerPage({
           </section>
 
           <section className="panel">
-            <h2>Fuel &amp; fertilizer</h2>
-            <p className="hint">
-              Taken from the factory bus: the planner shows how much you need instead of planning their production. Fuel or
-              fertilizer the plan makes can be fed back to cover part of it.
-            </p>
-            <label className="stacked">
-              Fuel from the bus
-              {planWide(HEAT)}
-            </label>
-            <label className="stacked">
-              Fertilizer from the bus
-              {planWide(NUTRIENTS)}
-            </label>
-          </section>
-
-          <section className="panel">
             <h2>Upgrades</h2>
             <p className="hint">Your game&apos;s progress: shared by every plan.</p>
             <ResearchTier
@@ -450,24 +434,26 @@ export function PlannerPage({
               )}
 
               {ledger.some((l) => l.need > 0 || l.sources.length > 0) && (
-                <section className="panel">
-                  <h2>Heat &amp; fertilizer</h2>
+                <div className="two-col">
                   {ledger
                     .filter((l) => l.need > 0 || l.sources.length > 0)
+                    .reverse() // heat first
                     .map((l) => (
                       <LedgerPanel
                         key={l.resource}
                         ledger={l}
                         plan={plan}
                         catalog={catalog}
+                        busPick={planWide(l.resource === 'heat' ? HEAT : NUTRIENTS)}
                         onItemFeedback={(item, on) => onUpdatePlan((p) => setItemFeedback(p, item, on))}
                         onProvide={(item) => onUpdatePlan((p) => addProvider(p, item))}
-                      />
+                      >
+                        {l.resource === 'heat' && machineTier(STEAM_BOILER) <= catalog.tier && (
+                          <BoilerRoom heat={l.need / 60} factorySpeed={mods.factorySpeed} />
+                        )}
+                      </LedgerPanel>
                     ))}
-                  {machineTier(STEAM_BOILER) <= catalog.tier && (
-                    <BoilerRoom heat={(ledger.find((l) => l.resource === 'heat')?.need ?? 0) / 60} factorySpeed={mods.factorySpeed} />
-                  )}
-                </section>
+                </div>
               )}
 
               <section className="panel tree-panel">
@@ -563,20 +549,26 @@ const STEAM_BOILER = 'SteamBoiler'
 
 /**
  * One bus resource: what the plan needs, the fuel or fertilizer it makes that could cover it (fed
- * back per item, or per target from the target list), and what the bus supplies for the rest.
+ * back per item, or per target from the target list), and what the bus supplies for the rest, with
+ * the pick of which fuel or fertilizer that is.
  */
 function LedgerPanel({
   ledger,
   plan,
   catalog,
+  busPick,
   onItemFeedback,
   onProvide,
+  children,
 }: {
   ledger: ResourceLedger
   plan: Plan
   catalog: ProcessCatalog
+  /** Picks the fuel or fertilizer the bus supplies. */
+  busPick: ReactNode
   onItemFeedback: (item: string, on: boolean) => void
   onProvide: (item: string) => void
+  children?: ReactNode
 }) {
   const { title, unit, verb } = RESOURCE[ledger.resource]
   const perSecond = (perMinute: number) => `${fmt(perMinute / 60)} ${unit}`
@@ -602,10 +594,10 @@ function LedgerPanel({
     )
   }
   return (
-    <div className="ledger">
-      <h3>
+    <section className="panel ledger">
+      <h2>
         {title} <span className="hint-inline">{perSecond(ledger.need)} needed</span>
-      </h3>
+      </h2>
       <ul className="flow-list ledger-list">
         {[...byItem].map(([item, sources]) => (
           <li key={item} className="ledger-item">
@@ -619,13 +611,19 @@ function LedgerPanel({
             <ul className="ledger-sources">{sources.map(source)}</ul>
           </li>
         ))}
-        {ledger.bus && ledger.bus.count > 0 && (
-          <li className="ledger-bus">
-            <span className="base-kind">From the bus</span>
-            <ItemLabel item={ledger.bus.item} count={ledger.bus.count} />
-            <span className="hint-inline">/min for {perSecond(ledger.bus.count * ledger.bus.per)}</span>
-          </li>
-        )}
+        <li className="ledger-bus">
+          <span className="base-kind">From the bus</span>
+          {busPick}
+          <span className="hint-inline">
+            {ledger.absorbedBy !== null
+              ? 'not used: a target provides it'
+              : ledger.bus && ledger.bus.count > 0
+                ? `${fmt(ledger.bus.count)}/min for ${perSecond(ledger.bus.count * ledger.bus.per)}`
+                : ledger.need > 0
+                  ? 'not needed: the plan covers it'
+                  : 'nothing needed'}
+          </span>
+        </li>
         {ledger.short > 0 && (
           <li className="ledger-total">
             <span className="rate negative">
@@ -650,7 +648,8 @@ function LedgerPanel({
         ) : (
           <Provider resource={ledger.resource} plan={plan} catalog={catalog} onProvide={onProvide} />
         ))}
-    </div>
+      {children}
+    </section>
   )
 }
 
