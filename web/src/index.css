@@ -554,6 +554,18 @@ h2 {
   font-weight: 600;
 }
 
+.recipe-option.one-line {
+  gap: 8px;
+  padding: 4px 8px;
+}
+
+.recipe-yield {
+  margin-left: auto;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .recipe-body {
   display: flex;
   flex-direction: column;

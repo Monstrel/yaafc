@@ -72,6 +72,7 @@ export function ProducerSelect({
   onChange,
   compact,
   noImport,
+  oneLine,
   branch,
 }: {
   item: string
@@ -81,6 +82,8 @@ export function ProducerSelect({
   onChange: (producer: string, machine?: string, everywhere?: boolean) => void
   compact?: boolean
   noImport?: boolean
+  /** Short lists of items with one yield each (fuels, fertilizers): an option per line, yield on the right, no search. */
+  oneLine?: boolean
   /** On a tree row: picks cover the row's branch, or every row of the item when asked. */
   branch?: BranchScope
 }) {
@@ -157,7 +160,7 @@ export function ProducerSelect({
     const el = pop.current
     if (!el) return
     const r = button.getBoundingClientRect()
-    const width = Math.min(Math.max(r.width, 360), window.innerWidth - 16)
+    const width = Math.min(Math.max(r.width, oneLine ? 240 : 360), window.innerWidth - 16)
     const below = window.innerHeight - r.bottom - 12
     const above = r.top - 12
     const up = below < 260 && above > below
@@ -263,7 +266,7 @@ export function ProducerSelect({
       >
         {open && (
           <>
-            {choices.length > SEARCH_FROM && (
+            {!oneLine && choices.length > SEARCH_FROM && (
               <input
                 className="recipe-search"
                 placeholder="Search…"
@@ -300,27 +303,48 @@ export function ProducerSelect({
               </div>
             )}
             <div role="listbox" aria-label={`Producer for ${itemName(item)}`}>
-              {shown.map((c) => (
-                <button
-                  type="button"
-                  key={c.value}
-                  role="option"
-                  aria-selected={c.value === value}
-                  aria-label={choiceDescription(c, item)}
-                  className="recipe-option"
-                  onClick={() => choose(c)}
-                >
-                  <ChoiceIcon choice={c} size={32} />
-                  <span className="recipe-body">
-                    <span className="recipe-head">
-                      <span className="recipe-title">{choiceTitle(c)}</span>
-                      <ChoiceTags choice={c} item={item} machine />
-                      <ChoiceMeta choice={c} />
+              {shown.map((c) =>
+                oneLine ? (
+                  <button
+                    type="button"
+                    key={c.value}
+                    role="option"
+                    aria-selected={c.value === value}
+                    aria-label={choiceDescription(c, item)}
+                    className="recipe-option one-line"
+                    onClick={() => choose(c)}
+                  >
+                    <ChoiceIcon choice={c} size={24} />
+                    <span className="recipe-title">{choiceTitle(c)}</span>
+                    <ChoiceTags choice={c} item={item} />
+                    {c.process?.outputs[0] && (
+                      <span className="recipe-yield" aria-hidden>
+                        <Amount stack={c.process.outputs[0]} className="" />
+                      </span>
+                    )}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    key={c.value}
+                    role="option"
+                    aria-selected={c.value === value}
+                    aria-label={choiceDescription(c, item)}
+                    className="recipe-option"
+                    onClick={() => choose(c)}
+                  >
+                    <ChoiceIcon choice={c} size={32} />
+                    <span className="recipe-body">
+                      <span className="recipe-head">
+                        <span className="recipe-title">{choiceTitle(c)}</span>
+                        <ChoiceTags choice={c} item={item} machine />
+                        <ChoiceMeta choice={c} />
+                      </span>
+                      <ChoicePreview choice={c} item={item} shared={c.value === value ? NONE : shared} />
                     </span>
-                    <ChoicePreview choice={c} item={item} shared={c.value === value ? NONE : shared} />
-                  </span>
-                </button>
-              ))}
+                  </button>
+                ),
+              )}
               {shown.length === 0 && <div className="picker-empty">No matches</div>}
             </div>
           </>

@@ -115,6 +115,7 @@ export function PlannerPage({
         catalog={catalog}
         onChange={(producer, machine) => setProducer({ item, producer, machine })}
         noImport
+        oneLine
       />
     )
   }
