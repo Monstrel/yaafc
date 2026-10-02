@@ -1136,6 +1136,23 @@ tr.idle {
   flex: 1;
 }
 
+/* Full-width notices: columns sized to their content, so amounts sit next to their items. */
+.notice-list {
+  display: grid;
+  grid-template-columns: max-content max-content minmax(0, 1fr);
+  gap: 6px 16px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.notice-list li {
+  display: contents;
+}
+
+.notice-list .rate {
+  text-align: right;
+}
+
 .rate {
   font-variant-numeric: tabular-nums;
   font-weight: 600;

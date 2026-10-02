@@ -360,7 +360,7 @@ export function PlannerPage({
                 <div className="panel notice">
                   <strong>Overflow.</strong> These are made but nothing in the plan uses them. Route them somewhere (sell, store,
                   or use them in another recipe) or they'll back up the machines that make them:
-                  <ul className="flow-list">
+                  <ul className="flow-list notice-list">
                     {surplus.map((b) => (
                       <li key={b.item}>
                         <ItemLabel item={b.item} />
@@ -376,7 +376,7 @@ export function PlannerPage({
                 <div className="panel notice">
                   <strong>Beyond research tier {tierName(catalog.tier)}.</strong> These steps need research you haven&apos;t
                   reached yet. Pick another recipe for them, or plan ahead for the tier:
-                  <ul className="flow-list">
+                  <ul className="flow-list notice-list">
                     {beyond.map((b) => (
                       <li key={b.item}>
                         <ItemLabel item={b.item} />
