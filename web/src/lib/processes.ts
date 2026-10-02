@@ -10,6 +10,7 @@ import {
   MAX_TIER,
   WORLD_TREE_NURSERY,
   buyTier,
+  coinValue,
   gameRecipes,
   itemName,
   items,
@@ -476,9 +477,11 @@ export function buildCatalog(ctx: ProcessContext): ProcessCatalog {
  * Default producer, among what the plan's research tier can run (anything, when nothing can): the
  * standard game recipe, else a nursery (preferred over seed plots), else the Paradox Crucible (for
  * Oblivion Essence, whose only recipe loops back through Vitality), else an alternate recipe, else
- * a saved cauldron recipe, else import.
+ * a saved cauldron recipe, else import. Coins are money off the bus: they're taken in at face value,
+ * and minted only for a target (`asTarget`).
  */
-export function defaultProducer(catalog: ProcessCatalog, item: string): string {
+export function defaultProducer(catalog: ProcessCatalog, item: string, asTarget = false): string {
+  if (coinValue(item) !== null && !asTarget) return 'import'
   const open = (p: Process | undefined): p is Process => !!p && catalog.reach(p) <= catalog.tier
   // The unlocked fuel with the most heat per item.
   if (item === HEAT) {

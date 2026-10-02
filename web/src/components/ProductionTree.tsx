@@ -1,5 +1,5 @@
 import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
-import { CATALYSTS, itemsByKey } from '../lib/gameData'
+import { CATALYSTS, coinValue, itemsByKey } from '../lib/gameData'
 import { fmt } from '../lib/format'
 import { buildingNameFor, machineNameFor, noun } from '../lib/plural'
 import { foldKey, usePersistentState } from '../lib/store'
@@ -426,7 +426,8 @@ function TreeRow({
         }
       : undefined
   const canChoose = !!node.producer && ((catalog.byProduct.get(node.item)?.length ?? 0) > 0 || !!reuse)
-  const price = itemsByKey.get(node.item)?.buyPrice
+  const coin = coinValue(node.item)
+  const price = coin ?? itemsByKey.get(node.item)?.buyPrice
   const name = itemsByKey.get(node.item)?.name ?? node.item
   const anchorName = node.separation?.anchor && itemsByKey.get(node.separation.anchor)?.name
   const sources = node.byproductSources.map((s, i) => (
@@ -513,7 +514,7 @@ function TreeRow({
             {node.kind === 'purchase' &&
               (price != null ? (
                 <span className="leaf-note">
-                  {canChoose ? '' : 'Bought · '}
+                  {canChoose ? '' : coin !== null ? 'From the bus · ' : 'Bought · '}
                   <Money copper={node.purchased * price} suffix="/min" />
                 </span>
               ) : (

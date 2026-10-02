@@ -2168,3 +2168,11 @@ tr.kind-separate .item-label .name {
 .target.pulse {
   animation: tree-pulse 1.2s ease-in-out 3;
 }
+
+.stat-label .positive {
+  color: var(--green);
+}
+
+.stat-label .negative {
+  color: var(--red);
+}

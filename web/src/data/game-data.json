@@ -3,7 +3,7 @@
     "steamBuildId": "25321648",
     "pakDate": "2026-09-15"
   },
-  "extractedAt": "2026-10-01 19:23:00Z",
+  "extractedAt": "2026-10-02 20:57:59Z",
   "items": [
     {
       "key": "PortalSigil",
@@ -23,7 +23,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": 1500.0
+      "buyPrice": 1500.0,
+      "sellPrice": null
     },
     {
       "key": "AdPortalSigil",
@@ -43,7 +44,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": 16000.0
+      "buyPrice": 16000.0,
+      "sellPrice": null
     },
     {
       "key": "GelatinousGridlock",
@@ -63,7 +65,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": 100.0
+      "buyPrice": 100.0,
+      "sellPrice": null
     },
     {
       "key": "CashRegister",
@@ -83,7 +86,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "Wood",
@@ -103,7 +107,8 @@
       "heatValue": 10.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": 200.0
+      "buyPrice": 200.0,
+      "sellPrice": null
     },
     {
       "key": "Limestone",
@@ -123,7 +128,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": 600.0
+      "buyPrice": 600.0,
+      "sellPrice": null
     },
     {
       "key": "IronOre",
@@ -143,7 +149,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": 1200.0
+      "buyPrice": 1200.0,
+      "sellPrice": null
     },
     {
       "key": "FlaxSeed",
@@ -163,7 +170,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": 280.0
+      "buyPrice": 280.0,
+      "sellPrice": null
     },
     {
       "key": "Flax",
@@ -183,7 +191,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "Sage",
@@ -203,7 +212,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "SageSeed",
@@ -223,7 +233,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": 360.0
+      "buyPrice": 360.0,
+      "sellPrice": null
     },
     {
       "key": "Redcurrant",
@@ -243,7 +254,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "RedcurrantSeed",
@@ -263,7 +275,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": 1300.0
+      "buyPrice": 1300.0,
+      "sellPrice": null
     },
     {
       "key": "Lavender",
@@ -283,7 +296,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "LavenderSeed",
@@ -303,7 +317,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": 16000.0
+      "buyPrice": 16000.0,
+      "sellPrice": null
     },
     {
       "key": "Chamomile",
@@ -323,7 +338,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "ChamomileSeed",
@@ -343,7 +359,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": 6000.0
+      "buyPrice": 6000.0,
+      "sellPrice": null
     },
     {
       "key": "Gentian",
@@ -363,7 +380,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "GentianNectar",
@@ -383,7 +401,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "GentianSeed",
@@ -403,7 +422,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": 64000.0
+      "buyPrice": 64000.0,
+      "sellPrice": null
     },
     {
       "key": "Pyrite",
@@ -423,7 +443,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": 11000.0
+      "buyPrice": 11000.0,
+      "sellPrice": null
     },
     {
       "key": "RockSalt",
@@ -443,7 +464,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": 9000.0
+      "buyPrice": 9000.0,
+      "sellPrice": null
     },
     {
       "key": "CoalOre",
@@ -463,7 +485,8 @@
       "heatValue": 250.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": 4800.0
+      "buyPrice": 4800.0,
+      "sellPrice": null
     },
     {
       "key": "RottenLog",
@@ -483,7 +506,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": 2000.0
+      "buyPrice": 2000.0,
+      "sellPrice": null
     },
     {
       "key": "QuartzOre",
@@ -503,7 +527,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": 44000.0
+      "buyPrice": 44000.0,
+      "sellPrice": null
     },
     {
       "key": "Meteorite",
@@ -523,7 +548,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": 2000000.0
+      "buyPrice": 2000000.0,
+      "sellPrice": null
     },
     {
       "key": "WorldTreeLeaf",
@@ -543,7 +569,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "WorldTreeCore",
@@ -563,7 +590,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "WorldTreeSeed",
@@ -583,7 +611,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": 5000000.0
+      "buyPrice": 5000000.0,
+      "sellPrice": null
     },
     {
       "key": "Ruby",
@@ -601,7 +630,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 250000.0
     },
     {
       "key": "Sapphire",
@@ -619,7 +649,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 480000.0
     },
     {
       "key": "Emerald",
@@ -637,7 +668,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 700000.0
     },
     {
       "key": "PhilosopherStone",
@@ -657,7 +689,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "WoodBoard",
@@ -677,7 +710,8 @@
       "heatValue": 20.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "LargeWoodGear",
@@ -697,7 +731,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 5.0
     },
     {
       "key": "Stone",
@@ -717,7 +752,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "Sand",
@@ -737,7 +773,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "Mortar",
@@ -755,7 +792,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 48.0
     },
     {
       "key": "FlaxFiber",
@@ -775,7 +813,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "LinenThread",
@@ -795,7 +834,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "LinenRope",
@@ -815,7 +855,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 36.0
     },
     {
       "key": "WoodGear",
@@ -835,7 +876,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 8.0
     },
     {
       "key": "IronIngot",
@@ -855,7 +897,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "Nails",
@@ -875,7 +918,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 16.0
     },
     {
       "key": "IronSand",
@@ -895,7 +939,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "PlantAsh",
@@ -915,7 +960,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "SagePowder",
@@ -935,7 +981,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "HealingPotion",
@@ -953,7 +1000,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 85.0
     },
     {
       "key": "Linen",
@@ -971,7 +1019,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 165.0
     },
     {
       "key": "Bandage",
@@ -989,7 +1038,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 350.0
     },
     {
       "key": "Quicklime",
@@ -1009,7 +1059,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "QuicklimePowder",
@@ -1029,7 +1080,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "Charcoal",
@@ -1049,7 +1101,8 @@
       "heatValue": 40.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "CharcoalPowder",
@@ -1069,7 +1122,8 @@
       "heatValue": 48.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "WoodPulley",
@@ -1089,7 +1143,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 44.0
     },
     {
       "key": "Clay",
@@ -1109,7 +1164,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "ClayPowder",
@@ -1129,7 +1185,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "Brick",
@@ -1149,7 +1206,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 70.0
     },
     {
       "key": "LinseedOil",
@@ -1169,7 +1227,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "FruitWine",
@@ -1189,7 +1248,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "Limewater",
@@ -1209,7 +1269,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "Glass",
@@ -1229,7 +1290,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 75.0
     },
     {
       "key": "Soap",
@@ -1247,7 +1309,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 60.0
     },
     {
       "key": "SoapPowder",
@@ -1267,7 +1330,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "VitalityPotion",
@@ -1285,7 +1349,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 330.0
     },
     {
       "key": "BasicFertilizer",
@@ -1305,7 +1370,8 @@
       "heatValue": 0.0,
       "nutrientValue": 144.0,
       "nutrientSpeed": 12.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "WhisperingFields",
@@ -1323,7 +1389,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 420.0
     },
     {
       "key": "Turquoise",
@@ -1341,7 +1408,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 290.0
     },
     {
       "key": "Jupiter",
@@ -1359,7 +1427,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 30000.0
     },
     {
       "key": "Coke",
@@ -1379,7 +1448,8 @@
       "heatValue": 600.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "CokePowder",
@@ -1399,7 +1469,8 @@
       "heatValue": 660.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "SteelIngot",
@@ -1419,7 +1490,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "SteelGear",
@@ -1439,7 +1511,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 450.0
     },
     {
       "key": "YeastPowder",
@@ -1459,7 +1532,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "ManaPotion",
@@ -1477,7 +1551,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 620.0
     },
     {
       "key": "GloomFungus",
@@ -1497,7 +1572,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "GloomSpores",
@@ -1517,7 +1593,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "AdvancedFertilizer",
@@ -1537,7 +1614,8 @@
       "heatValue": 0.0,
       "nutrientValue": 720.0,
       "nutrientSpeed": 144.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "Cart",
@@ -1557,7 +1635,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "ChamomilePowder",
@@ -1577,7 +1656,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "Sulfur",
@@ -1597,7 +1677,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "SulfurPowder",
@@ -1617,7 +1698,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "Coal",
@@ -1637,7 +1719,8 @@
       "heatValue": 540.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "Salt",
@@ -1655,7 +1738,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 100.0
     },
     {
       "key": "SaltWater",
@@ -1675,7 +1759,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "CopperPowder",
@@ -1695,7 +1780,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "CopperPowder2",
@@ -1715,7 +1801,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "BronzeIngot",
@@ -1735,7 +1822,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "CopperIngot",
@@ -1755,7 +1843,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "CopperCoin",
@@ -1775,7 +1864,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "CopperBearing",
@@ -1795,7 +1885,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 300.0
     },
     {
       "key": "BronzeRivet",
@@ -1815,7 +1906,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 120.0
     },
     {
       "key": "BlackPowder",
@@ -1835,7 +1927,8 @@
       "heatValue": 6000.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 660.0
     },
     {
       "key": "GrowthPotion",
@@ -1855,7 +1948,8 @@
       "heatValue": 0.0,
       "nutrientValue": 6480.0,
       "nutrientSpeed": 2160.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 1224.0
     },
     {
       "key": "Catalyst1",
@@ -1875,7 +1969,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "PocketWatch",
@@ -1893,7 +1988,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 2000.0
     },
     {
       "key": "Malachite",
@@ -1911,7 +2007,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 1020.0
     },
     {
       "key": "ClockworkBird",
@@ -1931,7 +2028,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "Saturn",
@@ -1949,7 +2047,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 150000.0
     },
     {
       "key": "Mars",
@@ -1967,7 +2066,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 280000.0
     },
     {
       "key": "Sand2",
@@ -1987,7 +2087,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "Sand3",
@@ -2007,7 +2108,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "Sand4",
@@ -2027,7 +2129,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "Sand5",
@@ -2047,7 +2150,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "Sand6",
@@ -2067,7 +2171,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "Sand8",
@@ -2087,7 +2192,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "Shard1",
@@ -2107,7 +2213,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "Shard2",
@@ -2127,7 +2234,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "Shard3",
@@ -2147,7 +2255,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "Crystal1",
@@ -2167,7 +2276,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "Crystal2",
@@ -2187,7 +2297,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "Crystal3",
@@ -2207,7 +2318,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "Diamond1",
@@ -2227,7 +2339,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "Diamond2",
@@ -2247,7 +2360,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 100000.0
     },
     {
       "key": "Diamond3",
@@ -2267,7 +2381,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "StrangeTide",
@@ -2285,7 +2400,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 1806.0
     },
     {
       "key": "LavenderEssentialOil",
@@ -2305,7 +2421,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "Brandy",
@@ -2325,7 +2442,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "SulfuricAcid",
@@ -2345,7 +2463,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "Topaz",
@@ -2363,7 +2482,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 2800.0
     },
     {
       "key": "BlastPotion",
@@ -2383,7 +2503,8 @@
       "heatValue": 24000.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 2557.0
     },
     {
       "key": "Catalyst2",
@@ -2404,7 +2525,8 @@
       "heatValue": 0.0,
       "nutrientValue": 24000.0,
       "nutrientSpeed": 6000.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "PerfumedSoap",
@@ -2422,7 +2544,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 2590.0
     },
     {
       "key": "PerfumedSoapPowder",
@@ -2442,7 +2565,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "Mors",
@@ -2462,7 +2586,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "Vitae",
@@ -2482,7 +2607,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "Venus",
@@ -2500,7 +2626,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 1000000.0
     },
     {
       "key": "Steam",
@@ -2520,7 +2647,8 @@
       "heatValue": 20.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "LavenderDream",
@@ -2538,7 +2666,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 8000.0
     },
     {
       "key": "GentianPowder",
@@ -2558,7 +2687,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "SilverPowder",
@@ -2578,7 +2708,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "SilverPowder2",
@@ -2598,7 +2729,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "SilverPowder3",
@@ -2618,7 +2750,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "Obsidian",
@@ -2636,7 +2769,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 11000.0
     },
     {
       "key": "VolcanicAsh",
@@ -2656,7 +2790,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "SilverIngot",
@@ -2676,7 +2811,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "SilverCoin",
@@ -2696,7 +2832,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "SilverAmulet",
@@ -2714,7 +2851,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 51000.0
     },
     {
       "key": "Mercury",
@@ -2734,7 +2872,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "AquaVitae",
@@ -2754,7 +2893,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "LapisLazuli",
@@ -2772,7 +2912,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 32000.0
     },
     {
       "key": "MercuryP",
@@ -2790,7 +2931,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 5200000.0
     },
     {
       "key": "Catalyst3",
@@ -2810,7 +2952,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "PanaceaElixir",
@@ -2831,7 +2974,8 @@
       "heatValue": 320000.0,
       "nutrientValue": 200000.0,
       "nutrientSpeed": 20000.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 30000.0
     },
     {
       "key": "WorldTreeVintage",
@@ -2849,7 +2993,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 36000.0
     },
     {
       "key": "GoldDust",
@@ -2869,7 +3014,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "GoldDust2",
@@ -2889,7 +3035,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "GoldDust3",
@@ -2909,7 +3056,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "GoldDust5",
@@ -2929,7 +3077,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "GoldIngot",
@@ -2949,7 +3098,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "GoldCoin",
@@ -2969,7 +3119,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "Crown",
@@ -2987,7 +3138,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 1700000.0
     },
     {
       "key": "Catalyst4",
@@ -3007,7 +3159,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "StarDust",
@@ -3027,7 +3180,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "FairyDust",
@@ -3047,7 +3201,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "FairyTear",
@@ -3067,7 +3222,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "MoonTear",
@@ -3087,7 +3243,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "MoonlitSoap",
@@ -3105,7 +3262,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 900000.0
     },
     {
       "key": "Luna",
@@ -3123,7 +3281,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 20600000.0
     },
     {
       "key": "AlchemistSigh",
@@ -3141,7 +3300,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 400000.0
     },
     {
       "key": "Sol",
@@ -3159,7 +3319,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 44500000.0
     },
     {
       "key": "Aloe",
@@ -3179,7 +3340,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "AloeSeed",
@@ -3199,7 +3361,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "IronAmulet",
@@ -3217,7 +3380,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 63.0
     },
     {
       "key": "FineBandage",
@@ -3235,7 +3399,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 168.0
     },
     {
       "key": "AloePaste",
@@ -3255,7 +3420,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "CopperAmulet",
@@ -3273,7 +3439,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 928.0
     },
     {
       "key": "Amethyst",
@@ -3291,7 +3458,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 4112.0
     },
     {
       "key": "CharismaPotion",
@@ -3309,7 +3477,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 8000.0
     },
     {
       "key": "Sand7",
@@ -3329,7 +3498,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "InvisbilityPotion",
@@ -3347,7 +3517,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": 22000.0
     },
     {
       "key": "GoldDust4",
@@ -3367,7 +3538,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "Salve",
@@ -3385,7 +3557,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "WoodAcid",
@@ -3403,7 +3576,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "Pottery",
@@ -3421,7 +3595,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "Ceramics",
@@ -3439,7 +3614,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "FireBrick",
@@ -3457,7 +3633,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "Granite",
@@ -3475,7 +3652,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "Marble",
@@ -3495,7 +3673,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     },
     {
       "key": "DriedClay",
@@ -3513,7 +3692,8 @@
       "heatValue": 0.0,
       "nutrientValue": 0.0,
       "nutrientSpeed": 0.0,
-      "buyPrice": null
+      "buyPrice": null,
+      "sellPrice": null
     }
   ],
   "recipes": [

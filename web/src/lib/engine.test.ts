@@ -17,6 +17,7 @@ import {
 } from './gameData'
 import { buildCatalog, defaultProducer, paradoxSeconds, type ProcessCatalog } from './processes'
 import { ledgers } from './ledger'
+import { moneyLedger } from './money'
 import { allowedIngredients, builtinGroups, emptyPrefs, onlyGroup, preferredCount, setPrefs } from './itemGroups'
 import { countRecipes, diagnoseNoResults, type FinderQuery } from './diagnose'
 import { checkLogistics, checkProcess } from './logistics'
@@ -1050,6 +1051,56 @@ describe('net-surplus targets', () => {
     expect(heat.bus!.count * heat.bus!.per).toBeCloseTo(heat.need)
     expect(result.targets[0].made).toBe(50)
     expect(result.tree[0].rate).toBeCloseTo(50)
+  })
+})
+
+describe('money', () => {
+  const mods = modifiers({})
+  const catalog = buildCatalog({ saved: [], machines: {}, mods, fertilizer: null })
+  const money = (p: Plan) => {
+    const result = solvePlan(p, catalog, mods)
+    return { result, money: moneyLedger(result, ledgers(p, catalog, result)) }
+  }
+
+  it("values sellable goods at the shop's base price, and costs portal purchases", () => {
+    const { result, money: m } = money(plan({ targets: [{ item: 'Bandage', rate: 10 }, { item: 'WoodBoard', rate: 60 }] }))
+    expect(m.sales).toEqual([{ item: 'Bandage', count: 10, price: 350 }])
+    expect(m.value).toBeCloseTo(3500)
+    expect(m.unsold.map((l) => l.item)).toEqual(['WoodBoard']) // raw and intermediate goods don't sell
+    const bought = result.balances.filter((b) => !b.item.startsWith('@') && b.imported > 0)
+    expect(m.cost).toBeCloseTo(bought.reduce((t, b) => t + b.imported * itemsByKey.get(b.item)!.buyPrice!, 0))
+    expect(m.cost).toBeGreaterThan(0)
+  })
+
+  it('takes coin ingredients off the bus at face value', () => {
+    const p = plan({ targets: [{ item: 'CopperIngot', rate: 10 }], producers: { CopperIngot: 'recipe:CopperIngot_Alt' } })
+    const { result, money: m } = money(p)
+    expect(result.runs.some((r) => r.process.id === 'recipe:CopperCoin')).toBe(false) // not minted
+    const coins = result.balances.find((b) => b.item === 'CopperCoin')!
+    expect(coins.imported).toBeGreaterThan(0)
+    expect(m.coins).toEqual([{ item: 'CopperCoin', count: coins.imported, price: 1 }])
+    expect(defaultProducer(catalog, 'GoldCoin')).toBe('import')
+  })
+
+  it('mints coins for a coin target and counts them at face value', () => {
+    const { result, money: m } = money(plan({ targets: [{ item: 'SilverCoin', rate: 5 }] }))
+    expect(result.runs.some((r) => r.process.id === 'recipe:SilverCoin')).toBe(true)
+    expect(m.sales).toEqual([{ item: 'SilverCoin', count: 5, price: 1000 }])
+  })
+
+  it("doesn't count what the plan feeds back", () => {
+    const fert = buildCatalog({ saved: [], machines: {}, mods, fertilizer: 'PanaceaElixir' })
+    const p = plan({
+      targets: [{ item: 'PanaceaElixir', rate: 12.5 }, { item: 'Flax', rate: 60 }],
+      producers: { [NUTRIENTS]: 'fert:PanaceaElixir' },
+      feedbackItems: ['PanaceaElixir'],
+    })
+    const result = solvePlan(p, fert, mods)
+    const l = ledgers(p, fert, result)
+    const used = l.flatMap((x) => x.sources).reduce((t, s) => t + s.used, 0)
+    expect(used).toBeGreaterThan(0)
+    const sold = moneyLedger(result, l).sales.find((s) => s.item === 'PanaceaElixir')!
+    expect(sold.count).toBeCloseTo(12.5 - used)
   })
 })
 

@@ -23,6 +23,7 @@ import {
 } from '../lib/gameData'
 import { fmt } from '../lib/format'
 import { checkLogistics, type LogisticsCheck } from '../lib/logistics'
+import { moneyLedger, type MoneyLine } from '../lib/money'
 import { processTitle, type ProcessCatalog } from '../lib/processes'
 import type { PlanModel } from '../lib/planModel'
 import {
@@ -162,12 +163,11 @@ export function PlannerPage({
   const feedsInto = (item: string) =>
     [fuels.has(item) && 'heat', fertilizers.has(item) && 'fertilizer'].filter(Boolean).join(' & ')
 
-  const purchases = result.balances.filter((b) => !b.item.startsWith('@') && b.imported > 0)
   const surplus = result.balances.filter((b) => b.surplus > 0 && !b.item.startsWith('@'))
   const overflowSources = useMemo(() => overflowRows(result.tree), [result.tree])
   const deficits = result.balances.filter((b) => b.deficit > 0)
   const heat = result.balances.find((b) => b.item === HEAT)
-  const moneyPerMinute = purchases.reduce((s, b) => s + b.imported * (itemsByKey.get(b.item)?.buyPrice ?? 0), 0)
+  const money = useMemo(() => moneyLedger(result, ledger), [result, ledger])
 
   // Machines per building type across the whole plan, with and without belt limits.
   const buildings = new Map<string, { full: number; limited: number }>()
@@ -355,11 +355,29 @@ export function PlannerPage({
                   <ItemIcon item="GoldCoin" size={32} />
                   <div>
                     <div className="stat-value">
-                      <Money copper={moneyPerMinute} suffix="/min" />
+                      <Money copper={money.cost} suffix="/min" />
                     </div>
-                    <div className="stat-label">money for purchased inputs</div>
+                    <div className="stat-label">cost: portal purchases and coins</div>
                   </div>
                 </div>
+                {money.value > 0 && (
+                  <div className="stat">
+                    <span className="stat-glyph">⚖</span>
+                    <div>
+                      <div className="stat-value">
+                        <Money copper={money.value} suffix="/min" />
+                      </div>
+                      <div className="stat-label">
+                        sale value ·{' '}
+                        <span className={money.value >= money.cost ? 'positive' : 'negative'}>
+                          {money.value >= money.cost ? '+' : '−'}
+                          <Money copper={Math.abs(money.value - money.cost)} suffix="/min" />
+                        </span>{' '}
+                        margin
+                      </div>
+                    </div>
+                  </div>
+                )}
                 <div className="stat">
                   <span className="stat-glyph">⚙</span>
                   <div>
@@ -471,37 +489,47 @@ export function PlannerPage({
 
               <div className="two-col">
                 <section className="panel">
-                  <h2>Purchased inputs</h2>
-                  {purchases.length === 0 ? (
+                  <h2>Costs</h2>
+                  {money.purchases.length + money.coins.length === 0 ? (
                     <p className="hint">Nothing to buy.</p>
                   ) : (
                     <>
                       <ul className="flow-list">
-                        {purchases.map((b) => {
-                          const price = itemsByKey.get(b.item)?.buyPrice
-                          return (
-                            <li key={b.item}>
-                              <ItemLabel item={b.item} />
-                              <span className="rate">{fmt(b.imported)}/min</span>
-                              {price != null ? (
-                                <span className="cost">
-                                  <Money copper={b.imported * price} suffix="/min" />
-                                </span>
-                              ) : (
-                                <span className="tag warn" title="Purchasing portals don't sell this item">
-                                  not sold at portals
-                                </span>
-                              )}
-                            </li>
-                          )
-                        })}
+                        {money.purchases.map((l) => (
+                          <MoneyRow key={l.item} line={l} missing="not sold at portals" />
+                        ))}
+                        {money.coins.map((l) => (
+                          <MoneyRow key={l.item} line={l} note="off the bus" />
+                        ))}
                       </ul>
                       <p className="total">
-                        Total <Money copper={moneyPerMinute} suffix="/min" />
+                        Total <Money copper={money.cost} suffix="/min" />
                       </p>
                     </>
                   )}
                 </section>
+                {money.sales.length + money.unsold.length > 0 && (
+                  <section className="panel">
+                    <h2>Sale value</h2>
+                    <p className="hint">
+                      What the plan delivers is worth this at the shop&apos;s base prices (before profit upgrades), if customers
+                      buy it all.
+                    </p>
+                    <ul className="flow-list">
+                      {money.sales.map((l) => (
+                        <MoneyRow key={l.item} line={l} />
+                      ))}
+                      {money.unsold.map((l) => (
+                        <MoneyRow key={l.item} line={l} unpriced="the shop won't buy it" />
+                      ))}
+                    </ul>
+                    {money.value > 0 && (
+                      <p className="total">
+                        Total <Money copper={money.value} suffix="/min" />
+                      </p>
+                    )}
+                  </section>
+                )}
                 <section className="panel">
                   <h2>Buildings</h2>
                   <ul className="flow-list">
@@ -858,6 +886,24 @@ function TargetRow({
         </label>
       )}
     </div>
+  )
+}
+
+/** One item's money per minute: its count, and what that's worth (or why it has no price). */
+function MoneyRow({ line, note, missing, unpriced }: { line: MoneyLine; note?: string; missing?: string; unpriced?: string }) {
+  return (
+    <li>
+      <ItemLabel item={line.item} />
+      <span className="rate">{fmt(line.count)}/min</span>
+      {line.price !== null ? (
+        <span className="cost">
+          <Money copper={line.count * line.price} suffix="/min" />
+          {note && <span className="hint-inline"> {note}</span>}
+        </span>
+      ) : (
+        unpriced ? <span className="hint-inline">{unpriced}</span> : <span className="tag warn">{missing}</span>
+      )}
+    </li>
   )
 }
 

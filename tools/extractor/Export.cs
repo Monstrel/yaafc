@@ -53,6 +53,7 @@ static class Exporter
                 ["nutrientValue"] = row["NutrientValue"],
                 ["nutrientSpeed"] = row["NutrientSpeed"],
                 ["buyPrice"] = PortalPrice(row),
+                ["sellPrice"] = ShopPrice(row),
             });
         }
 
@@ -366,6 +367,20 @@ static class Exporter
         if (!row["AllowPortalSupply"]!.Value<bool>()) return JValue.CreateNull();
         var stock = row["StockCost"]!;
         var copper = stock["X"]!.Value<double>() * CopperPerGold + stock["Y"]!.Value<double>() * CopperPerSilver + stock["Z"]!.Value<double>();
+        return copper > 0 ? copper : JValue.CreateNull();
+    }
+
+    /// <summary>
+    /// Copper one item sells for in the shop at base prices, or null if the shop won't buy it.
+    /// CostValue is (gold, silver, copper) per item; the shop pays it × (StoreProfit + the sale
+    /// type's profit attribute − 1), and Worthless items (raw materials, intermediates, fuels) have
+    /// no sale type attribute, so they sell for nothing (native 0x144A4EED0, build 25321648).
+    /// </summary>
+    static JToken ShopPrice(JObject row)
+    {
+        if (Enum(row["SellType"]) is null or "Worthless" or "Vehicles") return JValue.CreateNull();
+        var value = row["CostValue"]!;
+        var copper = value["X"]!.Value<double>() * CopperPerGold + value["Y"]!.Value<double>() * CopperPerSilver + value["Z"]!.Value<double>();
         return copper > 0 ? copper : JValue.CreateNull();
     }
 

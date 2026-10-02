@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
 import { fmt, fmtSeconds } from '../lib/format'
-import { HEAT, buildingsByKey, buyTier, iconUrl, itemName, itemsByKey, tierIcon, tierName, type Item, type Stack } from '../lib/gameData'
+import { HEAT, buildingsByKey, buyTier, coinValue, iconUrl, itemName, itemsByKey, tierIcon, tierName, type Item, type Stack } from '../lib/gameData'
 import { itemNameFor } from '../lib/plural'
 import {
   DEFAULT_PARADOX_INPUT,
@@ -42,6 +42,8 @@ interface Choice {
   machine?: string
   /** Buying: copper per item at a portal; null when portals don't sell it (imported instead). */
   price?: number | null
+  /** Taking coins off the bus: copper per coin. */
+  coin?: number
   /** Research tier the entry needs, when the plan hasn't reached it. */
   needs?: number
 }
@@ -132,7 +134,7 @@ export function ProducerSelect({
         : [{ value: p.id, process: p }],
     ),
     ...(crucible.size > 0 ? [{ value: CRUCIBLE, process: onCrucible ? currentProcess : crucibleDefault }] : []),
-    ...(noImport ? [] : [{ value: IMPORT, price: itemsByKey.get(item)?.buyPrice ?? null }]),
+    ...(noImport ? [] : [{ value: IMPORT, price: itemsByKey.get(item)?.buyPrice ?? null, coin: coinValue(item) ?? undefined }]),
   ]
   // What the plan's research tier can't run yet goes last.
   const choices = entries.map((c) => ({ ...c, needs: needs(c) })).sort((a, b) => Number(!!a.needs) - Number(!!b.needs))
@@ -397,14 +399,15 @@ export function ProducerSelect({
 
 function choiceTitle(c: Choice): string {
   if (c.value === REUSE) return 'Reuse by-products'
-  if (c.value === IMPORT) return c.price != null ? 'Buy' : 'Import'
+  if (c.value === IMPORT) return c.coin ? 'From the bus' : c.price != null ? 'Buy' : 'Import'
   if (c.value === CRUCIBLE) return 'Paradox Crucible'
   return c.process ? processTitle(c.process) : c.value
 }
 
 function choiceDescription(c: Choice, item: string): string {
   const p = c.process
-  if (c.value === IMPORT) return c.price != null ? 'Buy at a Purchasing Portal' : 'Import: not sold at portals'
+  if (c.value === IMPORT)
+    return c.coin ? 'Take coins off the bus' : c.price != null ? 'Buy at a Purchasing Portal' : 'Import: not sold at portals'
   if (c.value === REUSE) return "Reuse other rows' by-products first"
   if (!p) return choiceTitle(c)
   if (c.value === CRUCIBLE) return `${choiceTitle(c)}: refine any item`
@@ -515,6 +518,12 @@ function ChoiceMeta({ choice }: { choice: Choice }) {
 /** Ingredients → products of one craft, the wanted item first among the products. */
 function ChoicePreview({ choice, item, shared }: { choice: Choice; item: string; shared: Set<string> }) {
   const p = choice.process
+  if (choice.value === IMPORT && choice.coin)
+    return (
+      <span className="recipe-preview">
+        <Money copper={choice.coin} suffix=" each, off the bus" />
+      </span>
+    )
   if (choice.value === IMPORT)
     return choice.price != null ? (
       <span className="recipe-preview">

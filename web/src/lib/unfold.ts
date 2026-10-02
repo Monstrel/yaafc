@@ -95,6 +95,9 @@ export function reuseChosen(plan: Plan, item: string, id: string): boolean | und
   return undefined
 }
 
+/** Whether a row id is a target's own row (`0/Sol`), not an ingredient or a separate build. */
+export const isTargetRow = (id: string) => /^\d+\/[^/]+$/.test(id)
+
 /** The item a row id is for. */
 export const rowItem = (id: string) => {
   const step = id.slice(id.lastIndexOf('/') + 1)
@@ -123,14 +126,15 @@ export function myDefault(catalog: ProcessCatalog, item: string): MyDefault | un
 
 /**
  * The plan-wide producer of an item: the plan's pick if it still makes the item, else the player's
- * saved default (with its machine and catalysts), else the built-in default.
+ * saved default (with its machine and catalysts), else the built-in default (for a target's row when
+ * `asTarget`: coins are minted there, and taken in everywhere else).
  */
-export function planChoice(plan: Plan, catalog: ProcessCatalog, item: string): MyDefault & { mine: boolean } {
+export function planChoice(plan: Plan, catalog: ProcessCatalog, item: string, asTarget = false): MyDefault & { mine: boolean } {
   const choice = plan.producers[item]
   if (choice === IMPORT || (choice && makes(catalog.byId.get(choice), item))) return { producer: choice, mine: false }
   const mine = myDefault(catalog, item)
   if (mine) return { ...mine, mine: true }
-  return { producer: defaultProducer(catalog, item), mine: false }
+  return { producer: defaultProducer(catalog, item, asTarget), mine: false }
 }
 
 export const planProducer = (plan: Plan, catalog: ProcessCatalog, item: string) => planChoice(plan, catalog, item).producer
@@ -153,7 +157,7 @@ export function resolveChoice(
     const p = catalog.byId.get(pick.producer)
     if (makes(p, item)) return onRow(p!, pick.machine, at === id)
   }
-  const choice = planChoice(plan, catalog, item)
+  const choice = planChoice(plan, catalog, item, isTargetRow(id))
   const p = catalog.byId.get(choice.producer)
   if (!p) return { producer: IMPORT, own: false, mine: choice.mine, defaultCatalysts: [] }
   return onRow(p, choice.machine, false, choice.mine, choice.mine ? (choice.catalysts ?? []) : [])

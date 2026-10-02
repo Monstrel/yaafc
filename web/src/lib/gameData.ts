@@ -25,6 +25,8 @@ export interface Item {
   nutrientSpeed: number
   /** Copper per item at a purchasing portal; null if portals don't sell it. */
   buyPrice: number | null
+  /** Copper per item the shop pays at base prices; null if the shop won't buy it (raw materials, intermediates, fuels). */
+  sellPrice: number | null
 }
 
 export interface GameRecipe {
@@ -149,6 +151,18 @@ const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX']
 /** A tier as the game writes it (IV). */
 export const tierName = (tier: number) => ROMAN[tier - 1] ?? String(tier)
 export const tierIcon = (tier: number) => research.tiers.find((t) => t.tier === tier)?.icon ?? null
+
+/**
+ * Copper per coin (from the portal stock prices: 1 silver = 1,000 copper, 1 gold = 100 silver),
+ * largest first. Coins count at face value wherever a plan takes them in or delivers them.
+ */
+export const COINS = [
+  { coin: 'GoldCoin', name: 'gold', copper: 100_000 },
+  { coin: 'SilverCoin', name: 'silver', copper: 1_000 },
+  { coin: 'CopperCoin', name: 'copper', copper: 1 },
+] as const
+
+export const coinValue = (item: string): number | null => COINS.find((c) => c.coin === item)?.copper ?? null
 
 /** Pseudo-items used by the solver for heat (P) and plant nutrients. */
 export const HEAT = '@heat'
