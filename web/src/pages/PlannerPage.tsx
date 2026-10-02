@@ -4,7 +4,7 @@ import { ItemPicker } from '../components/ItemPicker'
 import { Money } from '../components/Money'
 import { ProducerSelect, TierTag } from '../components/ProducerSelect'
 import { BookmarkIcon, ProductionTree } from '../components/ProductionTree'
-import { busLines, type BusLine, type BusUse } from '../lib/baseInputs'
+import { carriers, itemFedBack, ledgers, targetFedBack, type LedgerSource, type ResourceLedger } from '../lib/ledger'
 import {
   HEAT,
   MAX_TIER,
@@ -29,6 +29,11 @@ import {
   clearBranchChoice,
   keepDefaultInPlan,
   migrateCatalysts,
+  migrateFeedback,
+  moveTarget,
+  removeTarget,
+  setItemFeedback,
+  setTargetFeedback,
   pruneChoices,
   rememberSetup,
   setRowCatalysts,
@@ -100,12 +105,15 @@ export function PlannerPage({
   // the plan (and build-separately picks that no longer gather anything).
   useEffect(() => {
     if (migrateCatalysts(plan, catalog)) onUpdatePlan((p) => migrateCatalysts(p, catalog) ?? p)
+    else if (migrateFeedback(plan, catalog)) onUpdatePlan((p) => migrateFeedback(p, catalog) ?? p)
     else if (pruneChoices(plan, catalog)) onUpdatePlan((p) => pruneChoices(p, catalog) ?? p)
   }, [plan, catalog, onUpdatePlan])
   // result.targets skips rows with no item chosen yet; line them back up with the rows.
   let resolvedIndex = 0
   const resolvedByRow = plan.targets.map((t) => (t.item ? result.targets[resolvedIndex++] : undefined))
-  const bus = busLines(plan, result)
+  const ledger = useMemo(() => ledgers(plan, catalog, result), [plan, catalog, result])
+  const fuels = useMemo(() => carriers(plan, catalog, 'heat'), [plan, catalog])
+  const fertilizers = useMemo(() => carriers(plan, catalog, 'fertilizer'), [plan, catalog])
   const logistics = useMemo(() => checkLogistics(result.runs, mods), [result, mods])
   const usesCoins = result.runs.some(
     (r) => r.process.machine && [...r.inputs, ...r.outputs].some((x) => itemsByKey.get(x.item)?.tags.includes('Currency')),
@@ -148,8 +156,9 @@ export function PlannerPage({
       const list = separationsOf(p.separate)
       return { ...p, separate: on ? withSeparation(list, s) : withoutSeparation(list, s) }
     })
-  const setFeedback = (resource: 'fuel' | 'fertilizer', on: boolean) =>
-    onUpdatePlan((p) => ({ ...p, feedback: { ...p.feedback, [resource]: on } }))
+  /** What a target's item could feed back into, if anything. */
+  const feedsInto = (item: string) =>
+    [fuels.has(item) && 'heat', fertilizers.has(item) && 'fertilizer'].filter(Boolean).join(' & ')
 
   const purchases = result.balances.filter((b) => !b.item.startsWith('@') && b.imported > 0)
   const surplus = result.balances.filter((b) => b.surplus > 0 && !b.item.startsWith('@'))
@@ -198,17 +207,37 @@ export function PlannerPage({
             <h2>Targets</h2>
             <p className="hint">
               Items per minute, or a number of machines' worth of the chosen recipe. The planner works out every step and
-              machine needed.
+              machine needed. Fuel and fertilizer targets fed back cover the plan&apos;s needs in this order.
             </p>
             {plan.targets.map((t, i) => (
               <TargetRow
                 key={i}
                 target={t}
                 resolved={resolvedByRow[i]}
+                feedsInto={t.item ? feedsInto(t.item) : ''}
+                fedBack={targetFedBack(plan, t)}
+                ownFeedback={t.feedback !== undefined}
+                onFeedback={(on) => onUpdatePlan((p) => setTargetFeedback(p, i, on))}
                 onChange={(patch) =>
-                  onUpdatePlan((p) => ({ ...p, targets: p.targets.map((x, j) => (j === i ? { ...x, ...patch } : x)) }))
+                  onUpdatePlan((p) => ({
+                    ...p,
+                    targets: p.targets.map((x, j) => {
+                      if (j !== i) return x
+                      if (patch.item === undefined || patch.item === x.item) return { ...x, ...patch }
+                      // A new item follows its own feedback setting.
+                      const { feedback: _, ...rest } = x
+                      return { ...rest, ...patch }
+                    }),
+                  }))
                 }
-                onRemove={() => onUpdatePlan((p) => ({ ...p, targets: p.targets.filter((_, j) => j !== i) }))}
+                onMove={
+                  plan.targets.length > 1
+                    ? (by) => onUpdatePlan((p) => moveTarget(p, i, Math.max(0, Math.min(p.targets.length - 1, i + by))))
+                    : undefined
+                }
+                first={i === 0}
+                last={i === plan.targets.length - 1}
+                onRemove={() => onUpdatePlan((p) => removeTarget(p, i))}
               />
             ))}
             <button onClick={() => onUpdatePlan((p) => ({ ...p, targets: [...p.targets, { item: '', rate: 10 }] }))}>
@@ -218,26 +247,17 @@ export function PlannerPage({
 
           <section className="panel">
             <h2>Fuel &amp; fertilizer</h2>
-            <p className="hint">Taken from the factory bus: the planner shows how much you need instead of planning their production.</p>
+            <p className="hint">
+              Taken from the factory bus: the planner shows how much you need instead of planning their production. Fuel or
+              fertilizer the plan makes can be fed back to cover part of it.
+            </p>
             <label className="stacked">
-              Preferred fuel
+              Fuel from the bus
               {planWide(HEAT)}
             </label>
-            <label className="check">
-              <input type="checkbox" checked={!!plan.feedback?.fuel} onChange={(e) => setFeedback('fuel', e.target.checked)} />
-              Feed back this fuel if the plan makes it
-            </label>
             <label className="stacked">
-              Preferred fertilizer
+              Fertilizer from the bus
               {planWide(NUTRIENTS)}
-            </label>
-            <label className="check">
-              <input
-                type="checkbox"
-                checked={!!plan.feedback?.fertilizer}
-                onChange={(e) => setFeedback('fertilizer', e.target.checked)}
-              />
-              Feed back this fertilizer if the plan makes it
             </label>
           </section>
 
@@ -404,15 +424,22 @@ export function PlannerPage({
                 </div>
               )}
 
-              {bus.length > 0 && (
+              {ledger.some((l) => l.need > 0 || l.sources.length > 0) && (
                 <section className="panel">
-                  <h2>From the bus</h2>
-                  <ul className="flow-list base-inputs">
-                    {bus.map((line) => (
-                      <BusRow key={line.item} line={line} />
+                  <h2>Heat &amp; fertilizer</h2>
+                  {ledger
+                    .filter((l) => l.need > 0 || l.sources.length > 0)
+                    .map((l) => (
+                      <LedgerPanel
+                        key={l.resource}
+                        ledger={l}
+                        plan={plan}
+                        onItemFeedback={(item, on) => onUpdatePlan((p) => setItemFeedback(p, item, on))}
+                      />
                     ))}
-                  </ul>
-                  {machineTier(STEAM_BOILER) <= catalog.tier && <BoilerRoom bus={bus} factorySpeed={mods.factorySpeed} />}
+                  {machineTier(STEAM_BOILER) <= catalog.tier && (
+                    <BoilerRoom heat={(ledger.find((l) => l.resource === 'heat')?.need ?? 0) / 60} factorySpeed={mods.factorySpeed} />
+                  )}
                 </section>
               )}
 
@@ -490,16 +517,91 @@ export function PlannerPage({
   )
 }
 
-const USE_LABEL = { fuel: '🔥 Fuel', fertilizer: '🌱 Fertilizer' } as const
+const RESOURCE = {
+  heat: { title: '🔥 Heat', unit: 'P/s', verb: 'burns' },
+  fertilizer: { title: '🌱 Fertilizer', unit: 'nutrients/s', verb: 'spreads' },
+} as const
 
 const STEAM_BOILER = 'SteamBoiler'
 
 /**
- * The plan's heat as steam: how many Steam Boilers on each setting carry it, burning the same fuel
- * (steam carries heat without loss).
+ * One bus resource: what the plan needs, the fuel or fertilizer it makes that could cover it (fed
+ * back per item, or per target from the target list), and what the bus supplies for the rest.
  */
-function BoilerRoom({ bus, factorySpeed }: { bus: BusLine[]; factorySpeed: number }) {
-  const heat = bus.flatMap((l) => l.uses).reduce((t, u) => t + (u.kind === 'fuel' ? u.supplies : 0), 0)
+function LedgerPanel({
+  ledger,
+  plan,
+  onItemFeedback,
+}: {
+  ledger: ResourceLedger
+  plan: Plan
+  onItemFeedback: (item: string, on: boolean) => void
+}) {
+  const { title, unit, verb } = RESOURCE[ledger.resource]
+  const perSecond = (perMinute: number) => `${fmt(perMinute / 60)} ${unit}`
+  const byItem = new Map<string, LedgerSource[]>()
+  for (const s of ledger.sources) byItem.set(s.item, [...(byItem.get(s.item) ?? []), s])
+  const source = (s: LedgerSource) => {
+    const what = s.target === null ? 'Overflow' : `Target ${s.target + 1}`
+    const own = s.target !== null && plan.targets[s.target]?.feedback !== undefined
+    return (
+      <li key={`${s.target}:${s.item}`} className="ledger-source">
+        <span>
+          {what} · {fmt(s.amount)}/min
+        </span>
+        <span className="hint-inline">
+          {!s.fedBack
+            ? 'not fed back'
+            : s.used > 0
+              ? `plan ${verb} ${fmt(s.used)}/min for ${perSecond(s.used * s.per)}, ${fmt(s.amount - s.used)}/min left over`
+              : 'fed back, not needed'}
+          {own && ' (set on the target)'}
+        </span>
+      </li>
+    )
+  }
+  return (
+    <div className="ledger">
+      <h3>
+        {title} <span className="hint-inline">{perSecond(ledger.need)} needed</span>
+      </h3>
+      <ul className="flow-list ledger-list">
+        {[...byItem].map(([item, sources]) => (
+          <li key={item} className="ledger-item">
+            <div className="ledger-item-head">
+              <ItemLabel item={item} />
+              <label className="check" title={`Feed back every source of ${itemName(item)}; a target can say otherwise`}>
+                <input type="checkbox" checked={itemFedBack(plan, item)} onChange={(e) => onItemFeedback(item, e.target.checked)} />
+                Feed back
+              </label>
+            </div>
+            <ul className="ledger-sources">{sources.map(source)}</ul>
+          </li>
+        ))}
+        {ledger.bus && ledger.bus.count > 0 && (
+          <li className="ledger-bus">
+            <span className="base-kind">From the bus</span>
+            <ItemLabel item={ledger.bus.item} count={ledger.bus.count} />
+            <span className="hint-inline">/min for {perSecond(ledger.bus.count * ledger.bus.per)}</span>
+          </li>
+        )}
+        {ledger.need > 0 && ledger.covered > 0 && (
+          <li className="ledger-total">
+            <span className="rate positive">
+              The plan covers {perSecond(ledger.covered)} of {perSecond(ledger.need)} itself
+            </span>
+          </li>
+        )}
+      </ul>
+    </div>
+  )
+}
+
+/**
+ * The plan's heat as steam: how many Steam Boilers on each setting carry it, burning the plan's
+ * fuel (steam carries heat without loss).
+ */
+function BoilerRoom({ heat, factorySpeed }: { heat: number; factorySpeed: number }) {
   if (heat <= 0) return null
   const icon = iconUrl(buildingsByKey.get(STEAM_BOILER)?.icon)
   return (
@@ -516,47 +618,37 @@ function BoilerRoom({ bus, factorySpeed }: { bus: BusLine[]; factorySpeed: numbe
           </span>
         )
       })}
-      <span className="hint-inline">burning the same fuel</span>
+      <span className="hint-inline">burning the plan's fuel</span>
     </p>
-  )
-}
-
-/**
- * One bus item: how much is needed (split by use when it's both fuel and fertilizer), and — with
- * feedback — how the plan's own output of it covers the need, counted once.
- */
-function BusRow({ line }: { line: BusLine }) {
-  const describe = (u: BusUse) => `${fmt(u.supplies)} ${u.kind === 'fuel' ? 'P/s heat' : 'nutrients/s'}`
-  const single = line.uses.length === 1
-  return (
-    <li>
-      <span className="base-kind">{line.uses.map((u) => USE_LABEL[u.kind]).join(' + ')}</span>
-      <ItemLabel item={line.item} count={line.need} />
-      <span className="hint-inline">
-        /min {single ? `for ${describe(line.uses[0])}` : `(${line.uses.map((u) => `${fmt(u.need)} for ${describe(u)}`).join(' + ')})`}
-      </span>
-      {line.net === null ? null : line.planMakes === 0 ? (
-        <span className="hint-inline">plan doesn&apos;t make {itemName(line.item)}</span>
-      ) : (
-        <span className={`rate ${line.net >= 0 ? 'positive' : 'negative'}`}>
-          {line.boughtNeed > 0 &&
-            `${line.uses.filter((u) => u.feedback).map((u) => u.kind).join(' + ')} fed back, ${line.uses.filter((u) => !u.feedback).map((u) => `${fmt(u.need)} ${u.kind}`).join(' + ')} from the bus · `}
-          plan makes {fmt(line.planMakes)}/min → {line.net >= 0 ? `+${fmt(line.net)} surplus` : `${fmt(-line.net)} short`}/min
-        </span>
-      )}
-    </li>
   )
 }
 
 function TargetRow({
   target,
   resolved,
+  feedsInto,
+  fedBack,
+  ownFeedback,
+  onFeedback,
   onChange,
+  onMove,
+  first,
+  last,
   onRemove,
 }: {
   target: PlanTarget
   resolved: ResolvedTarget | undefined
+  /** What the item could feed back into ('heat', 'fertilizer', both, or '' when nothing). */
+  feedsInto: string
+  fedBack: boolean
+  /** The target sets its own feedback instead of following its item's. */
+  ownFeedback: boolean
+  onFeedback: (on: boolean) => void
   onChange: (patch: Partial<PlanTarget>) => void
+  /** Moves the target up (-1) or down (1) the list; absent with only one target. */
+  onMove?: (by: number) => void
+  first: boolean
+  last: boolean
   onRemove: () => void
 }) {
   const unit = target.unit ?? 'items'
@@ -565,6 +657,16 @@ function TargetRow({
     <div className="target">
       <div className="target-row">
         <ItemPicker value={target.item || null} options={targetItems} onChange={(k) => onChange({ item: k ?? '' })} />
+        {onMove && (
+          <>
+            <button className="icon-button" title="Move up" aria-label="Move target up" disabled={first} onClick={() => onMove(-1)}>
+              ↑
+            </button>
+            <button className="icon-button" title="Move down" aria-label="Move target down" disabled={last} onClick={() => onMove(1)}>
+              ↓
+            </button>
+          </>
+        )}
         <button className="icon-button" title="Remove target" onClick={onRemove}>
           ×
         </button>
@@ -607,6 +709,13 @@ function TargetRow({
               ? `= ${fmt(resolved?.rate ?? 0)} items /min (${fmt(perMachine)}/min each)`
               : `≈ ${fmt((resolved?.rate ?? 0) / perMachine)} ${machineNameFor(resolved?.machineName ?? '', (resolved?.rate ?? 0) / perMachine)} (${fmt(perMachine)}/min each)`}
         </div>
+      )}
+      {feedsInto && (
+        <label className="check target-feedback" title="Covers the plan's own need before the bus does, in target order">
+          <input type="checkbox" checked={fedBack} onChange={(e) => onFeedback(e.target.checked)} />
+          Feed back into the plan&apos;s {feedsInto}
+          {ownFeedback && <span className="hint-inline">(this target only)</span>}
+        </label>
       )}
     </div>
   )

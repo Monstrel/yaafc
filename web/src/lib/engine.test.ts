@@ -16,7 +16,7 @@ import {
   upgrades,
 } from './gameData'
 import { buildCatalog, defaultProducer, paradoxSeconds, type ProcessCatalog } from './processes'
-import { busLines } from './baseInputs'
+import { ledgers } from './ledger'
 import { allowedIngredients, builtinGroups, emptyPrefs, onlyGroup, preferredCount, setPrefs } from './itemGroups'
 import { countRecipes, diagnoseNoResults, type FinderQuery } from './diagnose'
 import { checkLogistics, checkProcess } from './logistics'
@@ -27,6 +27,11 @@ import {
   chooseProducer,
   clearBranchChoice,
   migrateCatalysts,
+  migrateFeedback,
+  moveTarget,
+  removeTarget,
+  setItemFeedback,
+  setTargetFeedback,
   pruneChoices,
   keepDefaultInPlan,
   rememberChanges,
@@ -190,8 +195,9 @@ describe('planner solver', () => {
       plan({
         targets: [{ item: 'Catalyst2', rate: 10 }],
         producers: { Catalyst2: 'cauldron:fc', [NUTRIENTS]: 'fert:Catalyst2' },
-        feedback: { fertilizer: fertilizerFeedback },
+        ...(fertilizerFeedback && { feedbackItems: ['Catalyst2'] }),
       })
+    const fertilizer = (p: Plan, result: PlanResult) => ledgers(p, catalog, result).find((l) => l.resource === 'fertilizer')!
 
     it('sizes the factory from the target and draws fertilizer from the bus', () => {
       const result = solvePlan(loopPlan(false), catalog, mods)
@@ -200,19 +206,23 @@ describe('planner solver', () => {
       expect(fc.produced).toBeCloseTo(10)
       expect(fc.deficit).toBe(0) // any shortfall is reported deeper, where the chain breaks
       expect(fc.consumed).toBe(0)
-      const [line] = busLines(loopPlan(false), result).filter((l) => l.uses.some((x) => x.kind === 'fertilizer'))
-      expect(line.item).toBe('Catalyst2')
-      expect(line.need).toBeGreaterThan(0)
-      expect(line.net).toBeNull()
+      const ledger = fertilizer(loopPlan(false), result)
+      expect(ledger.need).toBeGreaterThan(0)
+      expect(ledger.covered).toBe(0)
+      expect(ledger.bus!.item).toBe('Catalyst2')
+      expect(ledger.bus!.count * ledger.bus!.per).toBeCloseTo(ledger.need)
+      expect(ledger.sources).toMatchObject([{ item: 'Catalyst2', target: 0, amount: 10, fedBack: false, used: 0 }])
     })
 
-    it('feedback reports the net without changing the factory', () => {
+    it('feedback covers the need from the target without changing the factory', () => {
       const off = solvePlan(loopPlan(false), catalog, mods)
       const on = solvePlan(loopPlan(true), catalog, mods)
       expect(on.runs.map((r) => r.machines)).toEqual(off.runs.map((r) => r.machines))
-      const [line] = busLines(loopPlan(true), on).filter((l) => l.uses.some((x) => x.kind === 'fertilizer'))
-      expect(line.planMakes).toBeCloseTo(10)
-      expect(line.net).toBeCloseTo(10 - line.need)
+      const ledger = fertilizer(loopPlan(true), on)
+      const [source] = ledger.sources
+      expect(source.fedBack).toBe(true)
+      expect(source.used).toBeCloseTo(Math.min(10, ledger.need / source.per))
+      expect(source.used + ledger.bus!.count).toBeCloseTo(ledger.need / source.per)
     })
   })
 })
@@ -856,31 +866,130 @@ describe('solver numerics', () => {
 
 describe('bus items used as both fuel and fertilizer', () => {
   // Panacea Potion (internally PanaceaElixir) is the one item that's both fuel and fertilizer.
-  it('merges Panacea Potion into one line and counts the plan output once', () => {
+  it('counts the plan output once: fertilizer takes its share first, heat burns what is left', () => {
     const mods = modifiers({})
     const catalog = buildCatalog({ saved: [], machines: {}, mods, fertilizer: 'PanaceaElixir' })
-    const base = {
+    const both = plan({
       targets: [
         { item: 'PanaceaElixir', rate: 12.5 },
         { item: 'SteelIngot', rate: 10 }, // needs heat
         { item: 'Flax', rate: 60 }, // needs nutrients
       ],
-      producers: { [NUTRIENTS]: 'fert:PanaceaElixir', '@heat': 'fuel:PanaceaElixir' },
-    }
-    const both = plan({ ...base, feedback: { fuel: true, fertilizer: true } })
-    const lines = busLines(both, solvePlan(both, catalog, mods)).filter((l) => l.item === 'PanaceaElixir')
-    expect(lines).toHaveLength(1)
-    const [line] = lines
-    expect(line.uses.map((u) => u.kind).sort()).toEqual(['fertilizer', 'fuel'])
-    expect(line.need).toBeCloseTo(line.uses[0].need + line.uses[1].need)
-    expect(line.net).toBeCloseTo(12.5 - line.need)
+      producers: { [NUTRIENTS]: 'fert:PanaceaElixir', [HEAT]: 'fuel:PanaceaElixir' },
+      feedbackItems: ['PanaceaElixir'],
+    })
+    const [fert, heat] = ledgers(both, catalog, solvePlan(both, catalog, mods))
+    expect([fert.resource, heat.resource]).toEqual(['fertilizer', 'heat'])
+    const spread = fert.sources[0].used
+    const burned = heat.sources[0].used
+    expect(spread).toBeGreaterThan(0)
+    expect(spread + burned).toBeLessThanOrEqual(12.5 + 1e-9)
+    // Whatever the target can't cover comes off the bus, for each use.
+    expect(spread + fert.bus!.count).toBeCloseTo(fert.need / fert.sources[0].per)
+    expect(burned + heat.bus!.count).toBeCloseTo(heat.need / heat.sources[0].per)
+  })
+})
 
-    // Only fuel fed back: fertilizer part is taken from the bus, net covers the fuel part only.
-    const fuelOnly = plan({ ...base, feedback: { fuel: true } })
-    const [partial] = busLines(fuelOnly, solvePlan(fuelOnly, catalog, mods)).filter((l) => l.item === 'PanaceaElixir')
-    const fuel = partial.uses.find((u) => u.kind === 'fuel')!
-    expect(partial.net).toBeCloseTo(12.5 - fuel.need)
-    expect(partial.boughtNeed).toBeCloseTo(partial.uses.find((u) => u.kind === 'fertilizer')!.need)
+describe('heat ledger', () => {
+  const mods = modifiers({})
+  const catalog = buildCatalog({ saved: [], machines: {}, mods, fertilizer: null })
+  // Planks (WoodBoard) are a fuel; Steel Ingots need heat; the bus burns Coke Powder.
+  const base = plan({
+    targets: [
+      { item: 'WoodBoard', rate: 1 },
+      { item: 'WoodBoard', rate: 1e5 },
+      { item: 'SteelIngot', rate: 10 },
+    ],
+    producers: { [HEAT]: 'fuel:CokePowder' },
+  })
+  const heatOf = (p: Plan) => ledgers(p, catalog, solvePlan(p, catalog, mods)).find((l) => l.resource === 'heat')!
+
+  it('takes everything from the bus unless the plan feeds back', () => {
+    const heat = heatOf(base)
+    expect(heat.need).toBeGreaterThan(0)
+    expect(heat.covered).toBe(0)
+    expect(heat.bus!.item).toBe('CokePowder')
+    expect(heat.bus!.count * heat.bus!.per).toBeCloseTo(heat.need)
+    expect(heat.sources.map((s) => [s.target, s.fedBack])).toEqual([
+      [0, false],
+      [1, false],
+    ])
+  })
+
+  it('burns fed-back targets in target order, then the bus', () => {
+    const heat = heatOf({ ...base, feedbackItems: ['WoodBoard'] })
+    const [first, second] = heat.sources
+    expect(first.used).toBeCloseTo(1) // all of it, before the second target
+    expect(second.used).toBeCloseTo((heat.need - first.per) / second.per)
+    expect(heat.covered).toBeCloseTo(heat.need)
+    expect(heat.bus!.count).toBe(0)
+
+    const moved = heatOf(moveTarget({ ...base, feedbackItems: ['WoodBoard'] }, 1, 0))
+    expect(moved.sources[0].target).toBe(0)
+    expect(moved.sources[0].amount).toBe(1e5)
+    expect(moved.sources[1].used).toBe(0) // the big target covers it all now
+  })
+
+  it('lets a target set its own feedback, and dropping it again restores the plan', () => {
+    const fed = { ...base, feedbackItems: ['WoodBoard'] }
+    const optedOut = setTargetFeedback(fed, 1, false)
+    expect(optedOut.targets[1].feedback).toBe(false)
+    const heat = heatOf(optedOut)
+    expect(heat.sources[1]).toMatchObject({ fedBack: false, used: 0 })
+    expect(heat.bus!.count).toBeGreaterThan(0)
+    expect(setTargetFeedback(optedOut, 1, true)).toEqual(fed)
+    // Turning the item off keeps the target's own setting.
+    expect(setItemFeedback(setTargetFeedback(base, 0, true), 'WoodBoard', true).targets[0].feedback).toBe(true)
+    expect(setItemFeedback(setItemFeedback(base, 'WoodBoard', true), 'WoodBoard', false)).toEqual({ ...base, feedbackItems: undefined })
+  })
+
+  it('never changes the factory', () => {
+    const off = solvePlan(base, catalog, mods)
+    const on = solvePlan({ ...base, feedbackItems: ['WoodBoard'] }, catalog, mods)
+    expect(on.runs.map((r) => r.machines)).toEqual(off.runs.map((r) => r.machines))
+  })
+
+  it('moves feedback from plans saved per use to the items they fed back', () => {
+    const legacy = plan({ ...base, producers: { [HEAT]: 'fuel:WoodBoard' }, feedback: { fuel: true, fertilizer: false } })
+    const migrated = migrateFeedback(legacy, catalog)!
+    expect(migrated.feedbackItems).toEqual(['WoodBoard'])
+    expect(migrated).not.toHaveProperty('feedback')
+    expect(migrateFeedback(migrated, catalog)).toBeNull()
+  })
+
+  it('forgets fed-back items the plan no longer makes', () => {
+    const pruned = pruneChoices({ ...base, feedbackItems: ['WoodBoard', 'PanaceaElixir'] }, catalog)!
+    expect(pruned.feedbackItems).toEqual(['WoodBoard'])
+  })
+})
+
+describe('reordering targets', () => {
+  const base = plan({
+    targets: [
+      { item: 'A', rate: 1 },
+      { item: '', rate: 1 }, // no item yet: has no rows
+      { item: 'B', rate: 1 },
+    ],
+    branches: { '0/A/X': { producer: 'p:a' }, '1/B/X': { producer: 'p:b' } },
+    rowCatalysts: { '1/B': ['Catalyst1'] },
+    separate: [{ item: 'X', anchor: 'B', at: '1/B' }, { item: 'Y' }],
+  })
+
+  it('moves per-row picks with their target', () => {
+    const moved = moveTarget(base, 2, 0)
+    expect(moved.targets.map((t) => t.item)).toEqual(['B', 'A', ''])
+    expect(moved.branches).toEqual({ '1/A/X': { producer: 'p:a' }, '0/B/X': { producer: 'p:b' } })
+    expect(moved.rowCatalysts).toEqual({ '0/B': ['Catalyst1'] })
+    expect(moved.separate).toEqual([{ item: 'X', anchor: 'B', at: '0/B' }, { item: 'Y' }])
+    expect(moveTarget(moved, 0, 2)).toEqual(base)
+  })
+
+  it("drops a removed target's picks and keeps the others with theirs", () => {
+    const removed = removeTarget(base, 0)
+    expect(removed.targets.map((t) => t.item)).toEqual(['', 'B'])
+    expect(removed.branches).toEqual({ '0/B/X': { producer: 'p:b' } })
+    expect(removed.rowCatalysts).toEqual({ '0/B': ['Catalyst1'] })
+    expect(removed.separate).toEqual([{ item: 'X', anchor: 'B', at: '0/B' }, { item: 'Y' }])
   })
 })
 

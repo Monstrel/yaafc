@@ -1195,6 +1195,58 @@ tr.idle {
   font-variant-numeric: tabular-nums;
 }
 
+.ledger + .ledger {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.ledger h3 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+.ledger-list > li {
+  flex-wrap: wrap;
+}
+
+.ledger-list .ledger-item {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+}
+
+.ledger-item-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ledger-item-head .check {
+  margin: 0;
+}
+
+.ledger-sources {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 28px;
+  font-size: 13px;
+}
+
+.ledger-sources li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
+.ledger-bus .item-label {
+  flex: 0 1 auto;
+}
+
+.target-feedback {
+  margin: 6px 0 0;
+}
+
 .base-kind {
   min-width: 96px;
   white-space: nowrap;

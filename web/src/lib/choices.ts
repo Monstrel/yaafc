@@ -1,9 +1,9 @@
-import { HEAT, NUTRIENTS } from './gameData'
+import { HEAT, NUTRIENTS, realItem } from './gameData'
 import { defaultMachine, defaultProducer, type ProcessCatalog } from './processes'
 import { separationKey, separationsOf } from './separate'
 import type { TreeNode } from './tree'
 import type { MyDefault, MyDefaults, Plan } from './types'
-import { resolveChoice, reusesByproducts, rowItem, unfold } from './unfold'
+import { planProducer, resolveChoice, reusesByproducts, rowItem, unfold } from './unfold'
 
 export interface ProducerPick {
   item: string
@@ -108,6 +108,89 @@ export function migrateCatalysts(plan: Plan, catalog: ProcessCatalog): Plan | nu
   }
   return { ...rest, rowCatalysts }
 }
+
+/**
+ * Plans saved before feedback was per item fed back the preferred fuel and fertilizer: feeds back
+ * those items. Returns null when there's nothing to move.
+ */
+export function migrateFeedback(plan: Plan, catalog: ProcessCatalog): Plan | null {
+  const legacy = plan.feedback
+  if (!legacy) return null
+  const { feedback: _, ...rest } = plan
+  let feedbackItems = plan.feedbackItems
+  for (const [use, key] of [['fuel', HEAT], ['fertilizer', NUTRIENTS]] as const) {
+    const item = catalog.byId.get(planProducer(plan, catalog, key))?.inputs[0]?.item
+    if (legacy[use] && item) feedbackItems = withItem(feedbackItems, realItem(item), true)
+  }
+  return { ...rest, feedbackItems }
+}
+
+/** Whether every source of an item feeds the plan's heat or fertilizer (targets can say otherwise). */
+export const setItemFeedback = (plan: Plan, item: string, on: boolean): Plan => ({
+  ...plan,
+  feedbackItems: withItem(plan.feedbackItems, item, on),
+})
+
+/** Feeds one target back or not; matching its item's setting drops the target's own. */
+export function setTargetFeedback(plan: Plan, index: number, on: boolean): Plan {
+  return {
+    ...plan,
+    targets: plan.targets.map((t, i) => {
+      if (i !== index) return t
+      const { feedback: _, ...rest } = t
+      return on === !!plan.feedbackItems?.includes(t.item) ? rest : { ...rest, feedback: on }
+    }),
+  }
+}
+
+/**
+ * Puts the targets in a new order (`order` lists old indexes; leaving one out removes it). Tree
+ * row ids start with their target's place, so per-row picks, catalysts and build-separately rows
+ * move with their target, and a removed target's go with it.
+ */
+export function reorderTargets(plan: Plan, order: number[]): Plan {
+  // Row ids number only the targets with an item.
+  const places = (targets: Plan['targets']) => {
+    let k = 0
+    return targets.map((t) => (t.item ? k++ : -1))
+  }
+  const before = places(plan.targets)
+  const targets = order.map((i) => plan.targets[i])
+  const after = places(targets)
+  const moved = new Map<string, string>()
+  order.forEach((old, j) => before[old] >= 0 && moved.set(String(before[old]), String(after[j])))
+  /** The row id after the move; null when its target is gone. Rows not under a target stay. */
+  const remap = (id: string): string | null => {
+    const k = id.indexOf('/')
+    const head = k < 0 ? id : id.slice(0, k)
+    if (!/^\d+$/.test(head)) return id
+    const to = moved.get(head)
+    return to === undefined ? null : to + id.slice(head.length)
+  }
+  const rows = <T>(record: Record<string, T> | undefined) =>
+    record &&
+    Object.fromEntries(Object.entries(record).flatMap(([id, v]) => (remap(id) === null ? [] : [[remap(id)!, v]])))
+  const separate =
+    plan.separate &&
+    separationsOf(plan.separate).flatMap((s) => {
+      if (!s.at) return [s]
+      const at = remap(s.at)
+      return at === null ? [] : [{ ...s, at }]
+    })
+  return { ...plan, targets, branches: rows(plan.branches), rowCatalysts: rows(plan.rowCatalysts), separate }
+}
+
+export const moveTarget = (plan: Plan, from: number, to: number) => {
+  const order = plan.targets.map((_, i) => i)
+  order.splice(to, 0, ...order.splice(from, 1))
+  return reorderTargets(plan, order)
+}
+
+export const removeTarget = (plan: Plan, index: number) =>
+  reorderTargets(
+    plan,
+    plan.targets.map((_, i) => i).filter((i) => i !== index),
+  )
 
 /**
  * "Use as my default": remembers how a row and everything below it is made (recipe, machine and
@@ -277,7 +360,11 @@ export function pruneChoices(plan: Plan, catalog: ProcessCatalog): Plan | null {
   const s = separate?.length !== plan.separate?.length
   const noReuse = plan.noReuse?.filter((item) => items.has(item))
   const r = noReuse?.length !== plan.noReuse?.length
-  if (!p.dropped && !m.dropped && !c.dropped && !b.dropped && !s && !r) return null
+  // Fed-back items stay while the plan still makes them (as a row's item or a side output).
+  const made = new Set([...items, ...nodes.flatMap((n) => n.process?.outputs.map((o) => o.item) ?? [])])
+  const feedbackItems = plan.feedbackItems?.filter((item) => made.has(item))
+  const f = feedbackItems?.length !== plan.feedbackItems?.length
+  if (!p.dropped && !m.dropped && !c.dropped && !b.dropped && !s && !r && !f) return null
   return {
     ...plan,
     producers: p.record!,
@@ -286,5 +373,6 @@ export function pruneChoices(plan: Plan, catalog: ProcessCatalog): Plan | null {
     branches: b.record,
     separate,
     noReuse: noReuse?.length ? noReuse : undefined,
+    feedbackItems: feedbackItems?.length ? feedbackItems : undefined,
   }
 }

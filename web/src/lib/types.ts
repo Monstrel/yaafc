@@ -19,6 +19,11 @@ export interface PlanTarget {
   rate: number
   /** 'items' = items per minute (default); 'machines' = that many of the producer's machines' output. */
   unit?: 'items' | 'machines'
+  /**
+   * Whether this target's output feeds the plan's own heat or fertilizer need (when the item is a
+   * fuel, or the nurseries' fertilizer). Absent = as the plan's `feedbackItems` says for the item.
+   */
+  feedback?: boolean
 }
 
 /** Chosen producer for an item: a process id, or 'import' to bring it in from outside. */
@@ -56,9 +61,11 @@ export interface Plan {
   /** Plans saved before upgrades were global: their research tier (moved to `Progress` on load). */
   tier?: number
   /**
-   * Fuel and fertilizer are base inputs. With feedback on, the plan's own output of the preferred
-   * fuel/fertilizer (e.g. Fertile Catalyst from a loop) covers the need before anything is bought.
+   * Fuel and fertilizer items whose output the plan feeds back into its own heat or fertilizer
+   * need: every source of them (overflow, and targets that don't say otherwise). See ledger.ts.
    */
+  feedbackItems?: string[]
+  /** Plans saved before feedback was per item: per use (moved to `feedbackItems` on load). */
   feedback?: { fuel?: boolean; fertilizer?: boolean }
   /** Coins per stack on belts (Bank Portal setting, 1–50); machines and containers emit 50. */
   coinStack?: number
