@@ -498,11 +498,6 @@ h2 {
   color: var(--panel);
 }
 
-.tag.branch-tag {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
 .tag.mine-tag {
   border-color: var(--green);
   color: var(--green);

@@ -228,11 +228,6 @@ export function ProducerSelect({
         <ChoiceIcon choice={selected} size={compact ? 20 : 24} />
         <span className="recipe-title">{choiceTitle(selected)}</span>
         <ChoiceTags choice={selected} item={item} />
-        {branch?.own && (
-          <span className="tag branch-tag" title="Picked for this branch: other rows of this item can differ">
-            branch
-          </span>
-        )}
         {branch?.mine && (
           <span className="tag mine-tag" title="Your default way of making this, saved from a plan">
             mine
