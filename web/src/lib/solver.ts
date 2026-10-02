@@ -2,7 +2,7 @@ import { HEAT, NUTRIENTS, baseInputKey, realItem, type Stack } from './gameData'
 import { solveLP } from './lp'
 import { craftsPerMachine } from './machineRate'
 import { runKey, type Process, type ProcessCatalog } from './processes'
-import { NO_FLOWS, buildTree, type RowFlows, type TreeNode } from './tree'
+import { NO_FLOWS, buildTree, type ByproductRoute, type RowFlows, type TreeNode } from './tree'
 import type { Plan } from './types'
 import { planProducer, unfold, type PlanNode, type PlanShape } from './unfold'
 import type { Modifiers } from './upgrades'
@@ -106,6 +106,9 @@ function supplierOf(n: PlanNode): PlanNode {
 }
 
 const isSupply = (n: PlanNode) => supplierOf(n) === n
+
+/** A solved amount, with solver noise below `tol` dropped. */
+const cleaned = (x: number, tol: number) => (x > tol ? x : 0)
 
 /** Steps between two rows of the tree. */
 function distance(a: PlanNode, b: PlanNode): number {
@@ -276,9 +279,29 @@ export function solvePlan(plan: Plan, catalog: ProcessCatalog, mods: Modifiers):
     demand.set(s, (demand.get(s) ?? 0) + (own.get(n) ?? 0))
   }
   const drawn = new Map<PlanNode, { from: PlanNode; amount: number }[]>()
+  const sent = new Map<PlanNode, { to: PlanNode; item: string; amount: number }[]>()
   for (const f of flows) {
     const amount = v(f.name)
-    if (amount > 0) drawn.set(f.to, [...(drawn.get(f.to) ?? []), { from: f.from, amount }])
+    if (amount <= 0) continue
+    drawn.set(f.to, [...(drawn.get(f.to) ?? []), { from: f.from, amount }])
+    sent.set(f.from, [...(sent.get(f.from) ?? []), { to: f.to, item: f.to.item, amount }])
+  }
+  /** Where each side output of a row goes, and what's left of it. */
+  const routes = (n: PlanNode, x: number) => {
+    const k = index.get(n)!
+    const out: Record<string, ByproductRoute> = {}
+    for (const o of n.process!.outputs) {
+      if (o.item === n.item || o.item.startsWith('@')) continue
+      const tol = RELATIVE_NOISE * Math.max(1, o.count * x)
+      out[o.item] = {
+        to: (sent.get(n) ?? [])
+          .filter((s) => s.item === o.item && s.amount > tol)
+          .sort((a, b) => b.amount - a.amount)
+          .map((s) => ({ id: s.to.id, amount: s.amount })),
+        overflow: cleaned(v(`ps:${k}:${o.item}`), tol),
+      }
+    }
+    return out
   }
 
   const rowFlows = new Map<PlanNode, RowFlows>()
@@ -303,6 +326,8 @@ export function solvePlan(plan: Plan, catalog: ProcessCatalog, mods: Modifiers):
       byproductSources: draws.map((d) => ({ id: d.from.id, label: d.from.process!.label })),
       purchased: bought ? short : 0,
       shortfall: bought ? 0 : short,
+      overflow: cleaned(v(`s:${index.get(n)}`), tol),
+      byproductRoutes: n.kind === 'make' ? routes(n, x) : {},
     })
   }
 

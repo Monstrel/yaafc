@@ -246,6 +246,27 @@ describe('production tree', () => {
     expect(find(result.tree)?.item).toBe('Vitae')
   })
 
+  it('says at the source where by-products go and what overflows', () => {
+    // Nectar only comes with Gentian: the Gentian row runs for the Nectar, so its own Gentian overflows.
+    const [gentian, nectar] = solvePlan(
+      plan({ targets: [{ item: 'Gentian', rate: 1 }, { item: 'GentianNectar', rate: 100 }] }),
+      catalog,
+      mods,
+    ).tree
+    const side = gentian.byproducts.find((b) => b.item === 'GentianNectar')!
+    expect(side.to).toEqual([{ id: nectar.id, amount: expect.closeTo(100) }])
+    expect(side.overflow).toBe(0)
+    expect(gentian.rate).toBeCloseTo(1)
+    expect(gentian.overflow).toBeCloseTo(side.count - 1)
+
+    // Steel's failed Iron Ingots all go back into its own Iron Ingot supply: nothing overflows.
+    const [steel] = solvePlan(plan({ targets: [{ item: 'SteelIngot', rate: 10 }] }), catalog, mods).tree
+    const failed = steel.byproducts.find((b) => b.item === 'IronIngot')!
+    expect(failed.to.map((t) => t.id)).toEqual([steel.children.find((c) => c.item === 'IronIngot')!.id])
+    expect(failed.overflow).toBe(0)
+    expect(steel.overflow).toBe(0)
+  })
+
   it('feeds a by-product to the row that uses it nearest its source', () => {
     // Steel fails into Iron Ingots, which go straight back into the Steel's own Iron Ingot supply.
     const [steel] = solvePlan(plan({ targets: [{ item: 'SteelIngot', rate: 10 }] }), catalog, mods).tree

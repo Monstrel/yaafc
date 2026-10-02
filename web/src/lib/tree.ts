@@ -36,8 +36,10 @@ export interface TreeNode {
   heat: number
   /** Nutrients this row's nurseries use, per second. */
   nutrients: number
-  /** Other outputs of this row's machines, per minute. */
-  byproducts: Stack[]
+  /** Part of what this row's machines make of its item that nothing uses, per minute. */
+  overflow: number
+  /** Other outputs of this row's machines, per minute, and where they go. */
+  byproducts: ByproductOutput[]
   /** Part of the rate covered by side outputs of other rows' machines, per minute. */
   fromByproduct: number
   /** Rows whose side output covers `fromByproduct`, largest share first. */
@@ -56,6 +58,17 @@ export interface TreeNode {
   groupAnchor?: string
 }
 
+/** Where one by-product of a row goes: rows of its item that take it, and what's left over. */
+export interface ByproductRoute {
+  /** Rows of the by-product's item fed by it, largest share first, per minute. */
+  to: { id: string; amount: number }[]
+  /** Part nothing uses, per minute. */
+  overflow: number
+}
+
+/** A by-product of a row's machines, per minute, and where it goes. */
+export interface ByproductOutput extends Stack, ByproductRoute {}
+
 /** Solved flows of one plan row. */
 export interface RowFlows {
   rate: number
@@ -64,9 +77,22 @@ export interface RowFlows {
   byproductSources: { id: string; label: string }[]
   purchased: number
   shortfall: number
+  /** Part of the row's own item made or brought in that nothing uses. */
+  overflow: number
+  /** Where each by-product of the row's machines goes, by item. */
+  byproductRoutes: Record<string, ByproductRoute>
 }
 
-export const NO_FLOWS: RowFlows = { rate: 0, crafts: 0, fromByproduct: 0, byproductSources: [], purchased: 0, shortfall: 0 }
+export const NO_FLOWS: RowFlows = {
+  rate: 0,
+  crafts: 0,
+  fromByproduct: 0,
+  byproductSources: [],
+  purchased: 0,
+  shortfall: 0,
+  overflow: 0,
+  byproductRoutes: {},
+}
 
 const isPseudo = (item: string) => item.startsWith('@')
 
@@ -85,6 +111,7 @@ export function buildTree(roots: PlanNode[], flows: Map<PlanNode, RowFlows>, mod
       machines: 0,
       heat: 0,
       nutrients: 0,
+      overflow: f.overflow,
       byproducts: [],
       fromByproduct: f.fromByproduct,
       byproductSources: f.byproductSources,
@@ -122,7 +149,9 @@ export function buildTree(roots: PlanNode[], flows: Map<PlanNode, RowFlows>, mod
       machines: run.machines,
       heat: perSecond(HEAT),
       nutrients: perSecond(NUTRIENTS),
-      byproducts: run.outputs.filter((s) => s.item !== n.item && s.count > 0 && !isPseudo(s.item)),
+      byproducts: run.outputs
+        .filter((s) => s.item !== n.item && s.count > 0 && !isPseudo(s.item))
+        .map((s) => ({ ...s, ...(f.byproductRoutes[s.item] ?? { to: [], overflow: s.count }) })),
       children: n.children.map(toNode),
       ...(n.separation && { consolidated: true, separation: n.separation }),
     }

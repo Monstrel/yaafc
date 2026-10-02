@@ -146,6 +146,7 @@ export function PlannerPage({
 
   const purchases = result.balances.filter((b) => !b.item.startsWith('@') && b.imported > 0)
   const surplus = result.balances.filter((b) => b.surplus > 0 && !b.item.startsWith('@'))
+  const overflowSources = useMemo(() => overflowRows(result.tree), [result.tree])
   const deficits = result.balances.filter((b) => b.deficit > 0)
   const heat = result.balances.find((b) => b.item === HEAT)
   const moneyPerMinute = purchases.reduce((s, b) => s + b.imported * (itemsByKey.get(b.item)?.buyPrice ?? 0), 0)
@@ -357,13 +358,7 @@ export function PlannerPage({
                       <li key={b.item}>
                         <ItemLabel item={b.item} />
                         <span className="rate">+{fmt(b.surplus)}/min</span>
-                        <span className="hint-inline">
-                          from{' '}
-                          {result.runs
-                            .filter((r) => r.outputs.some((s) => s.item === b.item && s.count > 0))
-                            .map((r) => r.process.label)
-                            .join(', ')}
-                        </span>
+                        <span className="hint-inline">from {(overflowSources.get(b.item) ?? []).join(', ')}</span>
                       </li>
                     ))}
                   </ul>
@@ -426,7 +421,6 @@ export function PlannerPage({
                   onRemember={remember}
                   onCatalysts={setCatalysts}
                   onSeparate={setSeparate}
-                  unused={new Map(surplus.map((b) => [b.item, b.surplus]))}
                   logistics={logistics}
                 />
               </section>
@@ -645,6 +639,27 @@ function LogisticsLine({ check, label }: { check: LogisticsCheck; label: string 
       </div>
     </li>
   )
+}
+
+/**
+ * Per overflowing item, the rows it overflows from, as "Athanors making Copper Powder": the
+ * machines, and the item they're run for (the overflow may be their main product or a side one).
+ */
+function overflowRows(tree: TreeNode[]): Map<string, string[]> {
+  const found = new Map<string, Set<string>>()
+  const note = (item: string, n: TreeNode) => {
+    const machine = n.run?.process.machine?.name
+    const what = itemName(n.item)
+    const from = machine ? `${machineNameFor(machine, n.machines)} making ${what}` : what
+    found.set(item, (found.get(item) ?? new Set()).add(from))
+  }
+  const visit = (n: TreeNode) => {
+    if (n.overflow > 0) note(n.item, n)
+    for (const b of n.byproducts) if (b.overflow > 0) note(b.item, n)
+    n.children.forEach(visit)
+  }
+  tree.forEach(visit)
+  return new Map([...found].map(([item, from]) => [item, [...from]]))
 }
 
 /** Steps of the plan whose own recipe, machine or purchase needs research beyond `tier`. */

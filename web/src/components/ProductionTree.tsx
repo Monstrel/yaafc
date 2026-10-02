@@ -6,6 +6,7 @@ import { foldKey, usePersistentState } from '../lib/store'
 import type { LogisticsCheck } from '../lib/logistics'
 import type { ProcessCatalog } from '../lib/processes'
 import { branchIds, type TreeNode } from '../lib/tree'
+import { parentId, rowItem } from '../lib/unfold'
 import type { ProducerPick } from '../lib/choices'
 import type { Separation } from '../lib/types'
 import { ItemIcon, ItemLabel } from './ItemIcon'
@@ -26,8 +27,6 @@ interface Props {
   /** Use as my default: remember how this row and everything below it is made. */
   onRemember: (row: TreeNode) => void
   onSeparate: (s: Separation, on: boolean) => void
-  /** Plan-wide unused amount per item (per minute), to flag overflowing by-products. */
-  unused: Map<string, number>
   logistics: Map<string, LogisticsCheck>
 }
 
@@ -51,7 +50,6 @@ export function ProductionTree({
   onCatalysts,
   onRemember,
   onSeparate,
-  unused,
   logistics,
 }: Props) {
   // Folded rows survive leaving the planner and reloads (row ids are stable paths).
@@ -269,7 +267,6 @@ export function ProductionTree({
                   onRemember={onRemember}
                   onSeparate={onSeparate}
                   onSeparateMenu={openMenu}
-                  unused={unused}
                   logistics={logistics}
                   link={link}
                 />
@@ -338,7 +335,6 @@ function TreeRow({
   onRemember,
   onSeparate,
   onSeparateMenu,
-  unused,
   logistics,
   link,
   edges,
@@ -364,7 +360,6 @@ function TreeRow({
   onRemember: (row: TreeNode) => void
   onSeparate: (s: Separation, on: boolean) => void
   onSeparateMenu: (node: TreeNode, button: HTMLElement) => void
-  unused: Map<string, number>
   logistics: Map<string, LogisticsCheck>
   link: LinkFn
   edges: Edge[]
@@ -523,25 +518,34 @@ function TreeRow({
             {node.kind === 'produce' && node.purchased > 0 && (
               <div className="note-line">{fmt(node.purchased)}/min bought</div>
             )}
-            {node.byproducts.length > 0 && (
-              <div className="note-line">
-                also makes{' '}
-                {node.byproducts.map((b) => (
-                  <span key={b.item} className="byproduct">
+            {node.overflow > 0 && node.kind === 'produce' && (
+              <div className="note-line warn-text" title="Made by this row's machines but used nowhere in the plan">
+                +{fmt(node.overflow)}/min overflow
+              </div>
+            )}
+            {node.byproducts.map((b) => (
+              <div key={b.item} className="note-line">
+                also makes <ItemLabel item={b.item} count={b.count} size={16} /> →{' '}
+                {b.to.map((t, i) => (
+                  <span key={t.id}>
+                    {i > 0 && ', '}
+                    {(b.to.length > 1 || b.overflow > 0) && `${fmt(t.amount)} `}
                     {link(
                       node,
-                      `uses:${b.item}`,
-                      (n) => n.byproductSources.some((s) => s.id === node.id),
-                      <ItemLabel item={b.item} count={b.count} size={16} />,
-                      `Show where ${itemsByKey.get(b.item)?.name ?? b.item} is used`,
-                    )}
-                    {(unused.get(b.item) ?? 0) > 0 && (
-                      <span className="warn-text"> ({fmt(unused.get(b.item)!)}/min unused overall)</span>
+                      `to:${t.id}`,
+                      (n) => n.id === t.id,
+                      destinationName(t.id, topName),
+                      `Show the ${itemsByKey.get(b.item)?.name ?? b.item} row it feeds`,
                     )}
                   </span>
                 ))}
+                {b.overflow > 0 && (
+                  <span className="warn-text">
+                    {b.to.length > 0 && `, ${fmt(b.overflow)} `}overflow
+                  </span>
+                )}
               </div>
-            )}
+            ))}
             {p?.license && node.kind === 'produce' && <div className="note-line">needs the {p.license}</div>}
             {node.shortfall > 0 && <div className="note-line warn-text">short by {fmt(node.shortfall)}/min</div>}
             {belts && (belts.multiBelt || limited) && node.kind === 'produce' && (
@@ -754,6 +758,7 @@ function viewOf(tree: TreeNode[]): TreeNode[] {
     machines: 0,
     heat: 0,
     nutrients: 0,
+    overflow: 0,
     byproducts: [],
     fromByproduct: 0,
     byproductSources: [],
@@ -766,6 +771,18 @@ function viewOf(tree: TreeNode[]): TreeNode[] {
     children: [...targets, ...groups],
   }
   return [plan]
+}
+
+/**
+ * What a row of a by-product feeds: the item of the row above it, or, at the top of the plan, the
+ * target itself or the separate build gathering it.
+ */
+function destinationName(id: string, topName: string): string {
+  const name = itemsByKey.get(rowItem(id))?.name ?? rowItem(id)
+  const up = parentId(id)
+  if (up === null) return `${name} target`
+  if (up === 'separate') return `${name} (gathered with ${topName})`
+  return itemsByKey.get(rowItem(up))?.name ?? rowItem(up)
 }
 
 function topAnchorName(tree: TreeNode[]) {

@@ -65,7 +65,8 @@ export interface ResolvedChoice {
 
 const picked = (c: ResolvedChoice) => ({ ownChoice: c.own, mine: c.mine, defaultCatalysts: c.defaultCatalysts })
 
-const parentId = (id: string) => {
+/** The row above a row (null for a root). */
+export const parentId = (id: string) => {
   const k = id.lastIndexOf('/')
   return k < 0 ? null : id.slice(0, k)
 }
