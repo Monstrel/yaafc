@@ -16,6 +16,8 @@ import { Money } from './Money'
 
 const CRUCIBLE = 'crucible'
 const IMPORT = 'import'
+/** Menu value of reusing other rows' by-products. */
+const REUSE = 'reuse'
 /** Building shown for buying an item at a portal. */
 const BUY_PORTAL = 'Portal_AlchGuild'
 /** Menus with more options than this get a search box (fuels, many saved mixes). */
@@ -55,6 +57,16 @@ export interface BranchScope {
   onReset: () => void
 }
 
+/** A tree row that can take other rows' by-products of its item. */
+export interface ReuseOption {
+  /** The row takes them first (the default); else it makes all of the item with its producer. */
+  on: boolean
+  /** By-products cover the whole row: nothing of its own runs. */
+  covered: boolean
+  /** The rows the by-products come from. */
+  sources: string
+}
+
 /** Menu value of a process on a given machine. */
 const onMachineValue = (id: string, machine: string) => `${id}@${machine}`
 
@@ -75,18 +87,22 @@ export function ProducerSelect({
   noImport,
   oneLine,
   branch,
+  reuse,
 }: {
   item: string
   /** The producer in use ('import' or a process id) and its process on the machine it runs on. */
   current: { producer: string; process?: Process }
   catalog: ProcessCatalog
-  onChange: (producer: string, machine?: string, everywhere?: boolean) => void
+  /** `reuse`: true to go back to reusing by-products; false when a producer replaces them. */
+  onChange: (producer: string, machine?: string, everywhere?: boolean, reuse?: boolean) => void
   compact?: boolean
   noImport?: boolean
   /** Short lists of items with one yield each (fuels, fertilizers): an option per line, yield on the right, no search. */
   oneLine?: boolean
   /** On a tree row: picks cover the row's branch, or every row of the item when asked. */
   branch?: BranchScope
+  /** On a row that can take by-products: reusing them is offered first, and is the default. */
+  reuse?: ReuseOption
 }) {
   const all = catalog.byProduct.get(item) ?? []
   const isCrucible = (p: Process) => p.machine?.key === PARADOX_CRUCIBLE && p.product === item
@@ -105,6 +121,7 @@ export function ProducerSelect({
     return tier > catalog.tier ? tier : undefined
   }
   const entries: Choice[] = [
+    ...(reuse ? [{ value: REUSE }] : []),
     ...options.flatMap((p) =>
       p.machineOptions.length > 1
         ? p.machineOptions.map((m) => ({
@@ -119,19 +136,23 @@ export function ProducerSelect({
   ]
   // What the plan's research tier can't run yet goes last.
   const choices = entries.map((c) => ({ ...c, needs: needs(c) })).sort((a, b) => Number(!!a.needs) - Number(!!b.needs))
-  const value = onCrucible
+  const producerValue = onCrucible
     ? CRUCIBLE
     : currentProcess && currentProcess.machineOptions.length > 1 && currentProcess.machine
       ? onMachineValue(current, currentProcess.machine.key)
       : current
-  const selected = choices.find((c) => c.value === value) ?? {
-    value,
+  const producing = choices.find((c) => c.value === producerValue) ?? {
+    value: producerValue,
     process: currentProcess,
-    needs: currentProcess && needs({ value, process: currentProcess }),
+    needs: currentProcess && needs({ value: producerValue, process: currentProcess }),
   }
-  // Ingredients the current choice also uses in the same amount: dimmed in the other options, so
+  // Reusing by-products is the menu's pick; the button shows it when they cover the whole row,
+  // else the producer making the rest.
+  const value = reuse?.on ? REUSE : producerValue
+  const selected: Choice = reuse?.on && reuse.covered ? { value: REUSE } : producing
+  // Ingredients the current producer also uses in the same amount: dimmed in the other options, so
   // what switching would change stands out.
-  const shared = new Set(selected.process && value !== CRUCIBLE ? materials(selected.process).map(stackKey) : [])
+  const shared = new Set(producing.process && producerValue !== CRUCIBLE ? materials(producing.process).map(stackKey) : [])
   // Several options on one machine: the button also shows the chosen one's ingredients.
   const ambiguous = choices.filter((c) => choiceTitle(c) === choiceTitle(selected)).length > 1
 
@@ -177,8 +198,11 @@ export function ProducerSelect({
   const choose = (c: Choice) => {
     pop.current?.hidePopover()
     if (c.value === value) return
-    if (c.value === CRUCIBLE) onChange(crucibleDefault!.id, undefined, everywhere)
-    else onChange(c.process?.id ?? c.value, c.machine, everywhere)
+    // While reusing, a producer picked instead makes all of the item: no by-products taken.
+    const makeAll = reuse?.on ? false : undefined
+    if (c.value === REUSE) onChange(current, undefined, everywhere, true)
+    else if (c.value === CRUCIBLE) onChange(crucibleDefault!.id, undefined, everywhere, makeAll)
+    else onChange(c.process?.id ?? c.value, c.machine, everywhere, makeAll)
   }
 
   // Arrow keys move between options (and back up to the search box).
@@ -228,6 +252,11 @@ export function ProducerSelect({
         <ChoiceIcon choice={selected} size={compact ? 20 : 24} />
         <span className="recipe-title">{choiceTitle(selected)}</span>
         <ChoiceTags choice={selected} item={item} />
+        {reuse?.on && !reuse.covered && reuse.sources && (
+          <span className="tag reuse-tag" title={`Takes by-products from ${reuse.sources} first; this makes the rest`}>
+            ♻
+          </span>
+        )}
         {branch?.mine && (
           <span className="tag mine-tag" title="Your default way of making this, saved from a plan">
             mine
@@ -336,7 +365,14 @@ export function ProducerSelect({
                         <ChoiceTags choice={c} item={item} machine />
                         <ChoiceMeta choice={c} />
                       </span>
-                      <ChoicePreview choice={c} item={item} shared={c.value === value ? NONE : shared} />
+                      {c.value === REUSE ? (
+                        <span className="recipe-preview muted">
+                          {reuse?.sources ? `From ${reuse.sources}` : "Other rows' by-products of this item, when there are any"}
+                          {reuse?.on && !reuse.covered && `; ${choiceTitle(producing)} makes the rest`}
+                        </span>
+                      ) : (
+                        <ChoicePreview choice={c} item={item} shared={c.value === value ? NONE : shared} />
+                      )}
                     </span>
                   </button>
                 ),
@@ -360,6 +396,7 @@ export function ProducerSelect({
 }
 
 function choiceTitle(c: Choice): string {
+  if (c.value === REUSE) return 'Reuse by-products'
   if (c.value === IMPORT) return c.price != null ? 'Buy' : 'Import'
   if (c.value === CRUCIBLE) return 'Paradox Crucible'
   return c.process ? processTitle(c.process) : c.value
@@ -368,6 +405,7 @@ function choiceTitle(c: Choice): string {
 function choiceDescription(c: Choice, item: string): string {
   const p = c.process
   if (c.value === IMPORT) return c.price != null ? 'Buy at a Purchasing Portal' : 'Import: not sold at portals'
+  if (c.value === REUSE) return "Reuse other rows' by-products first"
   if (!p) return choiceTitle(c)
   if (c.value === CRUCIBLE) return `${choiceTitle(c)}: refine any item`
   return `${processLabel(p, item)}: ${describe(materials(p))} → ${describe(p.outputs)}`
@@ -379,6 +417,12 @@ function choiceDescription(c: Choice, item: string): string {
  */
 function ChoiceIcon({ choice, size }: { choice: Choice; size: number }) {
   const p = choice.process
+  if (choice.value === REUSE)
+    return (
+      <span className="item-icon glyph" style={{ width: size, height: size, fontSize: size * 0.7 }} aria-hidden>
+        ♻
+      </span>
+    )
   if (p && (p.kind === 'fuel' || p.kind === 'fertilizer')) return <ItemIcon item={inputOf(p)} size={size} />
   if (choice.value === IMPORT && choice.price == null) return <ImportIcon size={size} />
   const icon = choice.value === IMPORT ? buildingsByKey.get(BUY_PORTAL)?.icon : p?.machine?.icon

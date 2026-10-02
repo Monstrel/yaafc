@@ -3,7 +3,7 @@ import { defaultMachine, defaultProducer, type ProcessCatalog } from './processe
 import { separationKey, separationsOf } from './separate'
 import type { TreeNode } from './tree'
 import type { MyDefault, MyDefaults, Plan } from './types'
-import { resolveChoice, rowItem, unfold } from './unfold'
+import { resolveChoice, reusesByproducts, rowItem, unfold } from './unfold'
 
 export interface ProducerPick {
   item: string
@@ -14,6 +14,11 @@ export interface ProducerPick {
   /** Tree row picked on; absent (or `everywhere`) = the plan-wide producer. */
   row?: string
   everywhere?: boolean
+  /**
+   * Picked from a menu offering by-product reuse: picking a producer there means making all of the
+   * item with it (false); picking reuse itself (true) goes back to taking by-products first.
+   */
+  reuse?: boolean
 }
 
 const without = <T>(rows: Record<string, T> | undefined, drop: (id: string) => boolean) =>
@@ -26,13 +31,15 @@ const without = <T>(rows: Record<string, T> | undefined, drop: (id: string) => b
  * branch picks.
  */
 export function chooseProducer(plan: Plan, catalog: ProcessCatalog, pick: ProducerPick): Plan {
-  const { item, producer, machine, row } = pick
+  const { item, producer, machine, row, reuse } = pick
+  if (reuse) return chooseReuse(plan, item, pick.everywhere ? undefined : row)
   if (!row || pick.everywhere)
     return {
       ...plan,
       producers: { ...plan.producers, [item]: producer },
       machines: machine ? { ...plan.machines, [producer]: machine } : plan.machines,
       branches: without(plan.branches, (id) => rowItem(id) === item),
+      ...(reuse === false && { noReuse: withItem(plan.noReuse, item, true) }),
     }
   const next = {
     ...plan,
@@ -41,8 +48,38 @@ export function chooseProducer(plan: Plan, catalog: ProcessCatalog, pick: Produc
   const inherited = resolveChoice(next, catalog, item, row)
   const chosen = catalog.byId.get(producer)
   const onMachine = machine && chosen?.machineOptions.some((m) => m.key === machine) ? machine : chosen?.machine?.key
-  if (inherited.producer === producer && inherited.process?.machine?.key === onMachine) return next
-  return { ...next, branches: { ...next.branches, [row]: { producer, ...(machine && { machine }) } } }
+  const sameReuse = reuse === undefined || reusesByproducts(next, item, row) === reuse
+  if (inherited.producer === producer && inherited.process?.machine?.key === onMachine && sameReuse) return next
+  return {
+    ...next,
+    branches: { ...next.branches, [row]: { producer, ...(machine && { machine }), ...(reuse === false && { reuse }) } },
+  }
+}
+
+/** A list of items with `item` in it or not. */
+function withItem(list: string[] | undefined, item: string, on: boolean): string[] | undefined {
+  const rest = (list ?? []).filter((k) => k !== item)
+  const next = on ? [...rest, item] : rest
+  return next.length ? next : undefined
+}
+
+/**
+ * Takes other rows' by-products of `item` first: everywhere, dropping the item's branch picks, or
+ * on a row's branch, picked, so it also takes them from rows that make their own (whatever producer
+ * it inherits makes the rest).
+ */
+function chooseReuse(plan: Plan, item: string, row: string | undefined): Plan {
+  if (!row)
+    return {
+      ...plan,
+      noReuse: withItem(plan.noReuse, item, false),
+      branches: without(plan.branches, (id) => rowItem(id) === item),
+    }
+  const next = {
+    ...plan,
+    branches: without(plan.branches, (id) => (id === row || id.startsWith(`${row}/`)) && rowItem(id) === item),
+  }
+  return { ...next, branches: { ...next.branches, [row]: { producer: '', reuse: true } } }
 }
 
 const sameSet = (a: string[], b: string[]) => a.length === b.length && a.every((k) => b.includes(k))
@@ -177,6 +214,16 @@ export function pruneChoices(plan: Plan, catalog: ProcessCatalog): Plan | null {
   const b = keep(plan.branches, (id) => rows.has(id))
   const separate = plan.separate && separationsOf(plan.separate).filter((s) => gathering.has(separationKey(s)))
   const s = separate?.length !== plan.separate?.length
-  if (!p.dropped && !m.dropped && !c.dropped && !b.dropped && !s) return null
-  return { ...plan, producers: p.record!, machines: m.record!, rowCatalysts: c.record, branches: b.record, separate }
+  const noReuse = plan.noReuse?.filter((item) => items.has(item))
+  const r = noReuse?.length !== plan.noReuse?.length
+  if (!p.dropped && !m.dropped && !c.dropped && !b.dropped && !s && !r) return null
+  return {
+    ...plan,
+    producers: p.record!,
+    machines: m.record!,
+    rowCatalysts: c.record,
+    branches: b.record,
+    separate,
+    noReuse: noReuse?.length ? noReuse : undefined,
+  }
 }

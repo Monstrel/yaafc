@@ -33,6 +33,13 @@ export interface PlanNode {
   mine: boolean
   /** Catalysts the row loads unless it sets its own (a saved default's). */
   defaultCatalysts: string[]
+  /** The row takes other rows' by-products of its item first (else it makes all of it). */
+  reuse: boolean
+  /**
+   * Reuse was picked for the row (or a row of its item above it): it also takes by-products from
+   * rows that make their own, which share them with no one else.
+   */
+  reuseChosen: boolean
   /** Row that supplies a `loop` or `separate` row. */
   ref?: PlanNode
   /** For a `separate` row: the item whose row gathers it (none: the top of the plan). */
@@ -71,13 +78,31 @@ export const parentId = (id: string) => {
   return k < 0 ? null : id.slice(0, k)
 }
 
+/**
+ * Whether a row of `item` takes other rows' by-products of it first: the nearest branch pick of the
+ * item that says (on the row or above it), else the plan-wide setting. Reusing is the default.
+ */
+export function reusesByproducts(plan: Plan, item: string, id: string): boolean {
+  return reuseChosen(plan, item, id) ?? !plan.noReuse?.includes(item)
+}
+
+/** The reuse setting of the nearest branch pick of `item` that has one, on the row or above it. */
+export function reuseChosen(plan: Plan, item: string, id: string): boolean | undefined {
+  for (let at: string | null = id; at !== null; at = parentId(at)) {
+    const pick = plan.branches?.[at]
+    if (pick?.reuse !== undefined && rowItem(at) === item) return pick.reuse
+  }
+  return undefined
+}
+
 /** The item a row id is for. */
 export const rowItem = (id: string) => {
   const step = id.slice(id.lastIndexOf('/') + 1)
   return step.startsWith('with:') ? step.slice(5) : step
 }
 
-const makes = (p: Process | undefined, item: string) => !!p && (p.product === item || p.secondary.includes(item))
+const makes = (p: Process | undefined, item: string) =>
+  !!p && (p.product === item || p.secondary.includes(item) || p.outputs.some((o) => o.item === item))
 
 const knownMachine = (p: Process, machine: string | undefined) =>
   machine && p.machineOptions.some((m) => m.key === machine) ? machine : undefined
@@ -174,7 +199,20 @@ export function unfold(plan: Plan, catalog: ProcessCatalog): PlanShape {
   const pending: PlanNode[] = []
 
   const create = (item: string, id: string, depth: number, parent: PlanNode | undefined, fields: Partial<PlanNode>) => {
-    const n: PlanNode = { id, item, kind: 'import', depth, parent, ownChoice: false, mine: false, defaultCatalysts: [], children: [], ...fields }
+    const n: PlanNode = {
+      id,
+      item,
+      kind: 'import',
+      depth,
+      parent,
+      ownChoice: false,
+      mine: false,
+      defaultCatalysts: [],
+      reuse: reusesByproducts(plan, item, id),
+      reuseChosen: reuseChosen(plan, item, id) === true,
+      children: [],
+      ...fields,
+    }
     nodes.push(n)
     return n
   }

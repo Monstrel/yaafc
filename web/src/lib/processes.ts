@@ -438,6 +438,14 @@ export function buildCatalog(ctx: ProcessContext): ProcessCatalog {
   for (const p of all) byProduct.set(p.product, [...(byProduct.get(p.product) ?? []), p])
   // Multi-output processes are also offered for their side products, after the main producers.
   for (const p of all) for (const item of p.secondary) byProduct.set(item, [...(byProduct.get(item) ?? []), p])
+  // Items only ever made as a failed craft (Impure Copper Powder from the Athanor's Copper Powder)
+  // are offered from those recipes too, for rows that make their own instead of reusing them.
+  const failOnly = new Map<string, Process[]>()
+  for (const p of all)
+    for (const o of p.outputs)
+      if (o.item !== p.product && !o.item.startsWith('@') && !byProduct.has(o.item))
+        failOnly.set(o.item, [...(failOnly.get(o.item) ?? []), p])
+  for (const [item, list] of failOnly) byProduct.set(item, list)
 
   // Lower each item's reach to that of the processes making it until nothing changes (loops settle
   // on their cheapest way in). Items nothing makes and portals don't sell come from outside: tier 1.
@@ -490,9 +498,11 @@ export function defaultProducer(catalog: ProcessCatalog, item: string): string {
       options.find((p) => p.kind === 'paradox') ??
       options.find((p) => p.kind === 'recipe') ??
       options.find((p) => p.kind === 'cauldron') ??
-      // Only made as a side product (e.g. Gentian Nectar from the Gentian nursery).
-      all.find((p) => p.kind === 'nursery' || (p.kind === 'recipe' && p.machine?.key !== 'SeedPlot')) ??
-      all[0]
+      // Only made as a side product (e.g. Gentian Nectar from the Gentian nursery). Items only made
+      // by failed crafts aren't run for: they're reused, else brought in.
+      all.find(
+        (p) => p.secondary.includes(item) && (p.kind === 'nursery' || (p.kind === 'recipe' && p.machine?.key !== 'SeedPlot')),
+      ) ?? all.find((p) => p.secondary.includes(item))
     )
   }
   const all = catalog.byProduct.get(item) ?? []

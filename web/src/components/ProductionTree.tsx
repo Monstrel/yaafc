@@ -1,7 +1,7 @@
 import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { CATALYSTS, itemsByKey } from '../lib/gameData'
 import { fmt } from '../lib/format'
-import { buildingNameFor, noun } from '../lib/plural'
+import { buildingNameFor, machineNameFor, noun } from '../lib/plural'
 import { foldKey, usePersistentState } from '../lib/store'
 import type { LogisticsCheck } from '../lib/logistics'
 import type { ProcessCatalog } from '../lib/processes'
@@ -11,7 +11,7 @@ import type { ProducerPick } from '../lib/choices'
 import type { Separation } from '../lib/types'
 import { ItemIcon, ItemLabel } from './ItemIcon'
 import { Money } from './Money'
-import { ProducerSelect } from './ProducerSelect'
+import { ProducerSelect, type ReuseOption } from './ProducerSelect'
 
 interface Props {
   /** Fold state is remembered per plan. */
@@ -73,6 +73,7 @@ export function ProductionTree({
   const targets = view[0]?.id === PLAN_ROOT ? view[0].children : view
   /** What items built at the top of the plan are shown "with". */
   const topName = topAnchorName(tree)
+  const separateByproducts = useMemo(() => byproductsMadeSeparately(tree), [tree])
 
   // Every node with the ids of the branches above it, folded or not.
   const all = useMemo(() => {
@@ -252,6 +253,7 @@ export function ProductionTree({
                 <TreeRow
                   key={line.node.id}
                   topName={topName}
+                  separateByproducts={separateByproducts}
                   node={line.node}
                   depth={line.depth}
                   edges={line.edges}
@@ -341,9 +343,12 @@ function TreeRow({
   card,
   afterBranch,
   topName,
+  separateByproducts,
 }: {
   /** What items built at the top of the plan are shown "with". */
   topName: string
+  /** Per item, the rows making their own that have it as a by-product (shared only if picked). */
+  separateByproducts: Map<string, string[]>
   node: TreeNode
   depth: number
   open: boolean
@@ -390,7 +395,22 @@ function TreeRow({
   const details = [...(p?.notes ?? [])]
   if (belts?.outputCappedAt != null && node.kind === 'produce')
     details.push(`Output capped by its belt at ${fmt(belts.outputCappedAt)}/min per machine`)
-  const canChoose = !!node.producer && (catalog.byProduct.get(node.item)?.length ?? 0) > 0
+  // Rows taking by-products, or set not to, choose between reusing them and making all of the item.
+  // Rows taking by-products, set not to, or offered some by rows making their own choose between
+  // reusing them and making all of the item.
+  const separately = separateByproducts.get(node.item)
+  const reuse: ReuseOption | undefined =
+    node.fromByproduct > 0 || !node.reuse || node.reuseChosen || separately
+      ? {
+          on: node.reuse && (node.fromByproduct > 0 || node.reuseChosen),
+          covered: node.kind === 'byproduct',
+          sources:
+            node.fromByproduct > 0
+              ? node.byproductSources.map((s) => s.label).join(', ')
+              : (separately?.map((s) => `${s} (made separately)`).join(', ') ?? ''),
+        }
+      : undefined
+  const canChoose = !!node.producer && ((catalog.byProduct.get(node.item)?.length ?? 0) > 0 || !!reuse)
   const price = itemsByKey.get(node.item)?.buyPrice
   const name = itemsByKey.get(node.item)?.name ?? node.item
   const anchorName = node.separation?.anchor && itemsByKey.get(node.separation.anchor)?.name
@@ -450,10 +470,11 @@ function TreeRow({
                 item={node.item}
                 current={{ producer: node.producer, process: node.run?.process }}
                 catalog={catalog}
-                onChange={(producer, machine, everywhere) =>
-                  onProducer({ item: node.item, producer, machine, row: node.id, everywhere })
+                onChange={(producer, machine, everywhere, reuse) =>
+                  onProducer({ item: node.item, producer, machine, row: node.id, everywhere, reuse })
                 }
                 branch={{ rows, own: node.ownChoice, mine: node.mine, onReset: () => onResetProducer(node.id) }}
+                reuse={reuse}
                 compact
               />
             )}
@@ -768,9 +789,30 @@ function viewOf(tree: TreeNode[]): TreeNode[] {
     ownChoice: false,
     mine: false,
     defaultCatalysts: [],
+    reuse: true,
+    reuseChosen: false,
     children: [...targets, ...groups],
   }
   return [plan]
+}
+
+/**
+ * Per item, the rows making their own (taking no by-products) that make it as a by-product, as
+ * "Athanors making Impure Copper Powder": they share it only with rows where reuse was picked.
+ */
+function byproductsMadeSeparately(tree: TreeNode[]): Map<string, string[]> {
+  const found = new Map<string, string[]>()
+  const visit = (n: TreeNode) => {
+    if (!n.reuse)
+      for (const b of n.byproducts) {
+        const machine = n.run?.process.machine?.name
+        const what = itemsByKey.get(n.item)?.name ?? n.item
+        found.set(b.item, [...(found.get(b.item) ?? []), machine ? `${machineNameFor(machine, n.machines)} making ${what}` : what])
+      }
+    n.children.forEach(visit)
+  }
+  tree.forEach(visit)
+  return found
 }
 
 /**

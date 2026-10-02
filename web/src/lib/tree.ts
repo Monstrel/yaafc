@@ -30,6 +30,10 @@ export interface TreeNode {
   mine: boolean
   /** Catalysts the row loads unless it sets its own. */
   defaultCatalysts: string[]
+  /** The row takes other rows' by-products of its item first (else it makes all of it). */
+  reuse: boolean
+  /** Reuse was picked: the row also takes by-products from rows that make their own. */
+  reuseChosen: boolean
   /** Machines working for this row (fractional). */
   machines: number
   /** Heat this row's machines use, P/s. */
@@ -108,6 +112,8 @@ export function buildTree(roots: PlanNode[], flows: Map<PlanNode, RowFlows>, mod
       ownChoice: n.ownChoice,
       mine: n.mine,
       defaultCatalysts: n.defaultCatalysts,
+      reuse: n.reuse,
+      reuseChosen: n.reuseChosen,
       machines: 0,
       heat: 0,
       nutrients: 0,

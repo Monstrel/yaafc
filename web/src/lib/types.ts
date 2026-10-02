@@ -29,6 +29,13 @@ export interface BranchChoice {
   producer: ProducerChoice
   /** Machine to run it on, when it can run on several (else the plan-wide pick). */
   machine?: string
+  /**
+   * Whether the rows take other rows' by-products of the item first: false makes all of it with
+   * `producer`, keeping to itself; true was picked, so it also takes by-products from rows that make
+   * their own (with `producer` '' when only this was picked). Absent = as above (else the plan's
+   * `noReuse`, else reuse, but not from rows that make their own).
+   */
+  reuse?: boolean
 }
 
 export interface Plan {
@@ -61,6 +68,8 @@ export interface Plan {
   catalysts?: Record<string, string[]>
   /** Items the production tree builds separately, gathering their uses instead of a copy per branch. */
   separate?: Separation[]
+  /** Items whose rows make all of it themselves, taking no other rows' by-products (unless a branch says so). */
+  noReuse?: string[]
 }
 
 /** How far the player has got in their game: shared by every plan, since they play one game. */

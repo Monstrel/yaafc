@@ -184,7 +184,7 @@ export function solvePlan(plan: Plan, catalog: ProcessCatalog, mods: Modifiers):
   // By-product pools: what one row makes of each side output, shared out to rows of that item.
   const consumers = new Map<string, PlanNode[]>()
   for (const s of supplies)
-    if (s.kind !== 'bus') consumers.set(s.item, [...(consumers.get(s.item) ?? []), s])
+    if (s.kind !== 'bus' && s.reuse) consumers.set(s.item, [...(consumers.get(s.item) ?? []), s])
   const flows: { name: string; from: PlanNode; to: PlanNode }[] = []
 
   for (const n of shape.nodes) {
@@ -207,7 +207,9 @@ export function solvePlan(plan: Plan, catalog: ProcessCatalog, mods: Modifiers):
       equalities[pool] = 0
       add(col, pool, o.count)
       columns[`ps:${k}:${o.item}`] = { [pool]: -1, cost: SURPLUS_COST }
+      // A row making its own keeps to itself: its by-products only go where reuse was picked.
       for (const c of consumers.get(o.item) ?? []) {
+        if (!n.reuse && !c.reuseChosen) continue
         const name = `f:${k}>${index.get(c)}`
         columns[name] = { [pool]: -1, [`b:${index.get(c)}`]: 1, cost: FLOW_COST * (1 + distance(n, c)) }
         flows.push({ name, from: n, to: c })

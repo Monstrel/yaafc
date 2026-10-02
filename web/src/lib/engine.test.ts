@@ -267,6 +267,50 @@ describe('production tree', () => {
     expect(steel.overflow).toBe(0)
   })
 
+  it('lets a row make its own instead of reusing a by-product, and go back', () => {
+    const base = plan({ targets: [{ item: 'CopperIngot', rate: 37.5 }, { item: 'BronzeIngot', rate: 50 }] })
+    const impureRow = (p: Plan) => solvePlan(p, catalog, mods).tree[1].children.find((c) => c.item === 'CopperPowder')!
+    // By default the Bronze's Impure Copper Powder comes from the Copper Ingot chain's Athanors.
+    const reused = impureRow(base)
+    expect(reused.reuse).toBe(true)
+    expect(reused.fromByproduct).toBeGreaterThan(0)
+    expect(defaultProducer(catalog, 'CopperPowder')).toBe('import') // never run just for a failed craft
+
+    // Made separately: its own Athanors run Copper Powder for their failed crafts, nothing reused.
+    const own = chooseProducer(base, catalog, { item: 'CopperPowder', producer: 'recipe:CopperPowder2', row: reused.id, reuse: false })
+    const made = impureRow(own)
+    expect(made.reuse).toBe(false)
+    expect(made.fromByproduct).toBe(0)
+    expect(made.kind).toBe('produce')
+    expect(made.producer).toBe('recipe:CopperPowder2')
+    expect(made.rate).toBeCloseTo(50)
+    // It keeps to itself: its Athanors' Copper Powder isn't taken by the Copper Ingot chain, which
+    // runs its own Athanors (now overflowing their Impure Copper Powder) unless reuse is picked there.
+    const copperRow = (p: Plan) => solvePlan(p, catalog, mods).tree[0].children.find((c) => c.item === 'CopperPowder2')!
+    const pure = made.byproducts.find((b) => b.item === 'CopperPowder2')!
+    expect(pure.to).toEqual([])
+    expect(pure.overflow).toBeCloseTo(50)
+    const copper = copperRow(own)
+    expect(copper.kind).toBe('produce')
+    expect(copper.fromByproduct).toBe(0)
+    expect(copper.byproducts.find((b) => b.item === 'CopperPowder')!.overflow).toBeGreaterThan(0)
+
+    // Picking reuse on the Copper Ingot side takes them after all.
+    const linked = chooseProducer(own, catalog, { item: 'CopperPowder2', producer: '', row: copper.id, reuse: true })
+    expect(copperRow(linked).reuseChosen).toBe(true)
+    expect(copperRow(linked).fromByproduct).toBeCloseTo(37.5)
+
+    // Reuse again on the Bronze side: back to the plan as it was, the picked side reusing too.
+    const back = chooseProducer(own, catalog, { item: 'CopperPowder', producer: '', row: reused.id, reuse: true })
+    expect(back.branches).toEqual({ [reused.id]: { producer: '', reuse: true } })
+    expect(impureRow(back).fromByproduct).toBeCloseTo(reused.fromByproduct)
+    // Everywhere: every row of the item makes its own, and back.
+    const all = chooseProducer(base, catalog, { item: 'CopperPowder', producer: 'import', everywhere: true, reuse: false })
+    expect(all.noReuse).toEqual(['CopperPowder'])
+    expect(impureRow(all).reuse).toBe(false)
+    expect(chooseProducer(all, catalog, { item: 'CopperPowder', producer: '', everywhere: true, reuse: true }).noReuse).toBeUndefined()
+  })
+
   it('feeds a by-product to the row that uses it nearest its source', () => {
     // Steel fails into Iron Ingots, which go straight back into the Steel's own Iron Ingot supply.
     const [steel] = solvePlan(plan({ targets: [{ item: 'SteelIngot', rate: 10 }] }), catalog, mods).tree
