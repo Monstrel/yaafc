@@ -22,7 +22,7 @@ import {
 } from '../lib/gameData'
 import { fmt } from '../lib/format'
 import { checkLogistics, type LogisticsCheck } from '../lib/logistics'
-import type { ProcessCatalog } from '../lib/processes'
+import { processTitle, type ProcessCatalog } from '../lib/processes'
 import type { PlanModel } from '../lib/planModel'
 import {
   chooseProducer,
@@ -728,7 +728,7 @@ function MyDefaultsPanel({
                   ? 'bought'
                   : !p
                     ? 'recipe no longer available'
-                    : [p.kind === 'cauldron' ? (p.name ?? 'saved mix') : (machine ?? p.label), p.alternate ? 'alt' : '']
+                    : [p.kind === 'cauldron' ? processTitle(p) : (machine ?? p.label), p.alternate ? 'alt' : '']
                         .filter(Boolean)
                         .join(' · ')
               return (

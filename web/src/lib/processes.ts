@@ -511,10 +511,10 @@ export const sameRecipe = (a: Process, b: Process) => a.id === b.id && a.machine
 
 /**
  * Short name for a producer option shown next to its product: the machine, or what sets the
- * option apart (the fuel burned, a saved mix's name, the World Tree's stage).
+ * option apart (the fuel burned, a saved mix's name or what it makes, the World Tree's stage).
  */
 export function processTitle(p: Process): string {
-  if (p.kind === 'cauldron') return p.name || 'Saved mix'
+  if (p.kind === 'cauldron') return p.name || `${p.machine?.name ?? 'Cauldron'}: ${itemName(p.product)}`
   if (p.kind === 'fuel' || p.kind === 'fertilizer') return itemName(p.inputs[0]?.item ?? '')
   const machine = p.machine?.name ?? p.label
   const stage = p.kind === 'nursery' ? p.id.match(/TreeStage(\d)$/)?.[1] : undefined
