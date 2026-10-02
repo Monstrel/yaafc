@@ -2,6 +2,7 @@ import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useStat
 import { CATALYSTS, coinValue, itemsByKey } from '../lib/gameData'
 import { fmt } from '../lib/format'
 import { buildingNameFor, machineNameFor, noun } from '../lib/plural'
+import { sanitizeStrings } from '../lib/sanitize'
 import { foldKey, usePersistentState } from '../lib/store'
 import type { Resource } from '../lib/ledger'
 import type { LogisticsCheck } from '../lib/logistics'
@@ -66,7 +67,7 @@ export function ProductionTree({
 }: Props) {
   const rounded = useMemo(() => new Set(roundUp), [roundUp])
   // Folded rows survive leaving the planner and reloads (row ids are stable paths).
-  const [collapsedIds, setCollapsedIds] = usePersistentState<string[]>(foldKey(planId), [])
+  const [collapsedIds, setCollapsedIds] = usePersistentState<string[]>(foldKey(planId), [], sanitizeStrings)
   const collapsed = useMemo(() => new Set(collapsedIds), [collapsedIds])
   const setCollapsed = (next: Set<string> | ((c: Set<string>) => Set<string>)) =>
     setCollapsedIds((ids) => {

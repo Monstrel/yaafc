@@ -15,6 +15,7 @@ import {
   type IngredientPrefs,
   type ItemGroup,
 } from '../lib/itemGroups'
+import { sanitizePrefs } from '../lib/sanitize'
 import { usePersistentState } from '../lib/store'
 import type { SavedRecipe } from '../lib/types'
 
@@ -35,7 +36,7 @@ export function CauldronPage({ saved, onToggleSave, planGroups }: Props) {
   const [mustInclude, setMustInclude] = useState<string | null>(null)
   const [sort, setSort] = useState<'offset' | 'cost'>('cost')
   const [page, setPage] = useState(0)
-  const [prefs, setPrefs] = usePersistentState<IngredientPrefs>('ingredient-prefs', emptyPrefs)
+  const [prefs, setPrefs] = usePersistentState<IngredientPrefs>('ingredient-prefs', emptyPrefs, sanitizePrefs)
   const preferred = useMemo(() => new Set(prefs.prefer), [prefs.prefer])
   const groups = useMemo(() => [...planGroups, ...builtinGroups], [planGroups])
 

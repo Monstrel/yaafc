@@ -44,6 +44,12 @@ function next() {
   worker.postMessage(request)
 }
 
+/** The fertilizer feeding a plan's nurseries. */
+export function planFertilizer(plan: Plan): string {
+  const choice = plan.producers[NUTRIENTS]
+  return choice?.startsWith('fert:') ? choice.slice(5) : 'BasicFertilizer'
+}
+
 export interface PlanModel {
   mods: Modifiers
   catalog: ProcessCatalog
@@ -56,8 +62,7 @@ export interface PlanModel {
  */
 export function usePlanModel(plan: Plan, progress: Progress, saved: SavedRecipe[], mine: MyDefaults): PlanModel {
   const mods = useMemo(() => modifiers(progress.upgrades, plan.coinStack), [progress.upgrades, plan.coinStack])
-  const fertChoice = plan.producers[NUTRIENTS]
-  const fertilizer = fertChoice?.startsWith('fert:') ? fertChoice.slice(5) : 'BasicFertilizer'
+  const fertilizer = planFertilizer(plan)
   const context = useMemo<ProcessContext>(
     () => ({ saved, machines: plan.machines, mods, fertilizer, tier: progress.tier, mine }),
     [saved, plan.machines, mods, fertilizer, progress.tier, mine],

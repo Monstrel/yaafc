@@ -14,7 +14,10 @@ import {
   useBackup,
   usePersistentState,
   withoutLegacyProgress,
+  type Backup,
 } from './lib/store'
+import { mergeBackup } from './lib/importPlans'
+import { oneOf, sanitizeMyDefaults, sanitizePlans, sanitizeProgress, sanitizeSavedRecipes, sanitizeString } from './lib/sanitize'
 import type { MyDefaults, Plan, Progress, SavedRecipe } from './lib/types'
 import { useUpdateAvailable } from './lib/updateCheck'
 import { CauldronPage } from './pages/CauldronPage'
@@ -25,16 +28,17 @@ import { SavedPage } from './pages/SavedPage'
 type Tab = 'home' | 'cauldron' | 'saved' | 'planner'
 
 export default function App() {
-  const [tab, setTab] = usePersistentState<Tab>('tab', 'home')
-  const [saved, setSaved] = usePersistentState<SavedRecipe[]>('saved-recipes', [])
-  const [plans, setPlans] = usePersistentState<Plan[]>('plans', () => [emptyPlan('My factory')])
-  const [activePlanId, setActivePlanId] = usePersistentState<string>('active-plan', '')
-  const [myDefaults, setMyDefaults] = usePersistentState<MyDefaults>('my-defaults', {})
+  const [tab, setTab] = usePersistentState<Tab>('tab', 'home', oneOf('home', 'cauldron', 'saved', 'planner'))
+  const [saved, setSaved] = usePersistentState<SavedRecipe[]>('saved-recipes', [], (v) => sanitizeSavedRecipes(v, newId))
+  const [plans, setPlans] = usePersistentState<Plan[]>('plans', () => [emptyPlan('My factory')], (v) => sanitizePlans(v, newId))
+  const [activePlanId, setActivePlanId] = usePersistentState<string>('active-plan', '', sanitizeString)
+  const [myDefaults, setMyDefaults] = usePersistentState<MyDefaults>('my-defaults', {}, sanitizeMyDefaults)
   // One game, so one set of upgrades for every plan. Plans saved before that each had their own:
   // start from the open plan's, then drop them from the plans.
   const [progress, setProgress] = usePersistentState<Progress>(
     'progress',
     () => legacyProgress(plans, activePlanId) ?? { upgrades: {} },
+    sanitizeProgress,
   )
   useEffect(() => {
     if (plans.some((p) => withoutLegacyProgress(p) !== p)) setPlans((ps) => ps.map(withoutLegacyProgress))
@@ -68,22 +72,46 @@ export default function App() {
     )
   }
 
-  const restore = async (file: File) => {
+  // A file read for importing, waiting on the player to add it or replace everything with it.
+  const [pending, setPending] = useState<{ name: string; backup: Backup } | null>(null)
+  const importDialog = useRef<HTMLDialogElement>(null)
+  useEffect(() => {
+    if (pending) importDialog.current?.showModal()
+  }, [pending])
+
+  const openFile = async (file: File) => {
     try {
-      const backup = await readBackup(file)
-      setSaved(backup.savedRecipes)
-      if (backup.myDefaults) setMyDefaults(backup.myDefaults)
-      if (backup.progress) setProgress(backup.progress)
-      if (backup.plans.length) {
-        setPlans(backup.plans)
-        setActivePlanId(backup.plans[0].id)
-      }
-      const recipes = backup.savedRecipes.length
-      const plans = backup.plans.length
-      setStatus(`Restored ${recipes} ${noun(recipes, 'recipe')} and ${plans} ${noun(plans, 'plan')}.`)
+      setPending({ name: file.name, backup: await readBackup(file) })
     } catch (e) {
-      setStatus(`Could not restore: ${(e as Error).message}`)
+      setStatus(`Could not import: ${(e as Error).message}`)
     }
+  }
+
+  const importFile = (how: ImportChoice) => {
+    importDialog.current?.close()
+    if (!pending || how === 'cancel') return
+    const { backup } = pending
+    if (how === 'add') {
+      const merged = mergeBackup({ saved, plans }, backup, newId)
+      setSaved(merged.saved)
+      setPlans(merged.plans)
+      if (merged.added.length) setActivePlanId(merged.added[0].id)
+      const plansAdded = merged.added.length
+      setStatus(
+        `Added ${plansAdded} ${noun(plansAdded, 'plan')} and ${merged.addedRecipes} new saved ${noun(merged.addedRecipes, 'recipe')}.`,
+      )
+      return
+    }
+    setSaved(backup.savedRecipes)
+    if (backup.myDefaults) setMyDefaults(backup.myDefaults)
+    if (backup.progress) setProgress(backup.progress)
+    if (backup.plans.length) {
+      setPlans(backup.plans)
+      setActivePlanId(backup.plans[0].id)
+    }
+    const recipes = backup.savedRecipes.length
+    const plansRestored = backup.plans.length
+    setStatus(`Restored ${recipes} ${noun(recipes, 'recipe')} and ${plansRestored} ${noun(plansRestored, 'plan')}.`)
   }
 
   return (
@@ -113,7 +141,7 @@ export default function App() {
           <button onClick={downloadBackup} title="Download saved recipes, plans and your default recipes">
             Export
           </button>
-          <button onClick={() => fileInput.current?.click()} title="Restore from an exported file">
+          <button onClick={() => fileInput.current?.click()} title="Add plans from an exported file, or restore a backup">
             Import
           </button>
           <input
@@ -123,12 +151,16 @@ export default function App() {
             hidden
             onChange={(e) => {
               const f = e.target.files?.[0]
-              if (f) void restore(f)
+              if (f) void openFile(f)
               e.target.value = ''
             }}
           />
         </div>
       </header>
+
+      <dialog ref={importDialog} className="tree-dialog" onClose={() => setPending(null)}>
+        {pending && <ImportChoices name={pending.name} backup={pending.backup} onChoose={importFile} />}
+      </dialog>
 
       {updateAvailable && (
         <div className="toast update-banner" role="status">
@@ -185,5 +217,36 @@ export default function App() {
         Game data extracted from Alchemy Factory Steam build {gameVersion.steamBuildId ?? '?'} ({gameVersion.pakDate ?? '?'}).
       </footer>
     </div>
+  )
+}
+
+type ImportChoice = 'add' | 'replace' | 'cancel'
+
+function ImportChoices({ name, backup, onChoose }: { name: string; backup: Backup; onChoose: (how: ImportChoice) => void }) {
+  const plans = backup.plans.length
+  const recipes = backup.savedRecipes.length
+  return (
+    <>
+      <h3>Import {name}?</h3>
+      <p>
+        It has {plans} {noun(plans, 'plan')} and {recipes} saved {noun(recipes, 'recipe')}.
+      </p>
+      <p>
+        <strong>Add to mine</strong> puts its plans and saved recipes next to yours, keeping your upgrades and default
+        recipes. <strong>Replace everything</strong> swaps all of your plans, saved recipes, upgrades and defaults for
+        the file&apos;s, to restore a backup of your own.
+      </p>
+      <div className="tree-dialog-actions">
+        <button type="button" className="primary" autoFocus onClick={() => onChoose('add')} disabled={!plans && !recipes}>
+          Add to mine
+        </button>
+        <button type="button" className="danger" onClick={() => onChoose('replace')}>
+          Replace everything
+        </button>
+        <button type="button" onClick={() => onChoose('cancel')}>
+          Cancel
+        </button>
+      </div>
+    </>
   )
 }

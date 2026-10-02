@@ -2341,3 +2341,23 @@ tr.kind-separate .item-label .name {
   align-items: center;
   gap: 4px;
 }
+
+.crash {
+  margin-top: 32px;
+}
+
+.crash pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: var(--red);
+}
+
+.crash-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

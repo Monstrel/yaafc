@@ -1,15 +1,22 @@
 import { useCallback, useEffect, useState } from 'react'
+import { sanitizeMyDefaults, sanitizePlans, sanitizeProgress, sanitizeSavedRecipes } from './sanitize'
 import type { MyDefaults, Plan, Progress, SavedRecipe } from './types'
 
 const PREFIX = 'alchemy-calculator:'
 
-function read<T>(key: string, fallback: T): T {
+/** What a key holds, parsed but unchecked (undefined when missing or unreadable). */
+function readRaw(key: string): unknown {
   try {
     const raw = localStorage.getItem(PREFIX + key)
-    return raw ? (JSON.parse(raw) as T) : fallback
+    return raw ? JSON.parse(raw) : undefined
   } catch {
-    return fallback
+    return undefined
   }
+}
+
+function read<T>(key: string, fallback: T, sanitize: (v: unknown) => T | undefined): T {
+  const raw = readRaw(key)
+  return raw === undefined ? fallback : (sanitize(raw) ?? fallback)
 }
 
 function write(key: string, value: unknown) {
@@ -20,9 +27,14 @@ function write(key: string, value: unknown) {
   }
 }
 
-/** useState that survives reloads via localStorage. */
-export function usePersistentState<T>(key: string, initial: T | (() => T)) {
-  const [value, setValue] = useState<T>(() => read(key, typeof initial === 'function' ? (initial as () => T)() : initial))
+/**
+ * useState that survives reloads via localStorage. `sanitize` checks what was stored (it may be
+ * from an older version, or edited by hand) and returns undefined to start from `initial` instead.
+ */
+export function usePersistentState<T>(key: string, initial: T | (() => T), sanitize: (v: unknown) => T | undefined) {
+  const [value, setValue] = useState<T>(() =>
+    read(key, typeof initial === 'function' ? (initial as () => T)() : initial, sanitize),
+  )
   useEffect(() => write(key, value), [key, value])
   return [value, setValue] as const
 }
@@ -73,27 +85,69 @@ export interface Backup {
   myDefaults?: MyDefaults
 }
 
+function downloadJson(data: unknown, name: string) {
+  const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${name}-${new Date().toISOString().slice(0, 10)}.json`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 /** Download everything as a JSON file (saved recipes + plans). */
 export function useBackup(savedRecipes: SavedRecipe[], plans: Plan[], progress: Progress, myDefaults: MyDefaults) {
   return useCallback(() => {
     const backup: Backup = { version: 1, savedRecipes, plans, progress, myDefaults }
-    const url = URL.createObjectURL(new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' }))
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `alchemy-calculator-${new Date().toISOString().slice(0, 10)}.json`
-    a.click()
-    URL.revokeObjectURL(url)
+    downloadJson(backup, 'alchemy-calculator')
   }, [savedRecipes, plans, progress, myDefaults])
 }
 
+/**
+ * Download what storage holds, as is, in the backup layout: for when the app can't start, so
+ * nothing is lost by starting over.
+ */
+export function downloadStoredData() {
+  downloadJson(
+    {
+      version: 1,
+      savedRecipes: readRaw('saved-recipes') ?? [],
+      plans: readRaw('plans') ?? [],
+      progress: readRaw('progress'),
+      myDefaults: readRaw('my-defaults'),
+    },
+    'alchemy-calculator-rescue',
+  )
+}
+
+/** Drops everything the app keeps in storage. */
+export function clearStoredData() {
+  try {
+    for (const key of Object.keys(localStorage)) if (key.startsWith(PREFIX)) localStorage.removeItem(key)
+  } catch {
+    // Storage blocked: nothing to drop.
+  }
+}
+
+/** Reads a backup file, keeping only the parts that fit (see sanitize.ts). */
 export async function readBackup(file: File): Promise<Backup> {
-  const parsed = JSON.parse(await file.text()) as Partial<Backup>
-  if (!Array.isArray(parsed.savedRecipes) || !Array.isArray(parsed.plans)) throw new Error('Not an Alchemy Calculator backup file')
+  return parseBackup(await file.text())
+}
+
+export function parseBackup(text: string): Backup {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    throw new Error('Not an Alchemy Calculator backup file')
+  }
+  const fields = (parsed ?? {}) as Partial<Record<keyof Backup, unknown>>
+  if (!Array.isArray(fields.savedRecipes) || !Array.isArray(fields.plans)) throw new Error('Not an Alchemy Calculator backup file')
+  const plans = sanitizePlans(fields.plans, newId) ?? []
   return {
     version: 1,
-    savedRecipes: parsed.savedRecipes,
-    plans: parsed.plans.map(withoutLegacyProgress),
-    progress: parsed.progress ?? legacyProgress(parsed.plans),
-    myDefaults: parsed.myDefaults,
+    savedRecipes: sanitizeSavedRecipes(fields.savedRecipes, newId) ?? [],
+    plans: plans.map(withoutLegacyProgress),
+    progress: sanitizeProgress(fields.progress) ?? legacyProgress(plans),
+    myDefaults: sanitizeMyDefaults(fields.myDefaults),
   }
 }
