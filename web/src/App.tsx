@@ -68,15 +68,6 @@ export default function App() {
     )
   }
 
-  const useInPlanner = (recipe: SavedRecipe) => {
-    updatePlan((p) => ({
-      ...p,
-      producers: { ...p.producers, [recipe.output]: `cauldron:${recipe.id}` },
-      targets: p.targets.some((t) => t.item === recipe.output) ? p.targets : [...p.targets, { item: recipe.output, rate: 10 }],
-    }))
-    setTab('planner')
-  }
-
   const restore = async (file: File) => {
     try {
       const backup = await readBackup(file)
@@ -158,9 +149,7 @@ export default function App() {
         <SavedPage
           saved={saved}
           onUpdate={(id, patch) => setSaved((list) => list.map((s) => (s.id === id ? { ...s, ...patch } : s)))}
-          onRemove={(id) => setSaved((list) => list.filter((s) => s.id !== id))}
-          onUseInPlanner={useInPlanner}
-        />
+          onRemove={(id) => setSaved((list) => list.filter((s) => s.id !== id))}        />
       )}
       {tab === 'planner' && (
         <PlannerPage

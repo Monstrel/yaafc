@@ -8,7 +8,8 @@ cauldron recipes as steps in production chains, including self-feeding loops.
   (ranked first, or the only ones allowed) or avoided (never used), one at a time or by preset.
   The presets are Nursery-grown and Portal goods (each ± one processing step), Cauldron products,
   the in-game categories, and what your active plan makes or overflows.
-- **Saved recipes**: name and annotate them, then "Use in planner".
+- **Saved recipes**: a table of your starred mixes, with names and notes. Each one is offered as
+  a ★ producer for its item in the planner.
 - **Planner**: set targets in items/min. The planner works backward to every step's rate and
   (fractional) machine count, and shows it as a foldable production tree. Any step's producer can
   be a game recipe, a nursery, a saved ★ cauldron recipe, or a purchase, picked per branch (a

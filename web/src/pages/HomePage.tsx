@@ -29,7 +29,8 @@ export function HomePage({ onNavigate }: Props) {
         <article className="panel mode-normal">
           <h3>Saved recipes</h3>
           <p>
-            Your starred mixes. Name and annotate them, and send one to the planner with &ldquo;Use in planner&rdquo;.
+            Your starred mixes, in a table. Name them and keep notes; each one becomes a producer you can pick in the
+            planner.
           </p>
           <button onClick={() => onNavigate('saved')}>Open Saved recipes</button>
         </article>
@@ -52,8 +53,8 @@ export function HomePage({ onNavigate }: Props) {
             ones worth keeping.
           </li>
           <li>
-            <strong>Send it to a plan.</strong> On Saved recipes, click &ldquo;Use in planner&rdquo;. The recipe becomes
-            that item&apos;s producer and the item is added as a target.
+            <strong>Use it in a plan.</strong> In the Planner&apos;s production tree, open the producer menu on a row of
+            the item and pick your saved recipe (★).
           </li>
           <li>
             <strong>Size the chain.</strong> In the Planner, set target rates, choose producers for the ingredients, and

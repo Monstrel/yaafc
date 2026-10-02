@@ -829,31 +829,53 @@ td.under {
 
 /* ---------- saved page ---------- */
 
-.saved-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 14px;
+.saved-table td {
+  vertical-align: middle;
 }
 
-.saved-card {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  border-top: 3px solid var(--accent);
-}
-
-.saved-card header {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-}
-
-.saved-card .title {
-  flex: 1;
+.saved-name {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-width: 0;
+  min-width: 200px;
+}
+
+.saved-ingredients {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+}
+
+.saved-actions {
+  white-space: nowrap;
+  text-align: right;
+}
+
+.saved-actions button + button {
+  margin-left: 6px;
+}
+
+.saved-actions .has-note {
+  border-color: var(--accent);
+}
+
+.note-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: middle;
+}
+
+/* The open recipe and its notes read as one block. */
+.saved-table tr.notes-open td {
+  border-bottom: none;
+}
+
+.saved-table .note {
+  width: 100%;
 }
 
 .inline-edit {
@@ -877,20 +899,9 @@ td.under {
   white-space: nowrap;
 }
 
-.saved-card .ingredients {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
 .note {
   min-height: 48px;
   resize: vertical;
-}
-
-.saved-card footer {
-  display: flex;
-  justify-content: space-between;
 }
 
 /* ---------- planner ---------- */
