@@ -1,6 +1,7 @@
 import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { CATALYSTS, itemsByKey } from '../lib/gameData'
 import { fmt } from '../lib/format'
+import { buildingNameFor, noun } from '../lib/plural'
 import { foldKey, usePersistentState } from '../lib/store'
 import type { LogisticsCheck } from '../lib/logistics'
 import type { ProcessCatalog } from '../lib/processes'
@@ -531,7 +532,7 @@ function TreeRow({
                       node,
                       `uses:${b.item}`,
                       (n) => n.byproductSources.some((s) => s.id === node.id),
-                      <ItemLabel item={b.item} count={fmt(b.count)} size={16} />,
+                      <ItemLabel item={b.item} count={b.count} size={16} />,
                       `Show where ${itemsByKey.get(b.item)?.name ?? b.item} is used`,
                     )}
                     {(unused.get(b.item) ?? 0) > 0 && (
@@ -552,7 +553,7 @@ function TreeRow({
                   </span>
                 ))}
                 <span className={limited ? 'belt-limited' : ''}>
-                  ({belts.inputBeltsNeeded} of {belts.beltIn} inputs)
+                  ({belts.inputBeltsNeeded} of {belts.beltIn} {noun(belts.beltIn, 'input')})
                 </span>
               </div>
             )}
@@ -568,7 +569,7 @@ function TreeRow({
                 → {belts.utilization > 0 ? fmt(node.machines / belts.utilization) : '∞'} (belts)
               </div>
             )}
-            <div className="machine-meta">{p.machine.name}</div>
+            <div className="machine-meta">{buildingNameFor(p.machine.key, node.machines)}</div>
           </>
         )}
       </td>

@@ -6,6 +6,7 @@ import { cauldronStats, evaluate, findRecipes, recipeSignature, type CauldronMod
 import { cauldronIngredients, cauldronTargets, itemsByKey } from '../lib/gameData'
 import { diagnoseNoResults, type FinderQuery } from '../lib/diagnose'
 import { fmt, fmtSeconds } from '../lib/format'
+import { noun } from '../lib/plural'
 import {
   allowedIngredients,
   builtinGroups,
@@ -152,7 +153,7 @@ export function CauldronPage({ saved, onToggleSave, planGroups }: Props) {
           {targetItem && stats && (
             <p className="hint">
               {targetItem.name}: target value {fmt(targetItem.cauldronTarget)} · {fmtSeconds(stats.seconds)} per craft ·{' '}
-              {fmt(stats.heatPerSecond)} P/s · {found.length.toLocaleString()} recipes
+              {fmt(stats.heatPerSecond)} P/s · {found.length.toLocaleString()} {noun(found.length, 'recipe')}
             </p>
           )}
 
@@ -239,7 +240,7 @@ function NoResults({ target, mode, prefs, mustInclude, onApply }: FinderQuery & 
         <div className="fixes">
           {fixes.map((f) => (
             <button type="button" key={f.label} className="compact-button" onClick={() => onApply(f.query)}>
-              {f.label} <span className="hint-inline">· {f.count.toLocaleString()} recipes</span>
+              {f.label} <span className="hint-inline">· {f.count.toLocaleString()} {noun(f.count, 'recipe')}</span>
             </button>
           ))}
         </div>

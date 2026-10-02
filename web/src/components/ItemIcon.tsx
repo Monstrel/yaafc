@@ -1,4 +1,6 @@
 import { HEAT, NUTRIENTS, iconUrl, itemName, itemsByKey, realItem } from '../lib/gameData'
+import { fmt } from '../lib/format'
+import { itemNameFor } from '../lib/plural'
 
 const PSEUDO_GLYPH: Record<string, string> = { [HEAT]: '🔥', [NUTRIENTS]: '🌱' }
 
@@ -18,13 +20,13 @@ export function ItemIcon({ item, size = 24 }: { item: string; size?: number }) {
   )
 }
 
-/** Icon + name, optionally with a count in front ("12 × Flax"). */
-export function ItemLabel({ item, count, size = 20 }: { item: string; count?: string; size?: number }) {
+/** Icon + name, optionally with a count in front ("12 Iron Ingots", "12 Coal"). */
+export function ItemLabel({ item, count, size = 20 }: { item: string; count?: number; size?: number }) {
   return (
     <span className="item-label" title={itemName(item)}>
       <ItemIcon item={item} size={size} />
-      {count !== undefined && <span className="count">{count}</span>}
-      <span className="name">{itemName(item)}</span>
+      {count !== undefined && <span className="count">{fmt(count)}</span>}
+      <span className="name">{count === undefined ? itemName(item) : itemNameFor(item, count)}</span>
     </span>
   )
 }

@@ -24,6 +24,7 @@ import {
   type Machine,
   type Stack,
 } from './gameData'
+import { noun } from './plural'
 import { itemsPerSlot } from './machineRate'
 import type { MyDefaults, SavedRecipe } from './types'
 import type { Modifiers } from './upgrades'
@@ -143,7 +144,7 @@ function recipeProcess(r: GameRecipe, ctx: ProcessContext): Process {
   if (catalysts.length) {
     const effects = catalysts.map((c) => c.effect[0].toUpperCase() + c.effect.slice(1)).join(' + ')
     const extras = [has('fertile') ? 'output ×2' : '', has('eternal') ? 'no materials used' : ''].filter(Boolean)
-    const charges = `${r.catalystCost} charge${r.catalystCost === 1 ? '' : 's'} per craft from each`
+    const charges = `${r.catalystCost} ${noun(r.catalystCost, 'charge')} per craft from each`
     notes.push(`${effects}: ${[...extras, charges].join(' · ')}`)
   }
 

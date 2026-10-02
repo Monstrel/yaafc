@@ -64,7 +64,9 @@ export function diagnoseNoResults(q: FinderQuery): Diagnosis {
     reason =
       unfiltered === 0
         ? `No combination of ingredients makes ${target} in the ${MODE_NAME[q.mode]}.`
-        : `${target} has ${unfiltered.toLocaleString()} recipes, but none of them fit all of your filters at once.`
+        : unfiltered === 1
+          ? `${target} has 1 recipe, but it doesn't fit all of your filters at once.`
+          : `${target} has ${unfiltered.toLocaleString()} recipes, but none of them fit all of your filters at once.`
     candidates = [
       ...(prefs.onlyPreferred ? [allowAll] : []),
       ...(prefs.avoid.length > 0 ? [clearAvoided] : []),

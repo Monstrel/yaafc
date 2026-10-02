@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
 import { fmt, fmtSeconds } from '../lib/format'
 import { HEAT, buildingsByKey, buyTier, iconUrl, itemName, itemsByKey, tierIcon, tierName, type Item, type Stack } from '../lib/gameData'
+import { itemNameFor } from '../lib/plural'
 import {
   DEFAULT_PARADOX_INPUT,
   PARADOX_CRUCIBLE,
@@ -25,7 +26,7 @@ const NONE = new Set<string>()
 const inputOf = (p: Process) => p.inputs.find((s) => s.item !== HEAT)?.item ?? ''
 const materials = (p: Process) => p.inputs.filter((s) => s.item !== HEAT)
 const stackKey = (s: Stack) => `${s.item}×${s.count}`
-const describe = (stacks: Stack[]) => stacks.map((s) => `${fmt(s.count)} ${itemName(s.item)}`).join(' + ')
+const describe = (stacks: Stack[]) => stacks.map((s) => `${fmt(s.count)} ${itemNameFor(s.item, s.count)}`).join(' + ')
 
 /**
  * One menu entry: a process on one of its machines, the Paradox Crucible (input picked alongside),

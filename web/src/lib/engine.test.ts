@@ -33,6 +33,7 @@ import {
 } from './choices'
 import { resolveChoice } from './unfold'
 import { separationsOf, withSeparation } from './separate'
+import { buildingNameFor, itemNameFor, noun } from './plural'
 import { BOILER_SETTINGS, boilerHeat } from './steamBoiler'
 import { legacyProgress, withoutLegacyProgress } from './store'
 import type { MyDefaults, Plan, SavedRecipe, Separation } from './types'
@@ -1122,5 +1123,42 @@ describe('my defaults', () => {
     const root = tree[0]
     expect(all(root).some((n) => n.kind === 'separate' && n.item === 'WorldTreeLeaf')).toBe(true)
     expect(rememberSetup(picked, catalog, tree, root).mine.WorldTreeLeaf).toEqual({ producer: 'nursery:TreeStage3' })
+  })
+})
+
+describe('plural names', () => {
+  it('pluralizes machines whenever the count shown is not 1', () => {
+    expect(buildingNameFor('Grinder', 1)).toBe('Grinder')
+    expect(buildingNameFor('Grinder', 1.0004)).toBe('Grinder') // shown as "1"
+    expect(buildingNameFor('Grinder', 2.5)).toBe('Grinders')
+    expect(buildingNameFor('Grinder', 0.5)).toBe('Grinders')
+    expect(buildingNameFor('AutoNursery', 3)).toBe('Nurseries')
+    expect(buildingNameFor('Portal_Output', 2)).toBe('Portals (Output)')
+    expect(buildingNameFor('SteamHeater', 2)).toBe('Steam Heating Pads')
+  })
+
+  it('pluralizes counted items and keeps measured or already-plural ones', () => {
+    expect(itemNameFor('IronIngot', 12)).toBe('Iron Ingots')
+    expect(itemNameFor('Ruby', 2)).toBe('Rubies')
+    expect(itemNameFor('Topaz', 2)).toBe('Topazes')
+    expect(itemNameFor('WorldTreeLeaf', 100)).toBe('World Tree Leaves')
+    expect(itemNameFor('WoodPulley', 2)).toBe('Wooden Pulleys')
+    expect(itemNameFor('PocketWatch', 2)).toBe('Pocket Watches')
+    expect(itemNameFor('PhilosopherStone', 2)).toBe("Philosopher's Stones")
+    expect(itemNameFor('Coal', 120)).toBe('Coal')
+    expect(itemNameFor('Wood', 3)).toBe('Logs')
+    expect(itemNameFor('Wood', 1)).toBe('Log')
+    expect(itemNameFor('Nails', 1)).toBe('Iron Nail')
+    expect(itemNameFor('FlaxSeed', 1)).toBe('Flax Seed')
+    expect(itemNameFor('WhisperingFields', 1)).toBe('Whispering Fields')
+    expect(itemNameFor('WhisperingFields', 2)).toBe('Whispering Fields')
+    expect(itemNameFor('CharcoalPowder', 3)).toBe('Charcoal Powder')
+    expect(itemNameFor(HEAT, 3)).toBe('Heat (P)')
+  })
+
+  it('pluralizes plain nouns', () => {
+    expect(noun(1, 'recipe')).toBe('recipe')
+    expect(noun(0, 'recipe')).toBe('recipes')
+    expect(noun(2, 'belt')).toBe('belts')
   })
 })

@@ -3,6 +3,7 @@ import { recipeSignature, type CauldronMode } from './lib/cauldron'
 import { planGroups } from './lib/itemGroups'
 import { usePlanModel } from './lib/planModel'
 import { gameVersion } from './lib/gameData'
+import { noun } from './lib/plural'
 import {
   emptyPlan,
   foldKey,
@@ -86,7 +87,9 @@ export default function App() {
         setPlans(backup.plans)
         setActivePlanId(backup.plans[0].id)
       }
-      setStatus(`Restored ${backup.savedRecipes.length} recipes and ${backup.plans.length} plans.`)
+      const recipes = backup.savedRecipes.length
+      const plans = backup.plans.length
+      setStatus(`Restored ${recipes} ${noun(recipes, 'recipe')} and ${plans} ${noun(plans, 'plan')}.`)
     } catch (e) {
       setStatus(`Could not restore: ${(e as Error).message}`)
     }

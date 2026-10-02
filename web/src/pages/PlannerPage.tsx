@@ -35,6 +35,7 @@ import {
 } from '../lib/choices'
 import type { PlanResult, ResolvedTarget } from '../lib/solver'
 import { separationsOf, withSeparation, withoutSeparation } from '../lib/separate'
+import { buildingNameFor, machineNameFor, noun } from '../lib/plural'
 import { BOILER_SETTINGS, boilerHeat } from '../lib/steamBoiler'
 import { IMPORT, planProducer } from '../lib/unfold'
 import type { TreeNode } from '../lib/tree'
@@ -496,17 +497,18 @@ function BoilerRoom({ bus, factorySpeed }: { bus: BusLine[]; factorySpeed: numbe
   return (
     <p className="boiler-room">
       {icon && <img src={icon} width={20} height={20} alt="" />}
-      <span>As steam, from</span>
+      <span>As steam:</span>
       {BOILER_SETTINGS.map((s, i) => {
         const each = boilerHeat(s, factorySpeed)
+        const count = Math.ceil(heat / each - 1e-9)
         return (
-          <span key={s.name} title={`${fmt(heat / each)} boilers at ${fmt(each)} P/s each`}>
+          <span key={s.name} title={`${fmt(heat / each)} at ${fmt(each)} P/s each`}>
             {i > 0 && '· '}
-            <strong>{Math.ceil(heat / each - 1e-9)}</strong> on {s.name}
+            <strong>{count}</strong> {buildingNameFor(STEAM_BOILER, count)} on {s.name}
           </span>
         )
       })}
-      <span className="hint-inline">Steam Boilers, burning the same fuel</span>
+      <span className="hint-inline">burning the same fuel</span>
     </p>
   )
 }
@@ -521,7 +523,7 @@ function BusRow({ line }: { line: BusLine }) {
   return (
     <li>
       <span className="base-kind">{line.uses.map((u) => USE_LABEL[u.kind]).join(' + ')}</span>
-      <ItemLabel item={line.item} count={fmt(line.need)} />
+      <ItemLabel item={line.item} count={line.need} />
       <span className="hint-inline">
         /min {single ? `for ${describe(line.uses[0])}` : `(${line.uses.map((u) => `${fmt(u.need)} for ${describe(u)}`).join(' + ')})`}
       </span>
@@ -585,7 +587,7 @@ function TargetRow({
         >
           <option value="items">items /min</option>
           <option value="machines" disabled={!perMachine}>
-            {resolved?.machineName ?? 'machines'}
+            {resolved?.machineName ? machineNameFor(resolved.machineName, target.rate) : 'machines'}
           </option>
         </select>
       </div>
@@ -595,7 +597,7 @@ function TargetRow({
             ? 'Bought or not made by a machine: set items /min.'
             : unit === 'machines'
               ? `= ${fmt(resolved?.rate ?? 0)} items /min (${fmt(perMachine)}/min each)`
-              : `≈ ${fmt((resolved?.rate ?? 0) / perMachine)} ${resolved?.machineName} (${fmt(perMachine)}/min each)`}
+              : `≈ ${fmt((resolved?.rate ?? 0) / perMachine)} ${machineNameFor(resolved?.machineName ?? '', (resolved?.rate ?? 0) / perMachine)} (${fmt(perMachine)}/min each)`}
         </div>
       )}
     </div>
@@ -605,8 +607,9 @@ function TargetRow({
 function LogisticsLine({ check, label }: { check: LogisticsCheck; label: string }) {
   const fed = check.utilization > 0
   let reason: string
-  if (!fed) reason = `needs ${check.inputs.length} different ingredients but has only ${check.beltIn} input belts`
-  else reason = `needs ${check.inputBeltsNeeded} input belts, has ${check.beltIn}`
+  const belts = (n: number) => `${n} input ${noun(n, 'belt')}`
+  if (!fed) reason = `needs ${check.inputs.length} different ingredients but has only ${belts(check.beltIn)}`
+  else reason = `needs ${belts(check.inputBeltsNeeded)}, has ${check.beltIn}`
   return (
     <li>
       <div>
@@ -616,7 +619,8 @@ function LogisticsLine({ check, label }: { check: LogisticsCheck; label: string 
             {' '}
             → runs at {Math.round(check.utilization * 100)}% ·{' '}
             <span className="belt-limited">
-              {fmt(check.machinesNeeded)} machines instead of {fmt(check.machines)}
+              {fmt(check.machinesNeeded)} {machineNameFor(check.machineName, check.machinesNeeded)} instead of{' '}
+              {fmt(check.machines)}
             </span>
           </>
         )}
@@ -629,7 +633,7 @@ function LogisticsLine({ check, label }: { check: LogisticsCheck; label: string 
         ))}
         {check.inputs.length > 0 && (
           <span>
-            {check.inputBeltsNeeded} of {check.beltIn} inputs at full speed
+            {check.inputBeltsNeeded} of {check.beltIn} {noun(check.beltIn, 'input')} at full speed
           </span>
         )}
       </div>
