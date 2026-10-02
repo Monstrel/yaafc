@@ -166,7 +166,10 @@ export function pruneChoices(plan: Plan, catalog: ProcessCatalog): Plan | null {
     const kept = Object.fromEntries(Object.entries(record).filter(([k]) => test(k)))
     return { record: kept, dropped: Object.keys(kept).length !== Object.keys(record).length }
   }
-  const p = keep(plan.producers, (item) => item === HEAT || item === NUTRIENTS || items.has(item))
+  // Fuel and fertilizer picks stay while they still exist (Steam stopped being a fuel).
+  const p = keep(plan.producers, (item) =>
+    item === HEAT || item === NUTRIENTS ? catalog.byId.has(plan.producers[item]) : items.has(item),
+  )
   const m = keep(plan.machines, (id) => processes.has(id))
   // Catalysts stay with a row only while its machines can take them.
   const loadable = new Set(nodes.flatMap((n) => (n.process?.acceptsCatalysts ? [n.id] : [])))

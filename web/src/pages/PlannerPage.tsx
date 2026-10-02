@@ -9,6 +9,7 @@ import {
   HEAT,
   MAX_TIER,
   NUTRIENTS,
+  buildingsByKey,
   buyTier,
   iconUrl,
   itemName,
@@ -34,6 +35,7 @@ import {
 } from '../lib/choices'
 import type { PlanResult, ResolvedTarget } from '../lib/solver'
 import { separationsOf, withSeparation, withoutSeparation } from '../lib/separate'
+import { BOILER_SETTINGS, boilerHeat } from '../lib/steamBoiler'
 import { IMPORT, planProducer } from '../lib/unfold'
 import type { TreeNode } from '../lib/tree'
 import type { MyDefaults, Plan, PlanTarget, Progress, Separation } from '../lib/types'
@@ -401,6 +403,7 @@ export function PlannerPage({
                       <BusRow key={line.item} line={line} />
                     ))}
                   </ul>
+                  {machineTier(STEAM_BOILER) <= catalog.tier && <BoilerRoom bus={bus} factorySpeed={mods.factorySpeed} />}
                 </section>
               )}
 
@@ -479,6 +482,34 @@ export function PlannerPage({
 }
 
 const USE_LABEL = { fuel: '🔥 Fuel', fertilizer: '🌱 Fertilizer' } as const
+
+const STEAM_BOILER = 'SteamBoiler'
+
+/**
+ * The plan's heat as steam: how many Steam Boilers on each setting carry it, burning the same fuel
+ * (steam carries heat without loss).
+ */
+function BoilerRoom({ bus, factorySpeed }: { bus: BusLine[]; factorySpeed: number }) {
+  const heat = bus.flatMap((l) => l.uses).reduce((t, u) => t + (u.kind === 'fuel' ? u.supplies : 0), 0)
+  if (heat <= 0) return null
+  const icon = iconUrl(buildingsByKey.get(STEAM_BOILER)?.icon)
+  return (
+    <p className="boiler-room">
+      {icon && <img src={icon} width={20} height={20} alt="" />}
+      <span>As steam, from</span>
+      {BOILER_SETTINGS.map((s, i) => {
+        const each = boilerHeat(s, factorySpeed)
+        return (
+          <span key={s.name} title={`${fmt(heat / each)} boilers at ${fmt(each)} P/s each`}>
+            {i > 0 && '· '}
+            <strong>{Math.ceil(heat / each - 1e-9)}</strong> on {s.name}
+          </span>
+        )
+      })}
+      <span className="hint-inline">Steam Boilers, burning the same fuel</span>
+    </p>
+  )
+}
 
 /**
  * One bus item: how much is needed (split by use when it's both fuel and fertilizer), and — with

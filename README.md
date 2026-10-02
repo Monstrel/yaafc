@@ -79,7 +79,12 @@ dotnet run -- export     # writes web/src/data/game-data.json and web/public/ico
   charges per item. Those counts come from an int32 table in the game executable. Catalysts are belt
   inputs, so they count against the Advanced Athanor's 3 input belts.
 - Nursery: one plant costs its seed's nutrient value. Growth speed = the fertilizer's nutrient speed.
-- Fuel Efficiency multiplies the heat obtained from every heat source, Steam included.
+- Fuel Efficiency multiplies the heat obtained from burned fuel. Steam isn't a fuel: a Steam Boiler
+  draws 20 P of heat per Steam from the fuel burned under it, and a Steam Heating Pad turns each
+  Steam back into 20 P, with no Fuel Efficiency. Boiler settings are native code
+  (`USteamBoilerComponent::SetBoilingPower`): Low 30 Steam / 6 s, Medium 100 / 4 s, High 300 / 2 s,
+  so 100 / 500 / 3000 P/s, scaled by Factory Efficiency. The planner shows how many boilers on
+  each setting would carry the plan's heat.
 
 ### Money, fuel and fertilizer
 

@@ -336,9 +336,15 @@ function paradoxProcesses(mods: Modifiers): Process[] {
   })
 }
 
+/**
+ * Steam has a heat value, but it isn't a fuel: boilers make it from the heat of a burned fuel and
+ * heating pads turn it back (see steamBoiler.ts), so the plan's fuel is what the boilers burn.
+ */
+const NOT_FUEL = new Set(['Steam'])
+
 function fuelProcesses(mods: Modifiers): Process[] {
   return items
-    .filter((i) => i.heatValue > 0)
+    .filter((i) => i.heatValue > 0 && !NOT_FUEL.has(i.key))
     .map((i) => ({
       id: `fuel:${i.key}`,
       kind: 'fuel' as const,
@@ -465,11 +471,10 @@ export function buildCatalog(ctx: ProcessContext): ProcessCatalog {
  */
 export function defaultProducer(catalog: ProcessCatalog, item: string): string {
   const open = (p: Process | undefined): p is Process => !!p && catalog.reach(p) <= catalog.tier
-  // Steam once there are boilers, else the unlocked fuel with the most heat per item.
+  // The unlocked fuel with the most heat per item.
   if (item === HEAT) {
-    const steam = catalog.byId.get('fuel:Steam')
-    const fuels = (catalog.byProduct.get(HEAT) ?? []).filter(open).sort((a, b) => b.outputs[0].count - a.outputs[0].count)
-    return (open(steam) ? steam : (fuels[0] ?? steam))?.id ?? 'import'
+    const fuels = catalog.byProduct.get(HEAT) ?? []
+    return ([...fuels].filter(open).sort((a, b) => b.outputs[0].count - a.outputs[0].count)[0] ?? fuels[0])?.id ?? 'import'
   }
   if (item === NUTRIENTS) {
     const list = catalog.byProduct.get(item) ?? []

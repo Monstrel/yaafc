@@ -33,6 +33,7 @@ import {
 } from './choices'
 import { resolveChoice } from './unfold'
 import { separationsOf, withSeparation } from './separate'
+import { BOILER_SETTINGS, boilerHeat } from './steamBoiler'
 import { legacyProgress, withoutLegacyProgress } from './store'
 import type { MyDefaults, Plan, SavedRecipe, Separation } from './types'
 import { PLANNER_UPGRADES, maxLevel, modifiers, upgradeLevel } from './upgrades'
@@ -511,7 +512,7 @@ describe('producers per branch', () => {
 describe('forgetting choices', () => {
   const mods = modifiers({})
   const choices = {
-    producers: { Coke: 'recipe:Coke', [HEAT]: 'fuel:x', [NUTRIENTS]: 'fert:x' },
+    producers: { Coke: 'recipe:Coke', [HEAT]: 'fuel:Coal', [NUTRIENTS]: 'fert:BasicFertilizer' },
     machines: { 'recipe:Coke': 'AdvancedAthanor' },
     rowCatalysts: { '0/Coke': ['Catalyst1'] },
   }
@@ -519,9 +520,20 @@ describe('forgetting choices', () => {
 
   it("drops picks for items and processes that left the plan, keeping fuel and fertilizer", () => {
     const pruned = pruneChoices(plan({ targets: [{ item: 'WoodBoard', rate: 1 }], ...choices }), catalog)!
-    expect(pruned.producers).toEqual({ [HEAT]: 'fuel:x', [NUTRIENTS]: 'fert:x' })
+    expect(pruned.producers).toEqual({ [HEAT]: 'fuel:Coal', [NUTRIENTS]: 'fert:BasicFertilizer' })
     expect(pruned.machines).toEqual({})
     expect(pruned.rowCatalysts).toEqual({})
+  })
+
+  it('sizes Steam Boilers from the game’s Low/Medium/High settings, scaled by Factory Efficiency', () => {
+    expect(BOILER_SETTINGS.map((s) => boilerHeat(s, 1))).toEqual([100, 500, 3000])
+    expect(boilerHeat(BOILER_SETTINGS[2], modifiers({ FactorySpeed: 4 }).factorySpeed)).toBeCloseTo(6000)
+  })
+
+  it('drops a fuel pick that is no longer a fuel (Steam)', () => {
+    const steam = plan({ targets: [{ item: 'WoodBoard', rate: 1 }], producers: { [HEAT]: 'fuel:Steam' } })
+    expect(catalog.byProduct.get(HEAT)!.map((p) => p.id)).not.toContain('fuel:Steam')
+    expect(pruneChoices(steam, catalog)!.producers).toEqual({})
   })
 
   it('keeps picks still in use', () => {
@@ -1020,7 +1032,7 @@ describe('research tiers', () => {
     expect(defaultProducer(at(3), 'Flax')).toBe('recipe:Flax') // seed plot until nurseries
     expect(defaultProducer(at(4), 'Flax')).toBe('nursery:FlaxSeed')
     expect(defaultProducer(at(1), HEAT)).toBe('fuel:WoodBoard')
-    expect(defaultProducer(at(MAX_TIER), HEAT)).toBe('fuel:Steam')
+    expect(defaultProducer(at(5), HEAT)).toBe('fuel:CokePowder') // Steam isn't a fuel, even with boilers
     // Nothing unlocked yet: still the usual recipe, flagged where it's used.
     expect(defaultProducer(at(2), 'SteelIngot')).toBe('recipe:SteelIngot')
   })
