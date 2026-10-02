@@ -941,7 +941,8 @@ td.under {
   min-width: 0;
 }
 
-.target-row input {
+/* The rate box only: not the item picker's search box. */
+.target-row > input {
   width: 80px;
 }
 
