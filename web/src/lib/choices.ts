@@ -122,15 +122,79 @@ export function rememberSetup(
   tree: TreeNode[],
   row: TreeNode,
 ): { mine: MyDefaults; plan: Plan } {
+  const { setups, covered } = setupsBelow(rowsById(tree), row)
+  const machineOf = (s: MyDefault) => machineOfSetup(catalog, s)
+  const builtIn = (item: string, s: MyDefault) => isBuiltIn(catalog, item, s)
+  const mine = { ...catalog.mine }
+  for (const [item, { setup: s }] of setups) {
+    if (builtIn(item, s)) delete mine[item]
+    else mine[item] = s
+  }
+
+  const matches = (item: string, pick: { producer: string; machine?: string }) => {
+    const s = setups.get(item)?.setup
+    return !!s && s.producer === pick.producer && machineOf(s) === machineOf(pick)
+  }
+  const underRow = (id: string) => covered.has(id)
+  const next: Plan = {
+    ...plan,
+    producers: Object.fromEntries(Object.entries(plan.producers).filter(([item, producer]) => !matches(item, { producer }))),
+    branches: without(plan.branches, (id) => underRow(id) && matches(rowItem(id), plan.branches![id])),
+    rowCatalysts: without(
+      plan.rowCatalysts,
+      (id) => underRow(id) && sameSet(plan.rowCatalysts![id], setups.get(rowItem(id))?.setup.catalysts ?? []),
+    ),
+  }
+  return { mine, plan: next }
+}
+
+/**
+ * Un-saving a default from a row of the plan: the rows following it keep being made that way, as
+ * the plan's own picks (recipe, machine, catalysts), so only other plans lose it.
+ */
+export function keepDefaultInPlan(plan: Plan, tree: TreeNode[], item: string, saved: MyDefault): Plan {
+  const branches = { ...plan.branches }
+  const rowCatalysts = { ...plan.rowCatalysts }
+  for (const n of rowsById(tree).values()) {
+    if (n.item !== item || !n.mine) continue
+    branches[n.id] = { ...branches[n.id], producer: saved.producer, ...(saved.machine && { machine: saved.machine }) }
+    if (saved.catalysts?.length && !rowCatalysts[n.id]) rowCatalysts[n.id] = [...saved.catalysts]
+  }
+  return { ...plan, branches, rowCatalysts }
+}
+
+/**
+ * Whether "Use as my default" on a row would change anything: an item below it made differently
+ * from its saved default (or saved but now made the built-in way), or a row not yet following the
+ * default it matches. When nothing would change, the row is made the saved or built-in way.
+ */
+export function rememberChanges(catalog: ProcessCatalog, rows: Map<string, TreeNode>, row: TreeNode): boolean {
+  for (const [item, { setup, node }] of setupsBelow(rows, row).setups) {
+    const saved = catalog.mine[item]
+    if (isBuiltIn(catalog, item, setup)) {
+      if (saved) return true
+    } else if (!node.mine || !saved || !sameSetup(catalog, saved, setup)) return true
+  }
+  return false
+}
+
+/** Every row of the tree by id. */
+export function rowsById(tree: TreeNode[]): Map<string, TreeNode> {
   const rows = new Map<string, TreeNode>()
   const index = (n: TreeNode) => {
     rows.set(n.id, n)
     n.children.forEach(index)
   }
   tree.forEach(index)
+  return rows
+}
 
-  // Breadth first, so the row nearest the top sets each item.
-  const setups = new Map<string, MyDefault>()
+/**
+ * How a row and everything below it is made, per item: the row nearest the top sets each item
+ * (breadth first), following separate builds to the rows that make them.
+ */
+function setupsBelow(rows: Map<string, TreeNode>, row: TreeNode) {
+  const setups = new Map<string, { setup: MyDefault; node: TreeNode }>()
   const covered = new Set<string>()
   const queue = [row]
   while (queue.length) {
@@ -145,40 +209,37 @@ export function rememberSetup(
     const p = n.run?.process
     if (n.producer && !setups.has(n.item))
       setups.set(n.item, {
-        producer: n.producer,
-        ...(p && p.machineOptions.length > 1 && p.machine && { machine: p.machine.key }),
-        ...(p?.catalysts.length && { catalysts: [...p.catalysts] }),
+        node: n,
+        setup: {
+          producer: n.producer,
+          ...(p && p.machineOptions.length > 1 && p.machine && { machine: p.machine.key }),
+          ...(p?.catalysts.length && { catalysts: [...p.catalysts] }),
+        },
       })
     queue.push(...n.children)
   }
-
-  const machineOf = (s: MyDefault) => {
-    const p = catalog.byId.get(s.producer)
-    return p && (s.machine ?? defaultMachine(p, catalog.tier))
-  }
-  const builtIn = (item: string, s: MyDefault) => {
-    const p = catalog.byId.get(s.producer)
-    return s.producer === defaultProducer(catalog, item) && (!p || machineOf(s) === defaultMachine(p, catalog.tier)) && !s.catalysts
-  }
-  const mine = { ...catalog.mine }
-  for (const [item, s] of setups) {
-    if (builtIn(item, s)) delete mine[item]
-    else mine[item] = s
-  }
-
-  const matches = (item: string, pick: { producer: string; machine?: string }) => {
-    const s = setups.get(item)
-    return !!s && s.producer === pick.producer && machineOf(s) === machineOf(pick)
-  }
-  const underRow = (id: string) => covered.has(id)
-  const next: Plan = {
-    ...plan,
-    producers: Object.fromEntries(Object.entries(plan.producers).filter(([item, producer]) => !matches(item, { producer }))),
-    branches: without(plan.branches, (id) => underRow(id) && matches(rowItem(id), plan.branches![id])),
-    rowCatalysts: without(plan.rowCatalysts, (id) => underRow(id) && sameSet(plan.rowCatalysts![id], setups.get(rowItem(id))?.catalysts ?? [])),
-  }
-  return { mine, plan: next }
+  return { setups, covered }
 }
+
+const machineOfSetup = (catalog: ProcessCatalog, s: MyDefault) => {
+  const p = catalog.byId.get(s.producer)
+  return p && (s.machine ?? defaultMachine(p, catalog.tier))
+}
+
+/** The item made the way the planner would without any picks. */
+function isBuiltIn(catalog: ProcessCatalog, item: string, s: MyDefault): boolean {
+  const p = catalog.byId.get(s.producer)
+  return (
+    s.producer === defaultProducer(catalog, item) &&
+    (!p || machineOfSetup(catalog, s) === defaultMachine(p, catalog.tier)) &&
+    !s.catalysts
+  )
+}
+
+const sameSetup = (catalog: ProcessCatalog, a: MyDefault, b: MyDefault) =>
+  a.producer === b.producer &&
+  machineOfSetup(catalog, a) === machineOfSetup(catalog, b) &&
+  sameSet(a.catalysts ?? [], b.catalysts ?? [])
 
 /** Drops a row's own pick, so it follows the rows above it (or the plan) again. */
 export function clearBranchChoice(plan: Plan, row: string): Plan {

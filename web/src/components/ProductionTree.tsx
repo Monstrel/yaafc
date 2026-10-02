@@ -6,8 +6,8 @@ import { foldKey, usePersistentState } from '../lib/store'
 import type { LogisticsCheck } from '../lib/logistics'
 import type { ProcessCatalog } from '../lib/processes'
 import { branchIds, type TreeNode } from '../lib/tree'
+import { rememberChanges, rowsById, type ProducerPick } from '../lib/choices'
 import { parentId, rowItem } from '../lib/unfold'
-import type { ProducerPick } from '../lib/choices'
 import type { Separation } from '../lib/types'
 import { ItemIcon, ItemLabel } from './ItemIcon'
 import { Money } from './Money'
@@ -26,6 +26,8 @@ interface Props {
   onCatalysts: (row: string, catalysts: string[], inherited: string[]) => void
   /** Use as my default: remember how this row and everything below it is made. */
   onRemember: (row: TreeNode) => void
+  /** Stop using an item's saved default; this plan keeps being made that way. */
+  onForget: (item: string) => void
   onSeparate: (s: Separation, on: boolean) => void
   logistics: Map<string, LogisticsCheck>
 }
@@ -49,6 +51,7 @@ export function ProductionTree({
   onResetProducer,
   onCatalysts,
   onRemember,
+  onForget,
   onSeparate,
   logistics,
 }: Props) {
@@ -74,6 +77,11 @@ export function ProductionTree({
   /** What items built at the top of the plan are shown "with". */
   const topName = topAnchorName(tree)
   const separateByproducts = useMemo(() => byproductsMadeSeparately(tree), [tree])
+  // Rows where "Use as my default" would change something: only those offer it.
+  const savable = useMemo(() => {
+    const rows = rowsById(tree)
+    return new Set([...rows.values()].filter((n) => n.kind === 'produce' && rememberChanges(catalog, rows, n)).map((n) => n.id))
+  }, [tree, catalog])
 
   // Every node with the ids of the branches above it, folded or not.
   const all = useMemo(() => {
@@ -267,6 +275,8 @@ export function ProductionTree({
                   onResetProducer={onResetProducer}
                   onCatalysts={onCatalysts}
                   onRemember={onRemember}
+                  onForget={onForget}
+                  savable={savable.has(line.node.id)}
                   onSeparate={onSeparate}
                   onSeparateMenu={openMenu}
                   logistics={logistics}
@@ -335,6 +345,8 @@ function TreeRow({
   onResetProducer,
   onCatalysts,
   onRemember,
+  onForget,
+  savable,
   onSeparate,
   onSeparateMenu,
   logistics,
@@ -363,6 +375,9 @@ function TreeRow({
   onCatalysts: (row: string, catalysts: string[], inherited: string[]) => void
   /** Use as my default: remember how this row and everything below it is made. */
   onRemember: (row: TreeNode) => void
+  onForget: (item: string) => void
+  /** Using it as my default would change something (else it's made the saved or built-in way). */
+  savable: boolean
   onSeparate: (s: Separation, on: boolean) => void
   onSeparateMenu: (node: TreeNode, button: HTMLElement) => void
   logistics: Map<string, LogisticsCheck>
@@ -632,17 +647,31 @@ function TreeRow({
           )}
         </span>
         <span className="row-action-slot">
-          {node.kind === 'produce' && (
-            <button
-              type="button"
-              className="tree-action"
-              title={`Use as my default: remember how ${name} and everything below it is made, for every plan`}
-              aria-label={`Use this way of making ${name} as my default`}
-              onClick={() => onRemember(node)}
-            >
-              <BookmarkIcon />
-            </button>
-          )}
+          {node.kind === 'produce' &&
+            (savable ? (
+              <button
+                type="button"
+                className="tree-action"
+                title={`Use as my default: remember how ${name} and everything below it is made, for every plan`}
+                aria-label={`Use this way of making ${name} as my default`}
+                onClick={() => onRemember(node)}
+              >
+                <BookmarkIcon />
+              </button>
+            ) : (
+              node.mine && (
+                <button
+                  type="button"
+                  className="tree-action saved-default"
+                  title={`Made your saved way, in every plan. Click to stop using it as your default: this plan stays as it is`}
+                  aria-label={`Stop using this way of making ${name} as my default`}
+                  aria-pressed
+                  onClick={() => onForget(node.item)}
+                >
+                  <BookmarkIcon filled />
+                </button>
+              )
+            ))}
         </span>
       </td>
     </tr>
@@ -650,13 +679,14 @@ function TreeRow({
 }
 
 /** A bookmark: use this row's setup as my default. */
-export function BookmarkIcon() {
+/** A bookmark: outlined, or filled for a saved default. */
+export function BookmarkIcon({ filled = false }: { filled?: boolean }) {
   return (
     <svg
       viewBox="0 0 16 16"
       width="14"
       height="14"
-      fill="none"
+      fill={filled ? 'currentColor' : 'none'}
       stroke="currentColor"
       strokeWidth="1.5"
       strokeLinecap="round"

@@ -1362,6 +1362,12 @@ tr.kind-separate .item-label .name {
   opacity: 1;
 }
 
+/* Filled bookmark: the row is made the player's saved way. */
+.tree-action.saved-default,
+.saved-default-icon {
+  color: var(--green);
+}
+
 /* Holds several targets and what's built at the top of the plan "with" them. */
 .plan-root-name {
   font-weight: 600;

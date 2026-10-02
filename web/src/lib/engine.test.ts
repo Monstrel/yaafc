@@ -15,7 +15,7 @@ import {
   research,
   upgrades,
 } from './gameData'
-import { buildCatalog, defaultProducer, paradoxSeconds } from './processes'
+import { buildCatalog, defaultProducer, paradoxSeconds, type ProcessCatalog } from './processes'
 import { busLines } from './baseInputs'
 import { allowedIngredients, builtinGroups, emptyPrefs, onlyGroup, preferredCount, setPrefs } from './itemGroups'
 import { countRecipes, diagnoseNoResults, type FinderQuery } from './diagnose'
@@ -28,7 +28,10 @@ import {
   clearBranchChoice,
   migrateCatalysts,
   pruneChoices,
+  keepDefaultInPlan,
+  rememberChanges,
   rememberSetup,
+  rowsById,
   setRowCatalysts,
 } from './choices'
 import { resolveChoice } from './unfold'
@@ -1143,6 +1146,56 @@ describe('my defaults', () => {
     const [row] = solvePlan(other, catalogWith(mine), mods).tree
     expect(row.producer).toBe('recipe:Salt_Alt')
     expect(row.mine).toBe(true)
+  })
+
+  it('is only offered where saving would change something', () => {
+    const savable = (p: Plan, catalog: ProcessCatalog) => {
+      const tree = solvePlan(p, catalog, mods).tree
+      return rememberChanges(catalog, rowsById(tree), tree[0])
+    }
+    // Built-in all the way down: nothing to save.
+    expect(savable(salt, catalogWith())).toBe(false)
+    // A pick of its own: saving would remember it.
+    const catalog = catalogWith()
+    const picked = chooseProducer(salt, catalog, { item: 'Salt', producer: 'recipe:Salt_Alt', row: '0/Salt' })
+    expect(savable(picked, catalog)).toBe(true)
+    // Following the saved default: nothing new (the row shows it's saved instead).
+    const saved = catalogWith({ Salt: { producer: 'recipe:Salt_Alt' } })
+    expect(savable(salt, saved)).toBe(false)
+    expect(solvePlan(salt, saved, mods).tree[0].mine).toBe(true)
+    // A plan pick overriding the saved default, back to the built-in way: saving would forget it.
+    expect(savable({ ...salt, producers: { Salt: 'recipe:Salt' } }, saved)).toBe(true)
+  })
+
+  it('un-saving from a row keeps this plan as it was, ready to save again', () => {
+    // Brine made the built-in way, from Salt made by its alternate recipe.
+    const brine = plan({ targets: [{ item: 'SaltWater', rate: 10 }] })
+    const catalog = catalogWith()
+    const picked = chooseProducer(brine, catalog, { item: 'Salt', producer: 'recipe:Salt_Alt', row: '0/SaltWater/Salt' })
+    const state = (p: Plan, c: ProcessCatalog) => {
+      const tree = solvePlan(p, c, mods).tree
+      const rows = rowsById(tree)
+      const salt = tree[0].children[0]
+      return { tree, salt, brineSavable: rememberChanges(c, rows, tree[0]), saltSavable: rememberChanges(c, rows, salt) }
+    }
+    const before = state(picked, catalog)
+    expect(before.brineSavable).toBe(true)
+    expect(before.saltSavable).toBe(true)
+
+    // Saved from the Brine row: the Salt row follows the default (filled), nothing left to save.
+    const saved = rememberSetup(picked, catalog, before.tree, before.tree[0])
+    const savedCatalog = catalogWith(saved.mine)
+    const after = state(saved.plan, savedCatalog)
+    expect(after.salt.mine).toBe(true)
+    expect(after.saltSavable).toBe(false)
+    expect(after.brineSavable).toBe(false)
+
+    // Un-saved from the Salt row: Salt is still made the alternate way here, both rows offer saving again.
+    const kept = keepDefaultInPlan(saved.plan, after.tree, 'Salt', saved.mine.Salt)
+    const back = state(kept, catalogWith())
+    expect(back.salt.producer).toBe('recipe:Salt_Alt')
+    expect(back.saltSavable).toBe(true)
+    expect(back.brineSavable).toBe(true)
   })
 
   it("loses to the plan's own picks", () => {

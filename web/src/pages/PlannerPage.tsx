@@ -27,6 +27,7 @@ import type { PlanModel } from '../lib/planModel'
 import {
   chooseProducer,
   clearBranchChoice,
+  keepDefaultInPlan,
   migrateCatalysts,
   pruneChoices,
   rememberSetup,
@@ -136,6 +137,12 @@ export function PlannerPage({
     onUpdatePlan(() => next.plan)
   }
   const forget = (item: string) => onMyDefaults(Object.fromEntries(Object.entries(myDefaults).filter(([k]) => k !== item)))
+  /** Un-saves a default from a row: this plan stays made that way; only other plans lose it. */
+  const unsave = (item: string) => {
+    const saved = myDefaults[item]
+    if (saved) onUpdatePlan((p) => keepDefaultInPlan(p, result.tree, item, saved))
+    forget(item)
+  }
   const setSeparate = (s: Separation, on: boolean) =>
     onUpdatePlan((p) => {
       const list = separationsOf(p.separate)
@@ -419,6 +426,7 @@ export function PlannerPage({
                   onProducer={setProducer}
                   onResetProducer={resetProducer}
                   onRemember={remember}
+                  onForget={unsave}
                   onCatalysts={setCatalysts}
                   onSeparate={setSeparate}
                   logistics={logistics}
@@ -729,7 +737,11 @@ function MyDefaultsPanel({
       {entries.length === 0 ? (
         <p className="hint">
           Set up a row the way you like to build it, then use <BookmarkIcon /> on it to remember how it and everything
-          below it is made. Every plan will start from it.
+          below it is made. Every plan will start from it, and rows made your saved way show{' '}
+          <span className="saved-default-icon">
+            <BookmarkIcon filled />
+          </span>
+          .
         </p>
       ) : (
         <>
