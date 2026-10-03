@@ -4,7 +4,7 @@ import { fmt } from '../lib/format'
 import { buildingNameFor, machineNameFor, noun } from '../lib/plural'
 import { sanitizeStrings } from '../lib/sanitize'
 import { foldKey, usePersistentState } from '../lib/store'
-import type { Resource } from '../lib/ledger'
+import type { BusUse } from '../lib/money'
 import type { LogisticsCheck } from '../lib/logistics'
 import type { ProcessCatalog } from '../lib/processes'
 import { branchIds, type TreeNode } from '../lib/tree'
@@ -36,7 +36,7 @@ interface Props {
   roundUp: string[]
   onRoundUp: (row: string, on: boolean) => void
   /** Per item, the share of its overflow the plan feeds back into its own heat or fertilizer. */
-  fed: Map<string, { share: number; into: Resource[] }>
+  fed: Map<string, { share: number; into: BusUse[] }>
 }
 
 /** Where a link points: every row it matches, largest share first. */
@@ -433,7 +433,7 @@ function TreeRow({
   /** The row runs on a whole number of machines, rounded up. */
   rounded: boolean
   onMachinesMenu: (node: TreeNode, button: HTMLElement) => void
-  fed: Map<string, { share: number; into: Resource[] }>
+  fed: Map<string, { share: number; into: BusUse[] }>
   logistics: Map<string, LogisticsCheck>
   link: LinkFn
   edges: Edge[]
@@ -1045,7 +1045,7 @@ function MachinesMenu({
   )
 }
 
-const FED_INTO: Record<Resource, string> = { heat: 'burned for heat', fertilizer: 'spread as fertilizer' }
+const FED_INTO: Record<BusUse, string> = { heat: 'burned for heat', fertilizer: 'spread as fertilizer', money: 'spent in the plan' }
 
 /**
  * What a row makes of an item that nothing uses: the part the plan feeds back into its own heat or
@@ -1060,7 +1060,7 @@ function OverflowNote({
 }: {
   item: string
   amount: number
-  fed: Map<string, { share: number; into: Resource[] }>
+  fed: Map<string, { share: number; into: BusUse[] }>
   /** Part of a by-product line rather than a line of its own. */
   inline?: boolean
   /** Show the amount even inline (the by-product also goes elsewhere). */

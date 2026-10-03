@@ -16,8 +16,8 @@ import {
   upgrades,
 } from './gameData'
 import { buildCatalog, defaultProducer, paradoxSeconds, type ProcessCatalog } from './processes'
-import { fedOverflow, ledgers } from './ledger'
-import { moneyLedger } from './money'
+import { ledgers } from './ledger'
+import { fedOverflow, moneyLedger, type MoneyLedger } from './money'
 import { allowedIngredients, builtinGroups, emptyPrefs, onlyGroup, preferredCount, setPrefs } from './itemGroups'
 import { countRecipes, diagnoseNoResults, type FinderQuery } from './diagnose'
 import { buildingCounts, checkLogistics, checkProcess, resourceUsers } from './logistics'
@@ -1053,11 +1053,15 @@ describe('net-surplus targets', () => {
     const [overflow] = heat.sources
     expect(overflow.item).toBe('Charcoal')
     // Steel's Coke Athanors make Charcoal on the side; the share burned stops being overflow.
-    expect(fedOverflow([heat]).get('Charcoal')!.share).toBeCloseTo(overflow.used / overflow.amount)
+    const moneyOf = (q: Plan) => {
+      const r = solvePlan(q, catalog, mods)
+      return moneyLedger(q, catalog, r, ledgers(q, catalog, r))
+    }
+    expect(fedOverflow(moneyOf(p)).get('Charcoal')).toEqual({ share: expect.closeTo(overflow.used / overflow.amount), into: ['heat'] })
     // Made counts all of it, burned or not; the plan covers whichever is smaller of that and its need.
     expect(heat.made).toBeCloseTo(overflow.amount * overflow.per)
     expect(heat.covered).toBeCloseTo(Math.min(heat.need, heat.made))
-    expect(fedOverflow([solved({ ...p, feedbackItems: [] }).heat]).size).toBe(0)
+    expect(fedOverflow(moneyOf({ ...p, feedbackItems: [] })).size).toBe(0)
   })
 
   it('sets up a provider as an ordinary target that removing undoes', () => {
@@ -1083,53 +1087,69 @@ describe('net-surplus targets', () => {
   })
 })
 
-describe('money', () => {
+describe('the bus: money in, items out', () => {
   const mods = modifiers({})
   const catalog = buildCatalog({ saved: [], machines: {}, mods, fertilizer: null })
-  const money = (p: Plan) => {
-    const result = solvePlan(p, catalog, mods)
-    return { result, money: moneyLedger(result, ledgers(p, catalog, result)) }
+  const bus = (p: Plan, c: ProcessCatalog = catalog) => {
+    const result = solvePlan(p, c, mods)
+    const l = ledgers(p, c, result)
+    return { result, ledgers: l, money: moneyLedger(p, c, result, l) }
   }
+  const out = (m: MoneyLedger, item: string) => m.outputs.find((o) => o.item === item)!
 
-  it("values sellable goods at the shop's base price, and costs portal purchases", () => {
-    const { result, money: m } = money(plan({ targets: [{ item: 'Bandage', rate: 10 }, { item: 'WoodBoard', rate: 60 }] }))
-    expect(m.sales).toEqual([{ item: 'Bandage', count: 10, price: 350 }])
-    expect(m.value).toBeCloseTo(3500)
-    expect(m.unsold.map((l) => l.item)).toEqual(['WoodBoard']) // raw and intermediate goods don't sell
+  it("values what goes out at the shop's base price, and costs portal purchases", () => {
+    const { result, money } = bus(plan({ targets: [{ item: 'Bandage', rate: 10 }, { item: 'WoodBoard', rate: 60 }] }))
+    expect(out(money, 'Bandage')).toMatchObject({ toBus: 10, price: 350, feeds: [] })
+    expect(out(money, 'WoodBoard')).toMatchObject({ toBus: 60, price: null, feeds: ['heat'] }) // a fuel the shop won't buy
+    expect(money.value).toBeCloseTo(3500)
     const bought = result.balances.filter((b) => !b.item.startsWith('@') && b.imported > 0)
-    expect(m.cost).toBeCloseTo(bought.reduce((t, b) => t + b.imported * itemsByKey.get(b.item)!.buyPrice!, 0))
-    expect(m.cost).toBeGreaterThan(0)
+    expect(money.need).toBeCloseTo(bought.reduce((t, b) => t + b.imported * itemsByKey.get(b.item)!.buyPrice!, 0))
+    expect(money.cost).toBe(money.need)
+  })
+
+  it('lists targets first, in order, then overflow, flagging overflow nothing uses', () => {
+    const { money } = bus(plan({ targets: [{ item: 'BlastPotion', rate: 21 }], producers: { Mors: 'paradox:BlackPowder' } }))
+    expect(money.outputs[0].item).toBe('BlastPotion')
+    const iron = out(money, 'IronIngot')
+    expect(iron.sources).toEqual([expect.objectContaining({ target: null, fedBack: false })])
+    expect(iron.toBus).toBeCloseTo(iron.sources[0].amount)
   })
 
   it('takes coin ingredients off the bus at face value', () => {
     const p = plan({ targets: [{ item: 'CopperIngot', rate: 10 }], producers: { CopperIngot: 'recipe:CopperIngot_Alt' } })
-    const { result, money: m } = money(p)
+    const { result, money } = bus(p)
     expect(result.runs.some((r) => r.process.id === 'recipe:CopperCoin')).toBe(false) // not minted
     const coins = result.balances.find((b) => b.item === 'CopperCoin')!
     expect(coins.imported).toBeGreaterThan(0)
-    expect(m.coins).toEqual([{ item: 'CopperCoin', count: coins.imported, price: 1 }])
+    expect(money.coins).toEqual([{ item: 'CopperCoin', count: coins.imported, price: 1 }])
     expect(defaultProducer(catalog, 'GoldCoin')).toBe('import')
   })
 
-  it('mints coins for a coin target and counts them at face value', () => {
-    const { result, money: m } = money(plan({ targets: [{ item: 'SilverCoin', rate: 5 }] }))
+  it('mints coins for a coin target, worth their face value out, or covering the money in when fed back', () => {
+    const minted = plan({ targets: [{ item: 'SilverCoin', rate: 5 }, { item: 'Bandage', rate: 10 }] })
+    const { result, money } = bus(minted)
     expect(result.runs.some((r) => r.process.id === 'recipe:SilverCoin')).toBe(true)
-    expect(m.sales).toEqual([{ item: 'SilverCoin', count: 5, price: 1000 }])
+    expect(out(money, 'SilverCoin')).toMatchObject({ toBus: 5, price: 1000, feeds: ['money'] })
+    const fed = bus(setTargetFeedback(minted, 0, true)).money
+    expect(fed.covered).toBeCloseTo(Math.min(fed.need, 5000))
+    expect(fed.cost).toBeCloseTo(fed.need - fed.covered)
+    expect(out(fed, 'SilverCoin').used.money).toBeCloseTo(fed.covered / 1000)
   })
 
-  it("doesn't count what the plan feeds back", () => {
-    const fert = buildCatalog({ saved: [], machines: {}, mods, fertilizer: 'PanaceaElixir' })
+  it('shows an item that is both fuel and fertilizer as one output, net of both uses', () => {
+    const both = buildCatalog({ saved: [], machines: {}, mods, fertilizer: 'PanaceaElixir' })
     const p = plan({
-      targets: [{ item: 'PanaceaElixir', rate: 12.5 }, { item: 'Flax', rate: 60 }],
-      producers: { [NUTRIENTS]: 'fert:PanaceaElixir' },
+      targets: [{ item: 'PanaceaElixir', rate: 12.5 }, { item: 'SteelIngot', rate: 10 }, { item: 'Flax', rate: 60 }],
+      producers: { [NUTRIENTS]: 'fert:PanaceaElixir', [HEAT]: 'fuel:PanaceaElixir' },
       feedbackItems: ['PanaceaElixir'],
     })
-    const result = solvePlan(p, fert, mods)
-    const l = ledgers(p, fert, result)
-    const used = l.flatMap((x) => x.sources).reduce((t, s) => t + s.used, 0)
-    expect(used).toBeGreaterThan(0)
-    const sold = moneyLedger(result, l).sales.find((s) => s.item === 'PanaceaElixir')!
-    expect(sold.count).toBeCloseTo(12.5 - used)
+    const { money } = bus(p, both)
+    const panacea = out(money, 'PanaceaElixir')
+    expect(panacea.feeds).toEqual(['heat', 'fertilizer'])
+    expect(panacea.used.heat).toBeGreaterThan(0)
+    expect(panacea.used.fertilizer).toBeGreaterThan(0)
+    expect(panacea.toBus).toBeCloseTo(12.5 - panacea.used.heat! - panacea.used.fertilizer!)
+    expect(money.value).toBeCloseTo(panacea.toBus * itemsByKey.get('PanaceaElixir')!.sellPrice!) // steel and flax don't sell
   })
 })
 

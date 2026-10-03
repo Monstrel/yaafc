@@ -150,18 +150,3 @@ export function supplyAhead(plan: Plan, catalog: ProcessCatalog, result: PlanRes
   }
   return ahead
 }
-
-/**
- * Per item, the share of its overflow the plan feeds back into its own heat or fertilizer, and
- * what into: that part isn't overflow, since the plan burns or spreads it.
- */
-export function fedOverflow(ledgers: ResourceLedger[]): Map<string, { share: number; into: Resource[] }> {
-  const fed = new Map<string, { share: number; into: Resource[] }>()
-  for (const l of ledgers)
-    for (const s of l.sources) {
-      if (s.target !== null || s.used <= 0 || s.amount <= 0) continue
-      const f = fed.get(s.item) ?? { share: 0, into: [] }
-      fed.set(s.item, { share: Math.min(1, f.share + s.used / s.amount), into: [...f.into, l.resource] })
-    }
-  return fed
-}

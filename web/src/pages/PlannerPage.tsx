@@ -4,13 +4,14 @@ import { ItemPicker } from '../components/ItemPicker'
 import { Money } from '../components/Money'
 import { ProducerSelect, TierTag } from '../components/ProducerSelect'
 import { BookmarkIcon, ProductionTree } from '../components/ProductionTree'
-import { carriers, fedOverflow, ledgers, targetFedBack, type LedgerSource, type ResourceLedger } from '../lib/ledger'
+import { carriers, ledgers, targetFedBack, type Resource, type ResourceLedger } from '../lib/ledger'
 import {
   HEAT,
   MAX_TIER,
   NUTRIENTS,
   buildingsByKey,
   buyTier,
+  coinValue,
   iconUrl,
   itemName,
   items,
@@ -23,7 +24,7 @@ import {
 } from '../lib/gameData'
 import { fmt } from '../lib/format'
 import { buildingCounts, checkLogistics, resourceUsers, type LogisticsCheck, type ResourceUser } from '../lib/logistics'
-import { moneyLedger, type MoneyLine } from '../lib/money'
+import { fedOverflow, moneyLedger, type BusUse, type MoneyLedger, type OutputRow } from '../lib/money'
 import { processTitle, type ProcessCatalog } from '../lib/processes'
 import type { PlanModel } from '../lib/planModel'
 import {
@@ -165,18 +166,16 @@ export function PlannerPage({
     })
   /** What a target's item could feed back into, if anything. */
   const feedsInto = (item: string) =>
-    [fuels.has(item) && 'heat', fertilizers.has(item) && 'fertilizer'].filter(Boolean).join(' & ')
+    [fuels.has(item) && 'heat', fertilizers.has(item) && 'fertilizer', coinValue(item) !== null && 'money']
+      .filter(Boolean)
+      .join(' & ')
 
-  // Overflow the plan feeds back into its own heat or fertilizer isn't overflow: it gets used.
-  const fed = useMemo(() => fedOverflow(ledger), [ledger])
-  const surplus = result.balances
-    .filter((b) => b.surplus > 0 && !b.item.startsWith('@'))
-    .map((b) => ({ item: b.item, left: b.surplus * (1 - (fed.get(b.item)?.share ?? 0)) }))
-    .filter((b) => b.left > 1e-9 * Math.max(1, b.left))
   const overflowSources = useMemo(() => overflowRows(result.tree), [result.tree])
   const deficits = result.balances.filter((b) => b.deficit > 0)
   const heat = result.balances.find((b) => b.item === HEAT)
-  const money = useMemo(() => moneyLedger(result, ledger), [result, ledger])
+  const money = useMemo(() => moneyLedger(plan, catalog, result, ledger), [plan, catalog, result, ledger])
+  // Overflow the plan feeds back into its heat, fertilizer or money isn't overflow: it gets used.
+  const fed = useMemo(() => fedOverflow(money), [money])
 
   // Whole machines per building type, as built: each tree row rounds up on its own.
   const buildings = useMemo(() => buildingCounts(result.tree, logistics), [result.tree, logistics])
@@ -389,22 +388,6 @@ export function PlannerPage({
                 </div>
               )}
 
-              {surplus.length > 0 && (
-                <div className="panel notice">
-                  <strong>Overflow.</strong> These are made but nothing in the plan uses them. Route them somewhere (sell, store,
-                  or use them in another recipe) or they'll back up the machines that make them:
-                  <ul className="flow-list notice-list">
-                    {surplus.map((b) => (
-                      <li key={b.item}>
-                        <ItemLabel item={b.item} />
-                        <span className="rate">+{fmt(b.left)}/min</span>
-                        <span className="hint-inline">from {(overflowSources.get(b.item) ?? []).join(', ')}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
               {beyond.length > 0 && (
                 <div className="panel notice">
                   <strong>Beyond research tier {tierName(catalog.tier)}.</strong> These steps need research you haven&apos;t
@@ -437,32 +420,20 @@ export function PlannerPage({
                 </div>
               )}
 
-              {ledger.some((l) => l.need > 0 || l.sources.length > 0) && (
-                <div className="two-col">
-                  {ledger
-                    .filter((l) => l.need > 0 || l.sources.length > 0)
-                    .reverse() // heat first
-                    .map((l) => (
-                      <LedgerPanel
-                        key={l.resource}
-                        ledger={l}
-                        plan={plan}
-                        catalog={catalog}
-                        busPick={planWide(l.resource === 'heat' ? HEAT : NUTRIENTS, true)}
-                        onFeedback={(s, on) =>
-                          onUpdatePlan((p) =>
-                            s.target === null ? setItemFeedback(p, s.item, on) : setTargetFeedback(p, s.target, on),
-                          )
-                        }
-                        onProvide={(item) => onUpdatePlan((p) => addProvider(p, item))}
-                      >
-                        {l.resource === 'heat' && machineTier(STEAM_BOILER) <= catalog.tier && (
-                          <BoilerRoom ledger={l} mods={mods} />
-                        )}
-                      </LedgerPanel>
-                    ))}
-                </div>
-              )}
+              <BusPanel
+                ledgers={ledger}
+                money={money}
+                plan={plan}
+                catalog={catalog}
+                busPick={(resource) => planWide(resource === 'heat' ? HEAT : NUTRIENTS, true)}
+                overflowFrom={overflowSources}
+                onFeedback={(item, target, on) =>
+                  onUpdatePlan((p) => (target === null ? setItemFeedback(p, item, on) : setTargetFeedback(p, target, on)))
+                }
+                onProvide={(item) => onUpdatePlan((p) => addProvider(p, item))}
+              >
+                {machineTier(STEAM_BOILER) <= catalog.tier && <BoilerRoom ledger={ledger.find((l) => l.resource === 'heat')!} mods={mods} />}
+              </BusPanel>
 
               <section className="panel tree-panel">
                 <h2>Production</h2>
@@ -485,48 +456,6 @@ export function PlannerPage({
               </section>
 
               <div className="two-col">
-                <section className="panel">
-                  <h2>Costs</h2>
-                  {money.purchases.length + money.coins.length === 0 ? (
-                    <p className="hint">Nothing to buy.</p>
-                  ) : (
-                    <>
-                      <ul className="flow-list">
-                        {money.purchases.map((l) => (
-                          <MoneyRow key={l.item} line={l} missing="not sold at portals" />
-                        ))}
-                        {money.coins.map((l) => (
-                          <MoneyRow key={l.item} line={l} note="off the bus" />
-                        ))}
-                      </ul>
-                      <p className="total">
-                        Total <Money copper={money.cost} suffix="/min" />
-                      </p>
-                    </>
-                  )}
-                </section>
-                {money.sales.length + money.unsold.length > 0 && (
-                  <section className="panel">
-                    <h2>Sale value</h2>
-                    <p className="hint">
-                      What the plan delivers is worth this at the shop&apos;s base prices (before profit upgrades), if customers
-                      buy it all.
-                    </p>
-                    <ul className="flow-list">
-                      {money.sales.map((l) => (
-                        <MoneyRow key={l.item} line={l} />
-                      ))}
-                      {money.unsold.map((l) => (
-                        <MoneyRow key={l.item} line={l} unpriced="the shop won't buy it" />
-                      ))}
-                    </ul>
-                    {money.value > 0 && (
-                      <p className="total">
-                        Total <Money copper={money.value} suffix="/min" />
-                      </p>
-                    )}
-                  </section>
-                )}
                 <section className="panel">
                   <h2>Buildings</h2>
                   <ul className="flow-list">
@@ -565,59 +494,114 @@ const RESOURCE = {
 
 const STEAM_BOILER = 'SteamBoiler'
 
+/** What feeding an output back does, as a verb: burn it, spread it, spend it (or use it, for several). */
+const FEED_VERB: Record<BusUse, string> = { heat: 'burns', fertilizer: 'spreads', money: 'spends' }
+const feedButton = (feeds: BusUse[]) =>
+  feeds.length === 1 ? { heat: 'Burn', fertilizer: 'Spread', money: 'Spend' }[feeds[0]] : 'Use'
+
 /**
- * One bus resource. The header balances what the plan makes of it (the fuel or fertilizer it feeds
- * back) against what its machines use, and offers to provide the rest from the plan. Below, its
- * effect on the bus: what goes into the plan's machines (the fuel it burns of its own, and the
- * bus fuel for the rest) and what goes out to the bus (the fuel it makes and doesn't burn), each
- * movable to the other side.
+ * The plan's effect on the bus. Into the plan go its three fundamental inputs: heat and fertilizer
+ * (each balanced from zero, what the plan feeds back against what it uses, with the bus fuel or
+ * fertilizer covering the rest) and money (what the Purchase Portals spend, and coins taken in).
+ * Out go the items it delivers, one row each with every source, what the plan feeds back of it and
+ * what's left for the bus; items that can feed back (fuel, the nurseries' fertilizer, coins) move
+ * between the two per source.
  */
-function LedgerPanel({
-  ledger,
+function BusPanel({
+  ledgers,
+  money,
   plan,
   catalog,
   busPick,
+  overflowFrom,
   onFeedback,
   onProvide,
   children,
 }: {
-  ledger: ResourceLedger
+  ledgers: ResourceLedger[]
+  money: MoneyLedger
   plan: Plan
   catalog: ProcessCatalog
   /** Picks the fuel or fertilizer the bus supplies. */
-  busPick: ReactNode
-  /** Feeds a source back (burns it in the plan) or not (sends it to the bus). */
-  onFeedback: (source: LedgerSource, on: boolean) => void
+  busPick: (resource: Resource) => ReactNode
+  /** Per overflowing item, the rows it overflows from. */
+  overflowFrom: Map<string, string[]>
+  /** Feeds a source back (the plan uses it) or not (it goes out to the bus). */
+  onFeedback: (item: string, target: number | null, on: boolean) => void
   onProvide: (item: string) => void
   children?: ReactNode
+}) {
+  const margin = money.value - money.cost
+  const resources = [...ledgers].reverse().filter((l) => l.need > 0 || l.made > 0) // heat first
+  return (
+    <section className="panel ledger">
+      <h2>Bus</h2>
+      <div className="ledger-columns">
+        <div>
+          <h3>Into the plan</h3>
+          <div className="bus-inputs">
+            {resources.map((l) => (
+              <ResourceIn key={l.resource} ledger={l} plan={plan} catalog={catalog} busPick={busPick(l.resource)} onProvide={onProvide} />
+            ))}
+            <MoneyIn money={money} />
+          </div>
+        </div>
+        <div>
+          <h3>Out to the bus</h3>
+          {money.outputs.length === 0 ? (
+            <p className="hint">Nothing: the plan delivers no items.</p>
+          ) : (
+            <ul className="bus-outputs">
+              {money.outputs.map((o) => (
+                <OutputLine key={o.item} row={o} overflowFrom={overflowFrom} onFeedback={onFeedback} />
+              ))}
+            </ul>
+          )}
+          {money.value > 0 && (
+            <p className="bus-total">
+              Sale value <Money copper={money.value} suffix="/min" />
+              <span className="hint-inline"> at base shop prices, if it all sells · margin </span>
+              <span className={`rate ${margin >= 0 ? 'positive' : 'negative'}`}>
+                {margin >= 0 ? '+' : '−'}
+                <Money copper={Math.abs(margin)} suffix="/min" />
+              </span>
+            </p>
+          )}
+        </div>
+      </div>
+      {children}
+    </section>
+  )
+}
+
+/**
+ * Heat or fertilizer into the plan: its balance (what the plan feeds back against what it uses),
+ * the bus fuel or fertilizer covering the rest, and a way to provide that from the plan instead.
+ */
+function ResourceIn({
+  ledger,
+  plan,
+  catalog,
+  busPick,
+  onProvide,
+}: {
+  ledger: ResourceLedger
+  plan: Plan
+  catalog: ProcessCatalog
+  busPick: ReactNode
+  onProvide: (item: string) => void
 }) {
   const { title, unit, verb } = RESOURCE[ledger.resource]
   const perSecond = (perMinute: number) => `${fmt(perMinute / 60)} ${unit}`
   // The plan's own balance, from zero: what it feeds back, less what its machines use.
   const net = Math.abs(ledger.made - ledger.need) < 1e-9 * Math.max(1, ledger.need) ? 0 : ledger.made - ledger.need
   const [providing, setProviding] = useState<string | null>(null)
-  const use = ledger.resource === 'heat' ? 'Burn' : 'Spread'
-  const what = (s: LedgerSource) => (
-    <span className="ledger-what">
-      <ItemLabel item={s.item} size={18} />
-      <span className="ledger-from">
-        {s.target === null ? 'overflow' : <TargetLink index={s.target} />}
-        {s.target !== null && s.target === ledger.absorbedBy && ' (net)'}
-      </span>
-    </span>
-  )
-  const fedIn = ledger.sources.filter((s) => s.fedBack)
-  const out = ledger.sources.flatMap((s) => {
-    const left = s.amount - s.used
-    if (!s.fedBack) return [{ source: s, amount: s.amount, leftOver: false }]
-    return left > 1e-9 * s.amount ? [{ source: s, amount: left, leftOver: true }] : []
-  })
   return (
-    <section className="panel ledger">
-      <header className="ledger-head">
-        <h2>{title}</h2>
-        <span className="ledger-balance" title="What the plan feeds back holds, against what its machines use">
-          makes {fmt(ledger.made / 60)} · uses {perSecond(ledger.need)}{' '}
+    <div className="bus-input">
+      <div className="ledger-head">
+        <strong>{title}</strong>
+        <span className="ledger-balance" title="What the plan feeds back, against what its machines use">
+          uses {perSecond(ledger.need)} · makes {fmt(ledger.made / 60)}{' '}
           <strong className={`rate ${net >= 0 ? 'positive' : 'negative'}`}>
             {net >= 0 ? '+' : '−'}
             {perSecond(Math.abs(net))}
@@ -639,7 +623,7 @@ function LedgerPanel({
             </button>
           )
         )}
-      </header>
+      </div>
       {providing !== null && (
         <ProviderForm
           resource={ledger.resource}
@@ -653,76 +637,152 @@ function LedgerPanel({
           onCancel={() => setProviding(null)}
         />
       )}
-      <div className="ledger-columns">
-        <div>
-          <h3>Into the plan</h3>
-          <ul className="ledger-rows">
-            <li>
-              <span className="ledger-what">
-                {busPick}
-                <span className="ledger-from">from the bus</span>
-              </span>
-              <span className="ledger-amount">
-                {ledger.absorbedBy !== null
-                  ? 'not used'
-                  : ledger.bus && ledger.bus.count > 0
-                    ? `${fmt(ledger.bus.count)}/min → ${perSecond(ledger.bus.count * ledger.bus.per)}`
-                    : ledger.need > 0
-                      ? 'not needed'
-                      : 'nothing needed'}
-              </span>
-            </li>
-            {fedIn.map((s) => (
-              <li key={`${s.target}:${s.item}`}>
-                {what(s)}
-                <span className="ledger-amount">
-                  {s.used > 0 ? `${fmt(s.used)}/min → ${perSecond(s.used * s.per)}` : 'not needed'}
-                </span>
-                <button
-                  className="move-button"
-                  title={`Stop ${verb.replace(/s$/, 'ing')} it in the plan: it goes out to the bus`}
-                  onClick={() => onFeedback(s, false)}
-                >
-                  Send to bus →
-                </button>
-              </li>
-            ))}
-            {ledger.short > 0 && (
-              <li className="rate negative">
-                {perSecond(ledger.short)} can&apos;t be covered: the net target&apos;s own chain uses more than it gives
-              </li>
-            )}
-          </ul>
-        </div>
-        <div>
-          <h3>Out to the bus</h3>
-          {out.length === 0 ? (
-            <p className="hint">Nothing: the plan makes no {ledger.resource === 'heat' ? 'fuel' : 'fertilizer'} it doesn&apos;t use.</p>
-          ) : (
-            <ul className="ledger-rows">
-              {out.map(({ source: s, amount, leftOver }) => (
-                <li key={`${s.target}:${s.item}`}>
-                  {what(s)}
-                  <span className="ledger-amount">
-                    {fmt(amount)}/min{leftOver && ' left over'}
-                  </span>
-                  {!leftOver && (
-                    <button
-                      className="move-button"
-                      title={`Feed it back: the plan ${verb} it before taking any from the bus`}
-                      onClick={() => onFeedback(s, true)}
-                    >
-                      ← {use} in plan
-                    </button>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+      <div className="bus-line">
+        <span className="ledger-what">
+          {busPick}
+          <span className="ledger-from">from the bus</span>
+        </span>
+        <span className="ledger-amount">
+          {ledger.absorbedBy !== null
+            ? 'not used'
+            : ledger.bus && ledger.bus.count > 0
+              ? `${fmt(ledger.bus.count)}/min → ${perSecond(ledger.bus.count * ledger.bus.per)}`
+              : 'not needed'}
+        </span>
       </div>
-      {children}
-    </section>
+      {ledger.short > 0 && (
+        <p className="rate negative">
+          {perSecond(ledger.short)} can&apos;t be covered: the net target&apos;s own chain uses more than it gives
+        </p>
+      )}
+    </div>
+  )
+}
+
+/** Money into the plan: what the Purchase Portals spend, coins taken in, and own coins covering some. */
+function MoneyIn({ money }: { money: MoneyLedger }) {
+  const lines = [...money.purchases.map((l) => ({ ...l, coin: false })), ...money.coins.map((l) => ({ ...l, coin: true }))]
+  return (
+    <div className="bus-input">
+      <div className="ledger-head">
+        <strong>🪙 Money</strong>
+        <span className="ledger-balance">
+          <Money copper={money.cost} suffix="/min" />
+          {money.covered > 0 && (
+            <>
+              {' '}
+              (of <Money copper={money.need} suffix="/min" />: the plan&apos;s own coins cover <Money copper={money.covered} />)
+            </>
+          )}
+        </span>
+      </div>
+      {lines.length === 0 ? (
+        <p className="hint">Nothing to buy.</p>
+      ) : (
+        <ul className="money-lines">
+          {lines.map((l) => (
+            <li key={l.item}>
+              <ItemLabel item={l.item} size={16} />
+              <span className="hint-inline">
+                {fmt(l.count)}/min{l.coin ? ' off the bus' : ''}
+              </span>
+              {l.price !== null ? (
+                <span className="money-cost">
+                  <Money copper={l.count * l.price} suffix="/min" />
+                </span>
+              ) : (
+                <span className="tag warn" title="Purchase Portals don't sell this item">
+                  not sold at portals
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+/**
+ * One item leaving the plan: what goes out to the bus and what it's worth, what the plan feeds back
+ * of it, and its sources (targets and overflow), each movable between the plan and the bus when the
+ * item can feed back. Overflow nothing uses is flagged: it backs up the machines making it.
+ */
+function OutputLine({
+  row,
+  overflowFrom,
+  onFeedback,
+}: {
+  row: OutputRow
+  overflowFrom: Map<string, string[]>
+  onFeedback: (item: string, target: number | null, on: boolean) => void
+}) {
+  const uses = (Object.entries(row.used) as [BusUse, number][]).filter(([, n]) => n > 0)
+  return (
+    <li className="bus-output">
+      <div className="bus-output-head">
+        <ItemLabel item={row.item} size={18} />
+        <span className="bus-net">
+          {row.toBus > 0 ? <strong>+{fmt(row.toBus)}/min out</strong> : <span className="hint-inline">none out</span>}
+          {row.toBus > 0 &&
+            (row.price !== null ? (
+              <Money copper={row.toBus * row.price} suffix="/min" />
+            ) : (
+              <span className="hint-inline">not sold in shops</span>
+            ))}
+        </span>
+      </div>
+      {uses.length > 0 && (
+        <div className="bus-output-uses">
+          plan {uses.map(([use, n]) => `${FEED_VERB[use]} ${fmt(n)}/min`).join(' · ')}
+        </div>
+      )}
+      <ul className="bus-output-sources">
+        {row.sources.map((s) => {
+          const used = Object.values(s.used).reduce((t, n) => t + (n ?? 0), 0)
+          const left = s.amount - used
+          const idle = s.target === null && !s.fedBack && left > 0
+          return (
+            <li key={s.target ?? 'overflow'}>
+              <span className="ledger-what">
+                <span>
+                  {s.target === null ? 'overflow' : <TargetLink index={s.target} />} · {fmt(s.amount)}/min
+                </span>
+                {idle && (
+                  <span className="warn-text" title="Made but used nowhere in the plan: route it somewhere or it backs up the machines">
+                    ⚠ nothing uses it
+                  </span>
+                )}
+                {s.target === null && (
+                  <span className="hint-inline">from {(overflowFrom.get(row.item) ?? []).join(', ')}</span>
+                )}
+                {s.fedBack && used > 0 && left > 1e-9 * s.amount && (
+                  <span className="hint-inline">{fmt(left)}/min left over</span>
+                )}
+              </span>
+              {row.feeds.length > 0 &&
+                (s.fedBack ? (
+                  <button
+                    className="move-button"
+                    title="Stop feeding it back: it all goes out to the bus"
+                    onClick={() => onFeedback(row.item, s.target, false)}
+                  >
+                    Send to bus →
+                  </button>
+                ) : (
+                  <button
+                    className="move-button"
+                    title={`Feed it back: the plan ${row.feeds.map((f) => FEED_VERB[f]).join(' or ')} it before taking any from the bus`}
+                    onClick={() => onFeedback(row.item, s.target, true)}
+                  >
+                    ← {feedButton(row.feeds)} in plan
+                  </button>
+                ))}
+            </li>
+          )
+        })}
+      </ul>
+    </li>
   )
 }
 
@@ -1013,24 +1073,6 @@ function TargetRow({
         </label>
       )}
     </div>
-  )
-}
-
-/** One item's money per minute: its count, and what that's worth (or why it has no price). */
-function MoneyRow({ line, note, missing, unpriced }: { line: MoneyLine; note?: string; missing?: string; unpriced?: string }) {
-  return (
-    <li>
-      <ItemLabel item={line.item} />
-      <span className="rate">{fmt(line.count)}/min</span>
-      {line.price !== null ? (
-        <span className="cost">
-          <Money copper={line.count * line.price} suffix="/min" />
-          {note && <span className="hint-inline"> {note}</span>}
-        </span>
-      ) : (
-        unpriced ? <span className="hint-inline">{unpriced}</span> : <span className="tag warn">{missing}</span>
-      )}
-    </li>
   )
 }
 
