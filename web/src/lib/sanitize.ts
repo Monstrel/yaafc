@@ -143,6 +143,34 @@ export function sanitizePrefs(v: unknown): IngredientPrefs | undefined {
   return { prefer: strings(v.prefer) ?? [], avoid: strings(v.avoid) ?? [], onlyPreferred: v.onlyPreferred === true }
 }
 
+export interface CauldronSearch {
+  mode: CauldronMode
+  mix: (string | null)[]
+  target: string | null
+  mustInclude: string | null
+  sort: 'offset' | 'cost'
+  page: number
+}
+
+/** The Cauldron tab's mix and search, keeping only item keys `known` accepts. */
+export function sanitizeCauldronSearch(v: unknown, known: (key: string) => boolean): CauldronSearch | undefined {
+  if (!isObj(v)) return undefined
+  const item = (x: unknown) => {
+    const k = str(x)
+    return k !== undefined && known(k) ? k : null
+  }
+  const mix = Array.isArray(v.mix) ? v.mix : []
+  const page = num(v.page)
+  return {
+    mode: oneOf<CauldronMode>('normal', 'advanced')(v.mode) ?? 'normal',
+    mix: [0, 1, 2].map((i) => item(mix[i])),
+    target: item(v.target),
+    mustInclude: item(v.mustInclude),
+    sort: oneOf<'offset' | 'cost'>('offset', 'cost')(v.sort) ?? 'cost',
+    page: page !== undefined && page >= 0 ? Math.floor(page) : 0,
+  }
+}
+
 export const sanitizeString = str
 export const sanitizeStrings = strings
 

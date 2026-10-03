@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { ItemIcon, ItemLabel } from '../components/ItemIcon'
 import { IngredientFilter } from '../components/IngredientFilter'
 import { ItemPicker } from '../components/ItemPicker'
@@ -15,7 +15,7 @@ import {
   type IngredientPrefs,
   type ItemGroup,
 } from '../lib/itemGroups'
-import { sanitizePrefs } from '../lib/sanitize'
+import { sanitizeCauldronSearch, sanitizePrefs, type CauldronSearch } from '../lib/sanitize'
 import { usePersistentState } from '../lib/store'
 import type { SavedRecipe } from '../lib/types'
 
@@ -28,14 +28,23 @@ interface Props {
 
 const PAGE = 50
 
+const newSearch = (): CauldronSearch => ({
+  mode: 'normal',
+  mix: [null, null, null],
+  target: null,
+  mustInclude: null,
+  sort: 'cost',
+  page: 0,
+})
+
 export function CauldronPage({ saved, onToggleSave, planGroups }: Props) {
-  const [mode, setMode] = useState<CauldronMode>('normal')
+  // Kept across tab switches (and reloads), so coming back shows the same search.
+  const [search, setSearch] = usePersistentState<CauldronSearch>('cauldron-search', newSearch, (v) =>
+    sanitizeCauldronSearch(v, (k) => itemsByKey.has(k)),
+  )
+  const update = (patch: Partial<CauldronSearch>) => setSearch((s) => ({ ...s, ...patch }))
+  const { mode, mix, target, mustInclude, sort } = search
   const slots = mode === 'normal' ? 3 : 2
-  const [mix, setMix] = useState<(string | null)[]>([null, null, null])
-  const [target, setTarget] = useState<string | null>(null)
-  const [mustInclude, setMustInclude] = useState<string | null>(null)
-  const [sort, setSort] = useState<'offset' | 'cost'>('cost')
-  const [page, setPage] = useState(0)
   const [prefs, setPrefs] = usePersistentState<IngredientPrefs>('ingredient-prefs', emptyPrefs, sanitizePrefs)
   const preferred = useMemo(() => new Set(prefs.prefer), [prefs.prefer])
   const groups = useMemo(() => [...planGroups, ...builtinGroups], [planGroups])
@@ -60,16 +69,20 @@ export function CauldronPage({ saved, onToggleSave, planGroups }: Props) {
     )
   }, [target, mode, mustInclude, sort, prefs])
 
+  // The stored page may be past the end if the results changed since.
+  const page = Math.min(search.page, Math.max(0, Math.ceil(found.length / PAGE) - 1))
+  const setPage = (p: number) => update({ page: p })
+
   const targetItem = target ? itemsByKey.get(target) : undefined
   const stats = targetItem ? cauldronStats(targetItem.cauldronTarget) : null
 
   return (
     <div className={`page cauldron-page mode-${mode}`}>
       <div className="segmented" role="tablist">
-        <button role="tab" aria-selected={mode === 'normal'} onClick={() => { setMode('normal'); setPage(0) }}>
+        <button role="tab" aria-selected={mode === 'normal'} onClick={() => update({ mode: 'normal', page: 0 })}>
           Cauldron <small>3 ingredients · sum</small>
         </button>
-        <button role="tab" aria-selected={mode === 'advanced'} onClick={() => { setMode('advanced'); setPage(0) }}>
+        <button role="tab" aria-selected={mode === 'advanced'} onClick={() => update({ mode: 'advanced', page: 0 })}>
           Advanced Cauldron <small>2 ingredients · difference</small>
         </button>
       </div>
@@ -90,7 +103,7 @@ export function CauldronPage({ saved, onToggleSave, planGroups }: Props) {
               allowClear
               placeholder={`Ingredient ${i + 1}`}
               detail={(it) => fmt(it.cauldronCost)}
-              onChange={(k) => setMix((m) => m.map((x, j) => (j === i ? k : x)))}
+              onChange={(k) => setSearch((s) => ({ ...s, mix: s.mix.map((x, j) => (j === i ? k : x)) }))}
             />
           ))}
           <span className="arrow" aria-hidden>
@@ -128,7 +141,7 @@ export function CauldronPage({ saved, onToggleSave, planGroups }: Props) {
                 value={target}
                 options={cauldronTargets}
                 detail={(it) => fmt(it.cauldronTarget)}
-                onChange={(k) => { setTarget(k); setPage(0) }}
+                onChange={(k) => update({ target: k, page: 0 })}
               />
             </label>
             <label>
@@ -138,12 +151,12 @@ export function CauldronPage({ saved, onToggleSave, planGroups }: Props) {
                 options={cauldronIngredients}
                 allowClear
                 placeholder="Any ingredient"
-                onChange={(k) => { setMustInclude(k); setPage(0) }}
+                onChange={(k) => update({ mustInclude: k, page: 0 })}
               />
             </label>
             <label>
               Sort by
-              <select value={sort} onChange={(e) => setSort(e.target.value as 'offset' | 'cost')}>
+              <select value={sort} onChange={(e) => update({ sort: e.target.value as 'offset' | 'cost' })}>
                 <option value="cost">Cheapest ingredients</option>
                 <option value="offset">Closest to target value</option>
               </select>
@@ -213,10 +226,8 @@ export function CauldronPage({ saved, onToggleSave, planGroups }: Props) {
               prefs={prefs}
               mustInclude={mustInclude}
               onApply={(q) => {
-                setMode(q.mode)
                 setPrefs(q.prefs)
-                setMustInclude(q.mustInclude)
-                setPage(0)
+                update({ mode: q.mode, mustInclude: q.mustInclude, page: 0 })
               }}
             />
           )}
