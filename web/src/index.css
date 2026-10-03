@@ -2176,6 +2176,33 @@ tr.kind-separate .item-label .name {
   font-weight: 700;
 }
 
+/* A row built in units: "×N" by its item; hovering or clicking it shows the branch's totals. */
+.unit-badge {
+  margin-left: 6px;
+  padding: 0 7px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--accent) 60%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--accent);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.unit-badge.on,
+.unit-badge[aria-pressed='true'] {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+/* Rows showing their unit's totals rather than one copy's share. */
+tr.unit-totals td.num {
+  color: var(--accent);
+}
+
 /* Overflow the plan feeds back into its own heat or fertilizer: used, so not a warning. */
 .fed-text {
   color: var(--muted);

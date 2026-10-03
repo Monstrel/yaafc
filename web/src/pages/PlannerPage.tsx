@@ -49,6 +49,7 @@ import { separationsOf, withSeparation, withoutSeparation } from '../lib/separat
 import { buildingNameFor, machineNameFor, noun } from '../lib/plural'
 import { boilerHeat, boilersFor } from '../lib/steamBoiler'
 import { IMPORT, planProducer } from '../lib/unfold'
+import { dropUnits, setUnits, unitScales } from '../lib/units'
 import type { TreeNode } from '../lib/tree'
 import type { MyDefaults, Plan, PlanTarget, Progress, Separation } from '../lib/types'
 import { MAX_COIN_STACK, PLANNER_UPGRADES, maxLevel, upgradeLevel, type Modifiers } from '../lib/upgrades'
@@ -127,6 +128,15 @@ export function PlannerPage({
   )
   const beltLimited = [...logistics.values()].filter((c) => c.utilization < 1 && c.machines > 0)
   const beyond = useMemo(() => beyondTier(result.tree, catalog.tier), [result.tree, catalog.tier])
+  // Copies of each row built in units; units picked for a different machine count are dropped.
+  const units = useMemo(
+    () => unitScales(result.tree, plan.units, (n) => logistics.get(n.run!.key)?.utilization ?? 1),
+    [result.tree, plan.units, logistics],
+  )
+  const stale = model.result?.status === 'ok' && units.stale.length > 0
+  useEffect(() => {
+    if (stale) onUpdatePlan((p) => dropUnits(p, units.stale, plan.units))
+  }, [stale, units, plan.units, onUpdatePlan])
 
   const setProducer = (pick: ProducerPick) => onUpdatePlan((p) => chooseProducer(p, catalog, pick))
   const resetProducer = (row: string) => onUpdatePlan((p) => clearBranchChoice(p, row))
@@ -178,10 +188,10 @@ export function PlannerPage({
   const fed = useMemo(() => fedOverflow(money), [money])
 
   // Whole machines per building type, as built: each tree row rounds up on its own.
-  const buildings = useMemo(() => buildingCounts(result.tree, logistics), [result.tree, logistics])
+  const buildings = useMemo(() => buildingCounts(result.tree, logistics, units.copies), [result.tree, logistics, units])
   const totalMachines = buildings.reduce((t, b) => t + b.count, 0)
-  const heatUsers = useMemo(() => resourceUsers(result.tree, logistics, 'heat'), [result.tree, logistics])
-  const nutrientUsers = useMemo(() => resourceUsers(result.tree, logistics, 'nutrients'), [result.tree, logistics])
+  const heatUsers = useMemo(() => resourceUsers(result.tree, logistics, 'heat', units.copies), [result.tree, logistics, units])
+  const nutrientUsers = useMemo(() => resourceUsers(result.tree, logistics, 'nutrients', units.copies), [result.tree, logistics, units])
 
   return (
     <div className="page planner">
@@ -453,6 +463,8 @@ export function PlannerPage({
                   roundUp={plan.roundUp ?? NO_ROWS}
                   fed={fed}
                   onRoundUp={(row, on) => onUpdatePlan((p) => setRoundUp(p, row, on))}
+                  units={units}
+                  onUnits={(row, unit) => onUpdatePlan((p) => setUnits(p, row, unit))}
                 />
               </section>
 

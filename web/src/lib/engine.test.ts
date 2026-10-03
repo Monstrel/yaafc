@@ -42,6 +42,8 @@ import {
   setRoundUp,
   setRowCatalysts,
 } from './choices'
+import { sanitizePlans } from './sanitize'
+import { dropUnits, setUnits, unitChoices, unitScales, wholePerCopy } from './units'
 import { resolveChoice } from './unfold'
 import { separationsOf, withSeparation } from './separate'
 import { buildingNameFor, itemNameFor, noun } from './plural'
@@ -1654,5 +1656,87 @@ describe('plural names', () => {
     expect(noun(1, 'recipe')).toBe('recipe')
     expect(noun(0, 'recipe')).toBe('recipes')
     expect(noun(2, 'belt')).toBe('belts')
+  })
+})
+
+describe('building rows in units', () => {
+  const mods = modifiers({})
+  const catalog = buildCatalog({ saved: [], machines: {}, mods, fertilizer: null })
+  const rowOf = (r: PlanResult, id: string) => [...rowsById(r.tree).values()].find((n) => n.id === id)!
+  const full = (n: TreeNode) => checkProcess(n.run!.process, mods)?.utilization ?? 1
+  // 24 Bandages a minute: 4 Assemblers, fed by rows below on fractional machines.
+  const bandages = plan({ targets: [{ item: 'Bandage', rate: 24 }] })
+  const solved = solvePlan(bandages, catalog, mods)
+  const top = rowOf(solved, '0/Bandage')
+  const below = top.children.find((c) => c.kind === 'produce' && c.machines > 0)!
+
+  it("offers the even splits of a row's whole machines", () => {
+    expect(unitChoices(8)).toEqual([2, 4, 8])
+    expect(unitChoices(9)).toEqual([3, 9])
+    expect(unitChoices(7)).toEqual([7])
+    expect(unitChoices(1)).toEqual([])
+    expect(unitChoices(null)).toEqual([])
+    expect(wholePerCopy(top, 1, full)).toBe(4)
+  })
+
+  it('splits a row and everything below it into copies, nesting', () => {
+    const two = setUnits(bandages, '0/Bandage', { count: 2, of: 4 })
+    const s = unitScales(solved.tree, two.units, full)
+    expect(s.own.get('0/Bandage')).toBe(2)
+    expect(s.copies.get('0/Bandage')).toBe(2)
+    expect(s.copies.get(below.id)).toBe(2)
+    expect(s.stale).toEqual([])
+    // A row below splits again within each copy, offered splits of its share.
+    const of = wholePerCopy(below, 2, full)!
+    const choice = unitChoices(of)[0]
+    if (choice) {
+      const nested = setUnits(two, below.id, { count: choice, of })
+      expect(unitScales(solved.tree, nested.units, full).copies.get(below.id)).toBe(2 * choice)
+    }
+  })
+
+  it('keeps the rates and builds whole machines in each copy', () => {
+    const two = setUnits(bandages, '0/Bandage', { count: 2, of: 4 })
+    const r = solvePlan(two, catalog, mods)
+    expect(rowOf(r, below.id).rate).toBeCloseTo(below.rate)
+    const logistics = checkLogistics(r.runs, mods)
+    const { copies } = unitScales(r.tree, two.units, full)
+    const plain = buildingCounts(r.tree, logistics)
+    const split = buildingCounts(r.tree, logistics, copies)
+    const rows = [...rowsById(r.tree).values()].filter((n) => n.kind === 'produce' && n.run?.process.machine && n.machines > 0)
+    const expected = rows.reduce((t, n) => t + (copies.get(n.id) ?? 1) * Math.ceil(n.machines / full(n) / (copies.get(n.id) ?? 1) - 1e-9), 0)
+    expect(split.reduce((t, b) => t + b.count, 0)).toBe(expected)
+    expect(split.reduce((t, b) => t + b.count, 0)).toBeGreaterThanOrEqual(plain.reduce((t, b) => t + b.count, 0))
+  })
+
+  it('rounds a row up in each copy', () => {
+    const p = setRoundUp(setUnits(bandages, '0/Bandage', { count: 4, of: 4 }), below.id, true)
+    const r = solvePlan(p, catalog, mods)
+    expectBalanced(r)
+    const each = rowOf(r, below.id).machines / full(below) / 4
+    expect(each).toBeCloseTo(Math.round(each))
+    expect(each).toBeGreaterThanOrEqual(below.machines / full(below) / 4 - 1e-9)
+  })
+
+  it("goes stale when the row's machine count changes, and drops only what went stale", () => {
+    const p = setUnits(bandages, '0/Bandage', { count: 2, of: 4 })
+    const bigger = solvePlan({ ...p, targets: [{ item: 'Bandage', rate: 36 }] }, catalog, mods)
+    const s = unitScales(bigger.tree, p.units, full)
+    expect(s.stale).toEqual(['0/Bandage'])
+    expect(s.copies.get(below.id)).toBeUndefined()
+    expect(dropUnits(p, s.stale, p.units).units).toBeUndefined()
+    // Picked again since: kept.
+    const again = setUnits(p, '0/Bandage', { count: 3, of: 6 })
+    expect(dropUnits(again, s.stale, p.units)).toEqual(again)
+  })
+
+  it('undoes cleanly, moves with its target, leaves with its row, and survives a backup', () => {
+    expect(setUnits(setUnits(bandages, '0/Bandage', { count: 2, of: 4 }), '0/Bandage', null)).toEqual(bandages)
+    const two = setUnits(plan({ targets: [{ item: 'WoodBoard', rate: 10 }, { item: 'Bandage', rate: 24 }] }), '1/Bandage', { count: 2, of: 4 })
+    expect(moveTarget(two, 1, 0).units).toEqual({ '0/Bandage': { count: 2, of: 4 } })
+    const gone = { ...bandages, units: { '0/Bandage': { count: 2, of: 4 }, '0/Gone': { count: 2, of: 2 } } }
+    expect(pruneChoices(gone, catalog)!.units).toEqual({ '0/Bandage': { count: 2, of: 4 } })
+    const odd = { ...bandages, units: { a: { count: 2, of: 4 }, b: { count: 3, of: 4 }, c: { count: 1, of: 1 }, d: { count: 2.5, of: 5 } } }
+    expect(sanitizePlans([odd], () => 'n')![0].units).toEqual({ a: { count: 2, of: 4 } })
   })
 })

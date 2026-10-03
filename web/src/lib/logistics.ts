@@ -131,18 +131,23 @@ export interface BuildingCount {
 /**
  * Whole machines per building type. Every row of the production tree is its own group of machines
  * in the factory, so each rounds up on its own (as built, input belt limits included) before they're
- * added up: two rows of 0.5 Grinders are two Grinders, not one.
+ * added up: two rows of 0.5 Grinders are two Grinders, not one. A row built in several copies
+ * (`copies`, see units.ts) rounds up in each.
  */
-export function buildingCounts(tree: TreeNode[], logistics: Map<string, LogisticsCheck>): BuildingCount[] {
+export function buildingCounts(
+  tree: TreeNode[],
+  logistics: Map<string, LogisticsCheck>,
+  copies: Map<string, number> = new Map(),
+): BuildingCount[] {
   const counts = new Map<string, BuildingCount>()
-  const whole = (x: number) => Math.ceil(x - 1e-9)
   const visit = (n: TreeNode) => {
     const machine = n.run?.process.machine
     if (n.kind === 'produce' && machine && n.machines > 0) {
       const utilization = logistics.get(n.run!.key)?.utilization ?? 1
+      const k = copies.get(n.id) ?? 1
       const c = counts.get(machine.name) ?? { name: machine.name, count: 0, atFullSpeed: 0 }
-      c.count += utilization > 0 ? whole(n.machines / utilization) : Infinity
-      c.atFullSpeed += whole(n.machines)
+      c.count += utilization > 0 ? builtIn(n.machines / utilization, k) : Infinity
+      c.atFullSpeed += builtIn(n.machines, k)
       counts.set(machine.name, c)
     }
     n.children.forEach(visit)
@@ -150,6 +155,9 @@ export function buildingCounts(tree: TreeNode[], logistics: Map<string, Logistic
   tree.forEach(visit)
   return [...counts.values()]
 }
+
+/** Whole machines built for `machines` worth of work split over `copies` copies of a line. */
+const builtIn = (machines: number, copies: number) => copies * Math.ceil(machines / copies - 1e-9)
 
 /** Machines of one kind drawing heat or nutrients: one building type (nurseries per plant). */
 export interface ResourceUser {
@@ -167,7 +175,12 @@ export interface ResourceUser {
  * What draws the plan's heat (per building type) or nutrients (per nursery and plant), biggest
  * first, with whole machine counts as in `buildingCounts`.
  */
-export function resourceUsers(tree: TreeNode[], logistics: Map<string, LogisticsCheck>, use: 'heat' | 'nutrients'): ResourceUser[] {
+export function resourceUsers(
+  tree: TreeNode[],
+  logistics: Map<string, LogisticsCheck>,
+  use: 'heat' | 'nutrients',
+  copies: Map<string, number> = new Map(),
+): ResourceUser[] {
   const users = new Map<string, ResourceUser>()
   const visit = (n: TreeNode) => {
     const machine = n.run?.process.machine
@@ -177,7 +190,7 @@ export function resourceUsers(tree: TreeNode[], logistics: Map<string, Logistics
       const key = use === 'heat' ? machine.name : `${machine.name}|${n.item}`
       const utilization = logistics.get(n.run!.key)?.utilization ?? 1
       const u = users.get(key) ?? { machine: machine.key, ...(use === 'nutrients' && { item: n.item }), count: 0, perSecond: 0 }
-      u.count += utilization > 0 ? Math.ceil(n.machines / utilization - 1e-9) : Infinity
+      u.count += utilization > 0 ? builtIn(n.machines / utilization, copies.get(n.id) ?? 1) : Infinity
       u.perSecond += draw
       users.set(key, u)
     }

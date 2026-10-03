@@ -83,6 +83,18 @@ export interface Plan {
   noReuse?: string[]
   /** Tree row ids that run on a whole number of machines, rounded up; the extra output overflows. */
   roundUp?: string[]
+  /** Tree rows built as several identical copies of themselves and everything below them. */
+  units?: Record<string, Unitizing>
+}
+
+/** A row built in units: `count` copies of a smaller line, each making its share. */
+export interface Unitizing {
+  count: number
+  /**
+   * Whole machines the row ran on (per copy of the line above it) when the units were picked: they
+   * only split that many evenly, so they're dropped once it changes.
+   */
+  of: number
 }
 
 /** How far the player has got in their game: shared by every plan, since they play one game. */

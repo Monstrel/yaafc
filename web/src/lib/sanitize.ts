@@ -1,6 +1,6 @@
 import type { CauldronMode } from './cauldron'
 import type { IngredientPrefs } from './itemGroups'
-import type { BranchChoice, MyDefault, MyDefaults, Plan, PlanTarget, Progress, SavedRecipe, Separation } from './types'
+import type { BranchChoice, MyDefault, MyDefaults, Plan, PlanTarget, Progress, SavedRecipe, Separation, Unitizing } from './types'
 
 /**
  * Checks data from outside the code (an imported file, or what localStorage holds) against the
@@ -72,6 +72,18 @@ function separation(v: unknown): Separation | undefined {
   return defined({ item, anchor: str(v.anchor), at: str(v.at) })
 }
 
+const wholeNumber = (v: unknown) => {
+  const n = num(v)
+  return n !== undefined && Number.isInteger(n) && n > 0 ? n : undefined
+}
+
+function unitizing(v: unknown): Unitizing | undefined {
+  if (!isObj(v)) return undefined
+  const count = wholeNumber(v.count)
+  const of = wholeNumber(v.of)
+  return count && of && count > 1 && of % count === 0 ? { count, of } : undefined
+}
+
 function plan(v: unknown, newId: () => string): Plan | undefined {
   if (!isObj(v)) return undefined
   const feedback = isObj(v.feedback) ? defined({ fuel: bool(v.feedback.fuel), fertilizer: bool(v.feedback.fertilizer) }) : undefined
@@ -92,6 +104,7 @@ function plan(v: unknown, newId: () => string): Plan | undefined {
     separate: list(v.separate, separation),
     noReuse: strings(v.noReuse),
     roundUp: strings(v.roundUp),
+    units: record(v.units, unitizing),
   })
 }
 

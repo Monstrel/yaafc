@@ -11,7 +11,8 @@ import type { ProcessCatalog } from '../lib/processes'
 import { branchIds, type TreeNode } from '../lib/tree'
 import { rememberChanges, rowsById, type ProducerPick } from '../lib/choices'
 import { parentId, rowItem } from '../lib/unfold'
-import type { Separation } from '../lib/types'
+import type { Separation, Unitizing } from '../lib/types'
+import { unitChoices, wholePerCopy, type UnitScales } from '../lib/units'
 import type { Modifiers } from '../lib/upgrades'
 import { ItemIcon, ItemLabel } from './ItemIcon'
 import { Money } from './Money'
@@ -39,6 +40,10 @@ interface Props {
   /** Rows running on a whole number of machines, rounded up. */
   roundUp: string[]
   onRoundUp: (row: string, on: boolean) => void
+  /** Rows built in units, and how many copies of each row are built. */
+  units: UnitScales
+  /** Builds a row in units, or as one line (null). */
+  onUnits: (row: string, unit: Unitizing | null) => void
   /** Per item, the share of its overflow the plan feeds back into its own heat or fertilizer. */
   fed: Map<string, { share: number; into: BusUse[] }>
 }
@@ -68,6 +73,8 @@ export function ProductionTree({
   mods,
   roundUp,
   onRoundUp,
+  units,
+  onUnits,
   fed,
 }: Props) {
   const rounded = useMemo(() => new Set(roundUp), [roundUp])
@@ -159,6 +166,29 @@ export function ProductionTree({
   const chooseRounding = (on: boolean) => {
     machinesRef.current?.hidePopover()
     if (machinesMenu) onRoundUp(machinesMenu.node.id, on)
+  }
+  const utilization = (n: TreeNode) => logistics.get(n.run!.key)?.utilization ?? 1
+  /** Copies built of the line a row sits in (not counting its own units). */
+  const copiesAbove = (id: string) => (units.copies.get(id) ?? 1) / (units.own.get(id) ?? 1)
+  const chooseUnits = (count: number | null) => {
+    machinesRef.current?.hidePopover()
+    if (!machinesMenu) return
+    const { node } = machinesMenu
+    const of = wholePerCopy(node, copiesAbove(node.id), utilization)
+    onUnits(node.id, count && of ? { count, of } : null)
+  }
+
+  // A unit's ×N badge shows its branch's totals while hovered, or from a click until the next one.
+  const [hovered, setHovered] = useState<string | null>(null)
+  const [pinned, setPinned] = useState<string | null>(null)
+  const revealed = hovered ?? pinned
+  const inRevealed = (id: string) => !!revealed && (id === revealed || !!byId.get(id)?.ancestors.includes(revealed))
+  /** Copies a row's numbers are split over: each copy's share, unless its unit's totals are showing. */
+  const shownCopies = (id: string) => (inRevealed(id) ? 1 : (units.copies.get(id) ?? 1))
+  const reveal = (id: string, how: 'enter' | 'leave' | 'pin') => {
+    if (how === 'enter') setHovered(id)
+    else if (how === 'leave') setHovered((h) => (h === id ? null : h))
+    else setPinned((p) => (p === id ? null : id))
   }
 
   // Picking an anchor built in several places asks whether to gather under all of them.
@@ -311,6 +341,12 @@ export function ProductionTree({
                   onSeparate={onSeparate}
                   onSeparateMenu={openMenu}
                   rounded={rounded.has(line.node.id)}
+                  copies={shownCopies(line.node.id)}
+                  unit={units.own.get(line.node.id)}
+                  allCopies={units.copies.get(line.node.id) ?? 1}
+                  totals={inRevealed(line.node.id) && (units.copies.get(line.node.id) ?? 1) > 1}
+                  pinned={pinned === line.node.id}
+                  onReveal={reveal}
                   fed={fed}
                   onMachinesMenu={openMachinesMenu}
                   logistics={logistics}
@@ -374,6 +410,9 @@ export function ProductionTree({
             rounded={rounded.has(machinesMenu.node.id)}
             belts={machinesMenu.node.run ? logistics.get(machinesMenu.node.run.key) : undefined}
             onChoose={chooseRounding}
+            copiesAbove={copiesAbove(machinesMenu.node.id)}
+            unit={units.own.get(machinesMenu.node.id)}
+            onUnits={chooseUnits}
           />
         )}
       </div>
@@ -388,7 +427,7 @@ export function ProductionTree({
 }
 
 function TreeRow({
-  node,
+  node: whole,
   depth,
   open,
   onToggle,
@@ -403,6 +442,12 @@ function TreeRow({
   onSeparate,
   onSeparateMenu,
   rounded,
+  copies,
+  unit,
+  allCopies,
+  totals,
+  pinned,
+  onReveal,
   onMachinesMenu,
   fed,
   logistics,
@@ -439,6 +484,17 @@ function TreeRow({
   onSeparateMenu: (node: TreeNode, button: HTMLElement) => void
   /** The row runs on a whole number of machines, rounded up. */
   rounded: boolean
+  /** Copies of the row its numbers are split over (1 = the whole row, as when its unit's totals show). */
+  copies: number
+  /** The units the row is built in, if it is. */
+  unit?: number
+  /** Copies of the row built in all. */
+  allCopies: number
+  /** Its unit's totals are showing (rather than each copy's share). */
+  totals: boolean
+  /** Its own unit's totals stay showing (clicked). */
+  pinned: boolean
+  onReveal: (id: string, how: 'enter' | 'leave' | 'pin') => void
   onMachinesMenu: (node: TreeNode, button: HTMLElement) => void
   fed: Map<string, { share: number; into: BusUse[] }>
   logistics: Map<string, LogisticsCheck>
@@ -449,6 +505,7 @@ function TreeRow({
   card?: number
   afterBranch?: boolean
 }) {
+  const node = copies === 1 ? whole : shareOf(whole, copies)
   if (node.id === PLAN_ROOT)
     return (
       <tr data-node-id={node.id} className="kind-plan depth-0">
@@ -512,7 +569,7 @@ function TreeRow({
   return (
     <tr
       data-node-id={node.id}
-      className={`kind-${node.kind} depth-${Math.min(depth, 1)} ${node.rate === 0 ? 'idle' : ''} ${card !== undefined ? 'in-with' : ''} ${afterBranch ? 'after-branch' : ''}`}
+      className={`kind-${node.kind} depth-${Math.min(depth, 1)} ${node.rate === 0 ? 'idle' : ''} ${totals ? 'unit-totals' : ''} ${card !== undefined ? 'in-with' : ''} ${afterBranch ? 'after-branch' : ''}`}
       style={cardStyle(card)}
     >
       <td className="tree-item">
@@ -526,6 +583,23 @@ function TreeRow({
             <span className="fold-spacer" />
           )}
           <ItemLabel item={node.item} />
+          {unit && (
+            <button
+              type="button"
+              className={`unit-badge${totals ? ' on' : ''}`}
+              aria-pressed={pinned}
+              title={`${
+                allCopies > unit
+                  ? `Built ${unit} times over in each copy of the line above (${allCopies} in all)`
+                  : `Built ${unit} times over`
+              }: the numbers here and below are for one copy. Hover to see the totals, click to keep them showing.`}
+              onPointerEnter={(e) => e.pointerType === 'mouse' && onReveal(whole.id, 'enter')}
+              onPointerLeave={(e) => e.pointerType === 'mouse' && onReveal(whole.id, 'leave')}
+              onClick={() => onReveal(whole.id, 'pin')}
+            >
+              ×{unit}
+            </button>
+          )}
         </div>
       </td>
       <td className="num rate-cell">
@@ -677,9 +751,13 @@ function TreeRow({
             <button
               type="button"
               className={`machines-button${rounded ? ' rounded' : ''}`}
-              title={rounded ? 'Rounded up to whole machines: the extra output overflows' : 'Round up to whole machines'}
+              title={
+                rounded
+                  ? 'Rounded up to whole machines: the extra output overflows'
+                  : 'Round up to whole machines, or build in units'
+              }
               aria-haspopup="menu"
-              onClick={(e) => onMachinesMenu(node, e.currentTarget)}
+              onClick={(e) => onMachinesMenu(whole, e.currentTarget)}
             >
               <span className="machines-value">{fmt(node.machines)}</span>
               {rounded && (
@@ -693,7 +771,10 @@ function TreeRow({
                 → {belts.utilization > 0 ? fmt(node.machines / belts.utilization) : '∞'} (belts)
               </div>
             )}
-            <div className="machine-meta">{buildingNameFor(p.machine.key, node.machines)}</div>
+            <div className="machine-meta">
+              {buildingNameFor(p.machine.key, node.machines)}
+              {copies > 1 && ' per copy'}
+            </div>
           </>
         )}
       </td>
@@ -723,7 +804,7 @@ function TreeRow({
                 title={`Build separately: gather the uses of ${name} into one place, at the top of the plan or with an item above it`}
                 aria-label={`Build ${name} separately`}
                 aria-haspopup="menu"
-                onClick={(e) => onSeparateMenu(node, e.currentTarget)}
+                onClick={(e) => onSeparateMenu(whole, e.currentTarget)}
               >
                 <BoxArrowIcon />
               </button>
@@ -738,7 +819,7 @@ function TreeRow({
                 className="tree-action"
                 title={`Use as my default: remember how ${name} and everything below it is made, for every plan`}
                 aria-label={`Use this way of making ${name} as my default`}
-                onClick={() => onRemember(node)}
+                onClick={() => onRemember(whole)}
               >
                 <BookmarkIcon />
               </button>
@@ -1021,18 +1102,33 @@ function MachinesMenu({
   rounded,
   belts,
   onChoose,
+  copiesAbove,
+  unit,
+  onUnits,
 }: {
   node: TreeNode
   rounded: boolean
   belts: LogisticsCheck | undefined
   onChoose: (round: boolean) => void
+  /** Copies built of the line the row sits in. */
+  copiesAbove: number
+  /** The units the row is built in, if it is. */
+  unit?: number
+  onUnits: (count: number | null) => void
 }) {
   const machine = node.run?.process.machine
   const utilization = belts?.utilization ?? 1
-  const built = utilization > 0 ? node.machines / utilization : node.machines
+  const copies = copiesAbove * (unit ?? 1)
+  // Rounding is per copy of the row.
+  const built = (utilization > 0 ? node.machines / utilization : node.machines) / copies
   const whole = Math.ceil(built - 1e-9)
   const names = (n: number) => (machine ? buildingNameFor(machine.key, n) : noun(n, 'machine'))
-  const extra = built > 0 ? node.rate * (whole / built - 1) : 0
+  const extra = built > 0 ? (node.rate / copies) * (whole / built - 1) : 0
+  const perCopy = copies > 1 ? ' per copy' : ''
+  // Units split the row's whole machines (in each copy of the line above) evenly.
+  const splits = wholePerCopy(node, copiesAbove, () => utilization)
+  const choices = unitChoices(splits)
+  const rate = node.rate / copiesAbove
   return (
     <>
       <div className="tree-menu-title">Machines for {itemsByKey.get(node.item)?.name}</div>
@@ -1042,7 +1138,9 @@ function MachinesMenu({
         </span>
         <span>
           As needed
-          <span className="tree-menu-hint">{rounded ? 'just what the plan uses, no overflow' : `${fmt(built)} ${names(built)}`}</span>
+          <span className="tree-menu-hint">
+            {rounded ? 'just what the plan uses, no overflow' : `${fmt(built)} ${names(built)}${perCopy}`}
+          </span>
         </span>
       </button>
       <button type="button" role="menuitemradio" aria-checked={rounded} onClick={() => onChoose(true)}>
@@ -1056,12 +1154,63 @@ function MachinesMenu({
               ? 'the extra output overflows'
               : whole === built || Math.abs(whole - built) < 1e-9
                 ? 'already a whole number'
-                : `${whole} ${names(whole)}, +${fmt(extra)}/min overflow`}
+                : `${whole} ${names(whole)}${perCopy}, +${fmt(extra)}/min overflow`}
           </span>
         </span>
       </button>
+      {choices.length > 0 && (
+        <>
+          <div className="tree-menu-title">Build in units</div>
+          <button type="button" role="menuitemradio" aria-checked={!unit} onClick={() => onUnits(null)}>
+            <span className="tree-menu-check" aria-hidden>
+              {unit ? '' : '✓'}
+            </span>
+            <span>
+              One line
+              <span className="tree-menu-hint">
+                {splits} {names(splits!)} together
+              </span>
+            </span>
+          </button>
+          {choices.map((d) => (
+            <button type="button" role="menuitemradio" aria-checked={unit === d} key={d} onClick={() => onUnits(d)}>
+              <span className="tree-menu-check" aria-hidden>
+                {unit === d ? '✓' : ''}
+              </span>
+              <span>
+                ×{d}: {splits! / d} {names(splits! / d)} each
+                <span className="tree-menu-hint">
+                  everything below built {d} times over, {fmt(rate / d)}/min per copy
+                </span>
+              </span>
+            </button>
+          ))}
+        </>
+      )}
     </>
   )
+}
+
+/** A row's share in one of `copies` copies of it: every amount divided among them. */
+function shareOf(n: TreeNode, copies: number): TreeNode {
+  const k = 1 / copies
+  return {
+    ...n,
+    rate: n.rate * k,
+    machines: n.machines * k,
+    heat: n.heat * k,
+    nutrients: n.nutrients * k,
+    overflow: n.overflow * k,
+    fromByproduct: n.fromByproduct * k,
+    purchased: n.purchased * k,
+    shortfall: n.shortfall * k,
+    byproducts: n.byproducts.map((b) => ({
+      ...b,
+      count: b.count * k,
+      overflow: b.overflow * k,
+      to: b.to.map((t) => ({ ...t, amount: t.amount * k })),
+    })),
+  }
 }
 
 const FED_INTO: Record<BusUse, string> = { heat: 'burned for heat', fertilizer: 'spread as fertilizer', money: 'spent in the plan' }

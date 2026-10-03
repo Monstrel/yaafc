@@ -205,6 +205,7 @@ export function reorderTargets(plan: Plan, order: number[]): Plan {
     rowCatalysts: rows(plan.rowCatalysts),
     separate,
     roundUp: roundUp?.length ? roundUp : undefined,
+    units: rows(plan.units),
   }
 }
 
@@ -392,11 +393,12 @@ export function pruneChoices(plan: Plan, catalog: ProcessCatalog): Plan | null {
   const made = new Set([...items, ...nodes.flatMap((n) => n.process?.outputs.map((o) => o.item) ?? [])])
   const feedbackItems = plan.feedbackItems?.filter((item) => made.has(item))
   const f = feedbackItems?.length !== plan.feedbackItems?.length
-  // Rounding stays with rows its machines still run on.
+  // Rounding and units stay with rows its machines still run on.
   const running = new Set(nodes.flatMap((n) => (n.kind === 'make' ? [n.id] : [])))
   const roundUp = plan.roundUp?.filter((id) => running.has(id))
   const u = roundUp?.length !== plan.roundUp?.length
-  if (!p.dropped && !m.dropped && !c.dropped && !b.dropped && !s && !r && !f && !u) return null
+  const units = keep(plan.units, (id) => running.has(id))
+  if (!p.dropped && !m.dropped && !c.dropped && !b.dropped && !s && !r && !f && !u && !units.dropped) return null
   return {
     ...plan,
     producers: p.record!,
@@ -407,5 +409,6 @@ export function pruneChoices(plan: Plan, catalog: ProcessCatalog): Plan | null {
     noReuse: noReuse?.length ? noReuse : undefined,
     feedbackItems: feedbackItems?.length ? feedbackItems : undefined,
     roundUp: roundUp?.length ? roundUp : undefined,
+    units: units.record && Object.keys(units.record).length ? units.record : undefined,
   }
 }

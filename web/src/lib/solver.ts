@@ -1,5 +1,6 @@
 import { HEAT, NUTRIENTS, baseInputKey, realItem, type Stack } from './gameData'
-import { wholeMachines } from './logistics'
+import { checkProcess, wholeMachines } from './logistics'
+import { unitScales } from './units'
 import { solveLP } from './lp'
 import { craftsPerMachine } from './machineRate'
 import { runKey, type Process, type ProcessCatalog } from './processes'
@@ -127,17 +128,20 @@ const MAX_ROUNDING_ROUNDS = 12
  * Solves the plan. Rows rounded up (`plan.roundUp`) run on the next whole number of the machines
  * built (with input belt limits), the extra output overflowing: each solve gives them a floor on
  * their crafts, and the plan is solved again until no rounded row needs more. Floors only grow.
+ * A row built in units (`plan.units`) rounds up in each copy.
  */
 export function solvePlan(plan: Plan, catalog: ProcessCatalog, mods: Modifiers): PlanResult {
   const rounded = new Set(plan.roundUp ?? [])
   const floors = new Map<string, number>()
+  const utilization = (n: TreeNode) => checkProcess(n.run!.process, mods)?.utilization ?? 1
   let result = solveFed(plan, catalog, mods, floors)
   for (let round = 0; rounded.size && round < MAX_ROUNDING_ROUNDS && result.status === 'ok'; round++) {
     let raised = false
+    const { copies } = unitScales(result.tree, plan.units, utilization)
     const visit = (n: TreeNode) => {
       const p = n.run?.process
       if (rounded.has(n.id) && n.kind === 'produce' && p?.machine && p.seconds > 0) {
-        const built = wholeMachines(p, n.machines, mods)
+        const built = wholeMachines(p, n.machines / (copies.get(n.id) ?? 1), mods)
         if (built !== null && built.count > built.exact + 1e-9) {
           floors.set(n.id, (built.count / built.exact) * n.run!.craftsPerMinute)
           raised = true
