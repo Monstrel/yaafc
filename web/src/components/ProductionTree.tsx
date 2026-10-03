@@ -6,11 +6,13 @@ import { sanitizeStrings } from '../lib/sanitize'
 import { foldKey, usePersistentState } from '../lib/store'
 import type { BusUse } from '../lib/money'
 import type { LogisticsCheck } from '../lib/logistics'
+import { itemsPerSlot, onBelt } from '../lib/machineRate'
 import type { ProcessCatalog } from '../lib/processes'
 import { branchIds, type TreeNode } from '../lib/tree'
 import { rememberChanges, rowsById, type ProducerPick } from '../lib/choices'
 import { parentId, rowItem } from '../lib/unfold'
 import type { Separation } from '../lib/types'
+import type { Modifiers } from '../lib/upgrades'
 import { ItemIcon, ItemLabel } from './ItemIcon'
 import { Money } from './Money'
 import { ProducerSelect, type ReuseOption } from './ProducerSelect'
@@ -32,6 +34,8 @@ interface Props {
   onForget: (item: string) => void
   onSeparate: (s: Separation, on: boolean) => void
   logistics: Map<string, LogisticsCheck>
+  /** Belt speed and coin stacks, for how many belts a row's items need. */
+  mods: Modifiers
   /** Rows running on a whole number of machines, rounded up. */
   roundUp: string[]
   onRoundUp: (row: string, on: boolean) => void
@@ -61,6 +65,7 @@ export function ProductionTree({
   onForget,
   onSeparate,
   logistics,
+  mods,
   roundUp,
   onRoundUp,
   fed,
@@ -309,6 +314,7 @@ export function ProductionTree({
                   fed={fed}
                   onMachinesMenu={openMachinesMenu}
                   logistics={logistics}
+                  mods={mods}
                   link={link}
                 />
               ),
@@ -400,6 +406,7 @@ function TreeRow({
   onMachinesMenu,
   fed,
   logistics,
+  mods,
   link,
   edges,
   card,
@@ -435,6 +442,7 @@ function TreeRow({
   onMachinesMenu: (node: TreeNode, button: HTMLElement) => void
   fed: Map<string, { share: number; into: BusUse[] }>
   logistics: Map<string, LogisticsCheck>
+  mods: Modifiers
   link: LinkFn
   edges: Edge[]
   /** Level of the "with" group card this row sits in, if any. */
@@ -479,6 +487,10 @@ function TreeRow({
               : (separately?.map((s) => `${s} (made separately)`).join(', ') ?? ''),
         }
       : undefined
+  // Belts it takes to carry this row's items (liquids go by pipe).
+  const beltsNeeded = onBelt(node.item)
+    ? Math.ceil(node.rate / itemsPerSlot(node.item, mods) / mods.beltSpeed - 1e-9)
+    : 0
   const canChoose = !!node.producer && ((catalog.byProduct.get(node.item)?.length ?? 0) > 0 || !!reuse)
   const coin = coinValue(node.item)
   const price = coin ?? itemsByKey.get(node.item)?.buyPrice
@@ -516,7 +528,14 @@ function TreeRow({
           <ItemLabel item={node.item} />
         </div>
       </td>
-      <td className="num rate-cell">{fmt(node.rate)}</td>
+      <td className="num rate-cell">
+        {fmt(node.rate)}
+        {beltsNeeded > 1 && (
+          <div className="machine-meta" title={`${fmt(mods.beltSpeed)} items/min per belt`}>
+            {beltsNeeded} belts
+          </div>
+        )}
+      </td>
       <td>
         {node.kind === 'loop' ? (
           <span className="leaf-note">↺ made further up this branch (loop)</span>

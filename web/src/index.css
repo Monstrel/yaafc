@@ -1114,6 +1114,10 @@ td.under {
   white-space: nowrap;
 }
 
+.rate-cell .machine-meta {
+  font-weight: normal;
+}
+
 .flows {
   display: flex;
   flex-direction: column;

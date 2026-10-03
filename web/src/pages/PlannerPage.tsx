@@ -449,6 +449,7 @@ export function PlannerPage({
                   onCatalysts={setCatalysts}
                   onSeparate={setSeparate}
                   logistics={logistics}
+                  mods={mods}
                   roundUp={plan.roundUp ?? NO_ROWS}
                   fed={fed}
                   onRoundUp={(row, on) => onUpdatePlan((p) => setRoundUp(p, row, on))}
