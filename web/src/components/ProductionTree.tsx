@@ -1062,9 +1062,8 @@ function layoutLines(tree: TreeNode[], collapsed: Set<string>): Line[] {
   }
   lines.forEach((line, k) => {
     while (open.length && open.at(-1)!.closeAt >= line.depth) draw(open.pop()!, k - 1)
-    if (line.kind === 'with') open.push({ level: line.depth, closeAt: line.depth - 1, start: k, accent: true })
-    // A "with" row's own children sit inside its group's edge, which already starts at its level.
-    else if (line.node.children.length && !collapsed.has(line.node.id) && !isGroupRow(line.node, line.depth))
+    if (line.kind === 'with') open.push({ level: cardLevel(line.depth), closeAt: line.depth - 1, start: k, accent: true })
+    else if (line.node.children.length && !collapsed.has(line.node.id))
       open.push({ level: line.depth, closeAt: line.depth, start: k, accent: false })
   })
   while (open.length) draw(open.pop()!, lines.length - 1)
@@ -1076,6 +1075,8 @@ function layoutLines(tree: TreeNode[], collapsed: Set<string>): Line[] {
 }
 
 const edgeX = (level: number) => level * 20 + 4 // just left of that level's fold arrow
+/** A "with" card's edge: half a level out, leaving room inside it for its rows' own branch edges. */
+const cardLevel = (depth: number) => depth - 0.5
 
 /** The card edges passing through a row, one per branch it sits in. */
 function Edges({ edges }: { edges: Edge[] }) {
@@ -1091,7 +1092,7 @@ function Edges({ edges }: { edges: Edge[] }) {
 
 /** Where a "with" card's tint starts: at its edge, so the margin outside stays clear. */
 const cardStyle = (level?: number) =>
-  level === undefined ? undefined : ({ '--card-x': `${edgeX(level)}px` } as CSSProperties)
+  level === undefined ? undefined : ({ '--card-x': `${edgeX(cardLevel(level))}px` } as CSSProperties)
 
 /**
  * Choices for a row's machine count: just what the plan needs, or the next whole number of
