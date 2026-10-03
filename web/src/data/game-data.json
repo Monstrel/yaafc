@@ -3,7 +3,7 @@
     "steamBuildId": "25321648",
     "pakDate": "2026-09-15"
   },
-  "extractedAt": "2026-10-02 20:57:59Z",
+  "extractedAt": "2026-10-03 15:12:05Z",
   "items": [
     {
       "key": "PortalSigil",
@@ -9553,6 +9553,31 @@
       },
       "craftType": null,
       "components": []
+    },
+    {
+      "key": "MiniWorldTree",
+      "id": 1211,
+      "name": "Miniature World Tree",
+      "icon": "building_MiniWorldTree.png",
+      "hidden": false,
+      "heatCost": 0.0,
+      "tags": [
+        "Building.Decoration.Miniature"
+      ],
+      "ports": {
+        "beltIn": 1,
+        "beltOut": 1,
+        "pipeIn": 0,
+        "pipeOut": 0
+      },
+      "craftType": null,
+      "components": [
+        {
+          "type": "TreeNurseryFacilityComponent",
+          "ContainerCapacity": 3,
+          "IsMininature": true
+        }
+      ]
     }
   ],
   "seeds": [

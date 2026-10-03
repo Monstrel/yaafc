@@ -15,7 +15,7 @@ import {
   research,
   upgrades,
 } from './gameData'
-import { buildCatalog, defaultProducer, paradoxSeconds, type ProcessCatalog } from './processes'
+import { buildCatalog, defaultProducer, paradoxSeconds, processTitle, type ProcessCatalog } from './processes'
 import { ledgers } from './ledger'
 import { fedOverflow, moneyLedger, type MoneyLedger } from './money'
 import { allowedIngredients, builtinGroups, emptyPrefs, onlyGroup, preferredCount, setPrefs } from './itemGroups'
@@ -1402,13 +1402,26 @@ describe('World Tree nursery', () => {
     expect(nutrients).toBeCloseTo(60000 * (out.WorldTreeLeaf + out.WorldTreeCore))
   })
 
-  it('runs in the World Tree Nursery at a fixed 3 s per item, whatever the fertilizer', () => {
+  it('runs at a fixed 3 s per item, whatever the fertilizer', () => {
     for (const stage of ['TreeStage2', 'TreeStage3']) {
       const p = catalog.byId.get(`nursery:${stage}`)!
-      expect(p.machine?.key).toBe('WorldTreeNursery')
       const items = p.outputs.reduce((sum, s) => sum + s.count, 0)
       expect(p.seconds / items).toBeCloseTo(3)
     }
+  })
+
+  // The stage isn't a choice: the nursery matures to stage 3; only the miniature stays at stage 2.
+  it('grows stage 3 in the World Tree Nursery and stage 2 in the Miniature World Tree', () => {
+    expect(tree.machine?.key).toBe('WorldTreeNursery')
+    const mini = catalog.byId.get('nursery:TreeStage2')!
+    expect(mini.machine?.key).toBe('MiniWorldTree')
+    expect(mini.outputs.map((s) => s.item)).toEqual(['WorldTreeLeaf'])
+    expect(mini.inputs.find((s) => s.item === NUTRIENTS)!.count).toBeCloseTo(30000)
+    expect(processTitle(mini)).toBe('Miniature World Tree')
+  })
+
+  it('defaults leaves to the World Tree Nursery, even once the miniature is unlocked', () => {
+    expect(defaultProducer(catalog, 'WorldTreeLeaf')).toBe('nursery:TreeStage3')
   })
 
   it('speeds up with Factory Efficiency', () => {
@@ -1417,10 +1430,11 @@ describe('World Tree nursery', () => {
     expect(craftsPerMachine(tree, mods) / craftsPerMachine(tree, modifiers({}))).toBeCloseTo(mods.factorySpeed)
   })
 
-  it('lists the stage 3 trees grown for cores, though leaves come from stage 2', () => {
+  it('lists the stage 3 trees grown for cores, though leaves come from miniature trees', () => {
     const mods = modifiers({})
     const targets = [{ item: 'Sol', rate: 0.25 }]
-    const result = solvePlan(plan({ targets }), catalog, mods)
+
+    const result = solvePlan(plan({ targets, producers: { WorldTreeLeaf: 'nursery:TreeStage2' } }), catalog, mods)
     const all = (n: TreeNode): TreeNode[] => [n, ...n.children.flatMap(all)]
     const nodes = result.tree.flatMap(all)
     for (const run of result.runs.filter((r) => r.machines > 0 && r.process.machine)) {
@@ -1598,11 +1612,11 @@ describe('my defaults', () => {
     const catalog = catalogWith()
     const sol = plan({ targets: [{ item: 'Sol', rate: 0.25 }], separate: [{ item: 'WorldTreeLeaf' }] })
     const leaf = solvePlan(sol, catalog, mods).tree.find((n) => n.item === 'WorldTreeLeaf')!
-    const picked = chooseProducer(sol, catalog, { item: 'WorldTreeLeaf', producer: 'nursery:TreeStage3', row: leaf.id })
+    const picked = chooseProducer(sol, catalog, { item: 'WorldTreeLeaf', producer: 'nursery:TreeStage2', row: leaf.id })
     const tree = solvePlan(picked, catalog, mods).tree
     const root = tree[0]
     expect(all(root).some((n) => n.kind === 'separate' && n.item === 'WorldTreeLeaf')).toBe(true)
-    expect(rememberSetup(picked, catalog, tree, root).mine.WorldTreeLeaf).toEqual({ producer: 'nursery:TreeStage3' })
+    expect(rememberSetup(picked, catalog, tree, root).mine.WorldTreeLeaf).toEqual({ producer: 'nursery:TreeStage2' })
   })
 })
 

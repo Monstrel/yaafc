@@ -85,7 +85,9 @@ static class Exporter
         foreach (var (key, row) in Rows(provider, BuildingsTable))
         {
             var tags = row["BuildingTags"]!.Select(t => t.ToString()).ToList();
-            if (!tags.Any(t => t.StartsWith("Building.Crafting") || t == "Building.Heating")) continue;
+            // The Miniature World Tree is tagged as a decoration but runs a real World Tree nursery
+            // (IsMininature: pinned to stage 2, leaves only).
+            if (!tags.Any(t => t.StartsWith("Building.Crafting") || t == "Building.Heating") && key != "MiniWorldTree") continue;
 
             var components = BlueprintComponents(provider, row["ScriptClass"]);
             buildings.Add(new JObject

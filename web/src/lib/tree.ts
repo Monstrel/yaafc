@@ -145,8 +145,10 @@ export function buildTree(roots: PlanNode[], flows: Map<PlanNode, RowFlows>, mod
       inputs: p.inputs.map((s) => ({ item: s.item, count: s.count * crafts })),
       outputs: p.outputs.map((s) => ({ item: s.item, count: s.count * crafts })),
     }
+    // A gathered row stays one, even when by-products cover it, so it can still be undone.
+    const gathered = n.separation && { consolidated: true, separation: n.separation }
     // Wholly covered by other rows' by-products: its own machines and ingredients stand idle.
-    if (crafts === 0 && f.fromByproduct > 0) return { ...base, kind: 'byproduct', run }
+    if (crafts === 0 && f.fromByproduct > 0) return { ...base, kind: 'byproduct', run, ...gathered }
     const perSecond = (key: string) => (run.inputs.find((s) => s.item === key)?.count ?? 0) / 60
     return {
       ...base,
@@ -159,7 +161,7 @@ export function buildTree(roots: PlanNode[], flows: Map<PlanNode, RowFlows>, mod
         .filter((s) => s.item !== n.item && s.count > 0 && !isPseudo(s.item))
         .map((s) => ({ ...s, ...(f.byproductRoutes[s.item] ?? { to: [], overflow: s.count }) })),
       children: n.children.map(toNode),
-      ...(n.separation && { consolidated: true, separation: n.separation }),
+      ...gathered,
     }
   }
   return roots.map(toNode)

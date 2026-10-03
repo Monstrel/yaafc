@@ -8,6 +8,7 @@ import {
   NURSERY,
   NUTRIENTS,
   MAX_TIER,
+  MINI_WORLD_TREE,
   WORLD_TREE_NURSERY,
   buyTier,
   coinValue,
@@ -234,12 +235,16 @@ export function savedRecipeProcess(s: SavedRecipe): Process | null {
 // only fills its nutrient buffer. A leaf/core turn counter ignores the table's GrowthNum/SideGrowthNum
 // (99/1): a stage-3 tree emits 100 leaves, then 1 core. Every item, core included, costs one
 // GrowthNutrientValue.
+// Players don't pick the stage: a World Tree Nursery grows through stages 1 and 2 on its own and stays
+// at stage 3, while the Miniature World Tree (IsMininature) is pinned to stage 2 and grows only leaves.
+// So stage 2 runs on the miniature and stage 3 on the nursery.
 const WORLD_TREE_STAGE_RATE = [5000, 10000, 20000] // nutrients/s for TreeStage1..3
 const WORLD_TREE_LEAVES_PER_CORE = 100
 
 function nurseryProcesses(ctx: ProcessContext): Process[] {
   const nursery = machinesByKey.get(NURSERY) ?? null
   const treeNursery = machinesByKey.get(WORLD_TREE_NURSERY) ?? null
+  const miniTree = machinesByKey.get(MINI_WORLD_TREE) ?? null
   const fert = ctx.fertilizer ? itemsByKey.get(ctx.fertilizer) : undefined
   const fertSpeed = fert?.nutrientSpeed || 1
   const result: Process[] = []
@@ -247,7 +252,7 @@ function nurseryProcesses(ctx: ProcessContext): Process[] {
     if (!s.plant || !itemsByKey.has(s.plant) || s.nutrientCost <= 0) continue
     const stage = s.seed.match(/^TreeStage(\d)$/)?.[1]
     const worldTree = stage !== undefined
-    const machine = worldTree ? treeNursery : nursery
+    const machine = !worldTree ? nursery : stage === '2' ? miniTree : treeNursery
     const speed = worldTree ? WORLD_TREE_STAGE_RATE[Number(stage) - 1] : fertSpeed
     // One nutrient "charge" grows one plant (and its side product in proportion).
     const sidePerPlant = !s.side ? 0 : worldTree ? 1 / WORLD_TREE_LEAVES_PER_CORE : s.count ? s.sideCount / s.count : 0
@@ -257,7 +262,7 @@ function nurseryProcesses(ctx: ProcessContext): Process[] {
     result.push({
       id: `nursery:${s.seed}`,
       kind: 'nursery',
-      label: `${itemName(s.plant)} (${worldTree ? `stage ${stage}` : 'nursery'})`,
+      label: `${itemName(s.plant)} (${worldTree ? (machine?.name ?? `stage ${stage}`) : 'nursery'})`,
       product: s.plant,
       secondary: s.side && sidePerPlant ? [s.side] : [],
       machine,
@@ -271,9 +276,11 @@ function nurseryProcesses(ctx: ProcessContext): Process[] {
       // Nurseries grow from bought seeds.
       tier: Math.max(machine ? machineTier(machine.key) : 1, buyTier(worldTree ? 'WorldTreeSeed' : s.seed)),
       notes: [
-        worldTree
-          ? `Fixed stage ${stage} growth speed (${speed} nutrients/s); fertilizer only supplies nutrients`
-          : `Growth speed from ${fert?.name ?? 'fertilizer'} (${speed} nutrients/s)`,
+        !worldTree
+          ? `Growth speed from ${fert?.name ?? 'fertilizer'} (${speed} nutrients/s)`
+          : stage === '2'
+            ? `Stays a stage 2 tree: leaves only, ${speed} nutrients/s; fertilizer only supplies nutrients`
+            : `Mature (stage 3) tree, ${speed} nutrients/s; fertilizer only supplies nutrients. A new tree first grows through stages 1 and 2`,
       ],
     })
   }
@@ -475,7 +482,8 @@ export function buildCatalog(ctx: ProcessContext): ProcessCatalog {
 
 /**
  * Default producer, among what the plan's research tier can run (anything, when nothing can): the
- * standard game recipe, else a nursery (preferred over seed plots), else the Paradox Crucible (for
+ * standard game recipe, else a nursery (preferred over seed plots; the World Tree Nursery over the
+ * Miniature World Tree), else the Paradox Crucible (for
  * Oblivion Essence, whose only recipe loops back through Vitality), else an alternate recipe, else
  * a saved cauldron recipe, else import. Coins are money off the bus: they're taken in at face value,
  * and minted only for a target (`asTarget`).
@@ -496,6 +504,8 @@ export function defaultProducer(catalog: ProcessCatalog, item: string, asTarget 
     const options = all.filter((p) => p.product === item)
     return (
       options.find((p) => p.kind === 'recipe' && !p.alternate && p.machine?.key !== 'SeedPlot') ??
+      // The Miniature World Tree is a player's pick, never the default.
+      options.find((p) => p.kind === 'nursery' && p.machine?.key !== MINI_WORLD_TREE) ??
       options.find((p) => p.kind === 'nursery') ??
       options.find((p) => p.id === paradoxId(DEFAULT_PARADOX_INPUT)) ??
       options.find((p) => p.kind === 'paradox') ??
@@ -524,14 +534,12 @@ export const sameRecipe = (a: Process, b: Process) => a.id === b.id && a.machine
 
 /**
  * Short name for a producer option shown next to its product: the machine, or what sets the
- * option apart (the fuel burned, a saved mix's name or what it makes, the World Tree's stage).
+ * option apart (the fuel burned, a saved mix's name or what it makes).
  */
 export function processTitle(p: Process): string {
   if (p.kind === 'cauldron') return p.name || `${p.machine?.name ?? 'Cauldron'}: ${itemName(p.product)}`
   if (p.kind === 'fuel' || p.kind === 'fertilizer') return itemName(p.inputs[0]?.item ?? '')
-  const machine = p.machine?.name ?? p.label
-  const stage = p.kind === 'nursery' ? p.id.match(/TreeStage(\d)$/)?.[1] : undefined
-  return stage ? `${machine} · stage ${stage}` : machine
+  return p.machine?.name ?? p.label
 }
 
 /** Label for a producer option: ★ marks saved cauldron recipes. */
