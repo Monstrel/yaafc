@@ -175,7 +175,7 @@ const OPTIONS: { value: Preference | null; label: string; glyph: string }[] = [
 ]
 
 /** Avoid / Neutral / Prefer button group (✕ – ✓). `undefined` means mixed: nothing is pressed. */
-function PrefToggle({
+export function PrefToggle({
   value,
   label,
   onChange,

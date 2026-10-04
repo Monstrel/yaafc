@@ -181,14 +181,18 @@ export function setPrefs(prefs: IngredientPrefs, keys: Iterable<string>, pref: P
   return { ...prefs, prefer, avoid }
 }
 
-/** Prefer exactly this group and avoid every other ingredient. */
-export function onlyGroup(prefs: IngredientPrefs, group: ItemGroup): IngredientPrefs {
+/** Prefer exactly these items and avoid every other ingredient. */
+export function onlyItems(prefs: IngredientPrefs, keys: Iterable<string>): IngredientPrefs {
+  const only = new Set(keys)
   return {
     ...prefs,
-    prefer: [...group.items],
-    avoid: cauldronIngredients.map((i) => i.key).filter((k) => !group.items.has(k)),
+    prefer: [...only],
+    avoid: cauldronIngredients.map((i) => i.key).filter((k) => !only.has(k)),
   }
 }
+
+/** Prefer exactly this group and avoid every other ingredient. */
+export const onlyGroup = (prefs: IngredientPrefs, group: ItemGroup) => onlyItems(prefs, group.items)
 
 /** Ingredients the finder may use under these preferences. */
 export function allowedIngredients(prefs: IngredientPrefs) {

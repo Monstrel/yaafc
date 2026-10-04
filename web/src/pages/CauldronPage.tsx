@@ -1,6 +1,6 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ItemIcon, ItemLabel } from '../components/ItemIcon'
-import { IngredientFilter } from '../components/IngredientFilter'
+import { IngredientFilter, PrefToggle } from '../components/IngredientFilter'
 import { ItemPicker } from '../components/ItemPicker'
 import { cauldronStats, evaluate, findRecipes, recipeSignature, type CauldronMode, type CauldronResult } from '../lib/cauldron'
 import { cauldronIngredients, cauldronTargets, itemsByKey } from '../lib/gameData'
@@ -11,7 +11,10 @@ import {
   allowedIngredients,
   builtinGroups,
   emptyPrefs,
+  onlyItems,
   preferredCount,
+  prefOf,
+  setPrefs as setItemPrefs,
   type IngredientPrefs,
   type ItemGroup,
 } from '../lib/itemGroups'
@@ -48,6 +51,26 @@ export function CauldronPage({ saved, onToggleSave, planGroups }: Props) {
   const [prefs, setPrefs] = usePersistentState<IngredientPrefs>('ingredient-prefs', emptyPrefs, sanitizePrefs)
   const preferred = useMemo(() => new Set(prefs.prefer), [prefs.prefer])
   const groups = useMemo(() => [...planGroups, ...builtinGroups], [planGroups])
+  const changePrefs = (p: IngredientPrefs) => {
+    setPrefs(p)
+    setPage(0)
+  }
+
+  // A result's ingredient opens its own preference control, like its row in the preferences tree.
+  const [prefMenu, setPrefMenu] = useState<{ item: string; x: number; y: number } | null>(null)
+  const prefMenuRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (prefMenu) prefMenuRef.current?.showPopover()
+  }, [prefMenu])
+  const openPrefMenu = (item: string, button: HTMLElement) => {
+    const rect = button.getBoundingClientRect()
+    setPrefMenu({ item, x: Math.max(8, Math.min(rect.left, window.innerWidth - 248)), y: rect.bottom + 4 })
+  }
+  // The results reorder (or drop the row) on any change: close rather than point at a moved row.
+  const choosePref = (p: IngredientPrefs) => {
+    prefMenuRef.current?.hidePopover()
+    changePrefs(p)
+  }
 
   const savedSignatures = useMemo(() => new Set(saved.map((s) => recipeSignature(s.mode, s.inputs))), [saved])
   const mixKeys = mix.slice(0, slots)
@@ -126,10 +149,7 @@ export function CauldronPage({ saved, onToggleSave, planGroups }: Props) {
           <IngredientFilter
             prefs={prefs}
             groups={groups}
-            onChange={(p) => {
-              setPrefs(p)
-              setPage(0)
-            }}
+            onChange={changePrefs}
           />
         </aside>
         <section className="panel">
@@ -193,7 +213,15 @@ export function CauldronPage({ saved, onToggleSave, planGroups }: Props) {
                         </td>
                         {r.inputs.map((k, i) => (
                           <td key={i} className={preferred.has(k) ? 'ingredient preferred-ingredient' : 'ingredient'}>
-                            <ItemLabel item={k} />
+                            <button
+                              type="button"
+                              className="ingredient-button"
+                              title={`Set preference for ${itemsByKey.get(k)?.name ?? k}`}
+                              aria-haspopup="true"
+                              onClick={(e) => openPrefMenu(k, e.currentTarget)}
+                            >
+                              <ItemLabel item={k} />
+                            </button>
                           </td>
                         ))}
                         <td className="num">{fmt(r.result.value)}</td>
@@ -232,6 +260,37 @@ export function CauldronPage({ saved, onToggleSave, planGroups }: Props) {
             />
           )}
         </section>
+      </div>
+
+      <div
+        ref={prefMenuRef}
+        popover="auto"
+        className="pref-menu"
+        style={prefMenu ? { left: prefMenu.x, top: prefMenu.y } : undefined}
+        onToggle={(e) => e.newState === 'closed' && setPrefMenu(null)}
+      >
+        {prefMenu && (
+          <>
+            <div className="pref-menu-title">
+              <ItemLabel item={prefMenu.item} size={18} />
+            </div>
+            <div className="pref-controls">
+              <button
+                type="button"
+                className="only-button"
+                title="Prefer this and avoid everything else"
+                onClick={() => choosePref(onlyItems(prefs, [prefMenu.item]))}
+              >
+                Only
+              </button>
+              <PrefToggle
+                value={prefOf(prefs, prefMenu.item)}
+                label={itemsByKey.get(prefMenu.item)?.name ?? prefMenu.item}
+                onChange={(p) => choosePref(setItemPrefs(prefs, [prefMenu.item], p))}
+              />
+            </div>
+          </>
+        )}
       </div>
     </div>
   )

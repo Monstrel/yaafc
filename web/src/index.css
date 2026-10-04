@@ -802,6 +802,49 @@ table.recipes td.ingredient {
   padding-right: 18px;
 }
 
+/* Opens the ingredient's prefer/avoid control; reads as plain text until hovered. */
+.ingredient-button {
+  max-width: 100%;
+  border: 1px solid transparent;
+  background: transparent;
+  color: inherit;
+  padding: 2px 6px;
+  margin: -3px -7px;
+  border-radius: 6px;
+  text-align: left;
+}
+
+.ingredient-button:hover,
+.ingredient-button:focus-visible {
+  border-color: var(--border);
+  background: var(--panel-2);
+}
+
+/* An ingredient's prefer/avoid control: a popover, so the results table can't clip it. */
+.pref-menu {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  width: max-content;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 30px rgb(0 0 0 / 0.35);
+  padding: 8px 10px 10px;
+}
+
+.pref-menu-title {
+  padding-bottom: 8px;
+  font-size: 13px;
+}
+
+.pref-menu .pref-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+}
+
 .no-results {
   margin-top: 10px;
   padding: 10px 12px;
