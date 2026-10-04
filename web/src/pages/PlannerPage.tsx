@@ -3,7 +3,7 @@ import { ItemIcon, ItemLabel } from '../components/ItemIcon'
 import { ItemPicker } from '../components/ItemPicker'
 import { Money } from '../components/Money'
 import { ProducerSelect, TierTag } from '../components/ProducerSelect'
-import { BookmarkIcon, ProductionTree } from '../components/ProductionTree'
+import { BookmarkIcon, ProductionTree, type TargetSlot } from '../components/ProductionTree'
 import { carriers, ledgers, targetFedBack, type Resource, type ResourceLedger } from '../lib/ledger'
 import {
   HEAT,
@@ -180,6 +180,117 @@ export function PlannerPage({
       .filter(Boolean)
       .join(' & ')
 
+  // Targets are set in their own rows of the production tree.
+  const [shownTarget, setShownTarget] = useState<{ index: number; n: number } | null>(null)
+  const showTarget = (index: number) => setShownTarget((s) => ({ index, n: (s?.n ?? 0) + 1 }))
+  /** The target just added, whose item picker opens. */
+  const [added, setAdded] = useState<{ plan: string; index: number } | null>(null)
+  const addTarget = () => {
+    const index = plan.targets.length
+    onUpdatePlan((p) => ({ ...p, targets: [...p.targets, { item: '', rate: 10 }] }))
+    setAdded({ plan: plan.id, index })
+    showTarget(index)
+  }
+  const updateTarget = (i: number, patch: Partial<PlanTarget>) =>
+    onUpdatePlan((p) => ({
+      ...p,
+      targets: p.targets.map((x, j) => {
+        if (j !== i) return x
+        if (patch.item === undefined || patch.item === x.item) return { ...x, ...patch }
+        // A new item follows its own feedback setting.
+        const { feedback: _, ...rest } = x
+        return { ...rest, ...patch }
+      }),
+    }))
+  // Row ids number only the targets with an item.
+  let filled = 0
+  const targetRoots = plan.targets.map((t) => (t.item ? `${filled++}/${t.item}` : null))
+  const builtAtTop = new Set(separationsOf(plan.separate).flatMap((s) => (s.anchor ? [] : [s.item])))
+  const targetSlot = (t: PlanTarget, i: number): TargetSlot => {
+    const moveTo = (to: number) => onUpdatePlan((p) => moveTarget(p, i, to))
+    // Targets of an item built separately share the first one's row (theirs isn't in the tree).
+    const sharedWith = builtAtTop.has(t.item) ? plan.targets.findIndex((x) => x.item === t.item) : i
+    const absorbs = ledger
+      .filter((l) => l.absorbedBy === i)
+      .map((l) => l.resource)
+      .join(' & ')
+    return {
+      rootId: targetRoots[i],
+      item: (
+        <ItemPicker
+          value={t.item || null}
+          options={targetItems}
+          onChange={(k) => {
+            if (added?.index === i) setAdded(null)
+            updateTarget(i, { item: k ?? '' })
+          }}
+          defaultOpen={added?.plan === plan.id && added.index === i && !t.item}
+          compact
+        />
+      ),
+      amount: (
+        <TargetAmount
+          target={t}
+          resolved={resolvedByRow[i]}
+          feedsInto={t.item ? feedsInto(t.item) : ''}
+          absorbs={absorbs}
+          fedBack={targetFedBack(plan, t)}
+          onChange={(patch) => updateTarget(i, patch)}
+        />
+      ),
+      notes: (
+        <TargetNotes
+          target={t}
+          resolved={resolvedByRow[i]}
+          feedsInto={t.item ? feedsInto(t.item) : ''}
+          fedBack={targetFedBack(plan, t)}
+          ownFeedback={t.feedback !== undefined}
+          onFeedback={(on) => onUpdatePlan((p) => setTargetFeedback(p, i, on))}
+          sharedWith={sharedWith === i ? null : sharedWith}
+          onShowTarget={showTarget}
+        />
+      ),
+      move: plan.targets.length > 1 && (
+        <>
+          <button
+            type="button"
+            className="target-button"
+            title="Move up: targets fed back cover the plan's heat and fertilizer in this order"
+            aria-label="Move target up"
+            disabled={i === 0}
+            onClick={() => moveTo(i - 1)}
+          >
+            ↑
+          </button>
+          <button
+            type="button"
+            className="target-button"
+            title="Move down: targets fed back cover the plan's heat and fertilizer in this order"
+            aria-label="Move target down"
+            disabled={i === plan.targets.length - 1}
+            onClick={() => moveTo(i + 1)}
+          >
+            ↓
+          </button>
+        </>
+      ),
+      remove: (
+        <button
+          type="button"
+          className="target-button"
+          title="Remove target"
+          aria-label={`Remove target ${i + 1}`}
+          onClick={() => {
+            setAdded(null)
+            onUpdatePlan((p) => removeTarget(p, i))
+          }}
+        >
+          ×
+        </button>
+      ),
+    }
+  }
+
   const overflowSources = useMemo(() => overflowRows(result.tree), [result.tree])
   const deficits = result.balances.filter((b) => b.deficit > 0)
   const heat = result.balances.find((b) => b.item === HEAT)
@@ -218,53 +329,6 @@ export function PlannerPage({
 
       <div className="planner-layout">
         <aside className="planner-side">
-          <section className="panel">
-            <h2>Targets</h2>
-            <p className="hint">
-              Items per minute, or a number of machines' worth of the chosen recipe. The planner works out every step and
-              machine needed. Fuel and fertilizer targets fed back cover the plan&apos;s needs in this order.
-            </p>
-            {plan.targets.map((t, i) => (
-              <TargetRow
-                key={i}
-                index={i}
-                target={t}
-                resolved={resolvedByRow[i]}
-                feedsInto={t.item ? feedsInto(t.item) : ''}
-                absorbs={ledger
-                  .filter((l) => l.absorbedBy === i)
-                  .map((l) => l.resource)
-                  .join(' & ')}
-                fedBack={targetFedBack(plan, t)}
-                ownFeedback={t.feedback !== undefined}
-                onFeedback={(on) => onUpdatePlan((p) => setTargetFeedback(p, i, on))}
-                onChange={(patch) =>
-                  onUpdatePlan((p) => ({
-                    ...p,
-                    targets: p.targets.map((x, j) => {
-                      if (j !== i) return x
-                      if (patch.item === undefined || patch.item === x.item) return { ...x, ...patch }
-                      // A new item follows its own feedback setting.
-                      const { feedback: _, ...rest } = x
-                      return { ...rest, ...patch }
-                    }),
-                  }))
-                }
-                onMove={
-                  plan.targets.length > 1
-                    ? (by) => onUpdatePlan((p) => moveTarget(p, i, Math.max(0, Math.min(p.targets.length - 1, i + by))))
-                    : undefined
-                }
-                first={i === 0}
-                last={i === plan.targets.length - 1}
-                onRemove={() => onUpdatePlan((p) => removeTarget(p, i))}
-              />
-            ))}
-            <button onClick={() => onUpdatePlan((p) => ({ ...p, targets: [...p.targets, { item: '', rate: 10 }] }))}>
-              + Add target
-            </button>
-          </section>
-
           <section className="panel">
             <h2>Upgrades</h2>
             <p className="hint">Your game&apos;s progress: shared by every plan.</p>
@@ -330,9 +394,13 @@ export function PlannerPage({
             <div className="panel empty-state">
               <h2>Add a target to start</h2>
               <p>
-                Pick what you want to make and how many per minute. Every item uses its standard recipe by default; switch any
-                step to one of your saved cauldron recipes (★) in the production tree.
+                Pick what you want to make and how many per minute, or how many machines&apos; worth. The planner works out every
+                step and machine needed. Every item uses its standard recipe by default; switch any step to one of your saved
+                cauldron recipes (★) in the production tree.
               </p>
+              <button className="primary empty-state-action" onClick={addTarget}>
+                + Add target
+              </button>
             </div>
           ) : !model.result ? (
             <div className="panel empty-state" aria-busy>
@@ -440,7 +508,11 @@ export function PlannerPage({
                 onFeedback={(item, target, on) =>
                   onUpdatePlan((p) => (target === null ? setItemFeedback(p, item, on) : setTargetFeedback(p, target, on)))
                 }
-                onProvide={(item) => onUpdatePlan((p) => addProvider(p, item))}
+                onProvide={(item) => {
+                  onUpdatePlan((p) => addProvider(p, item))
+                  showTarget(plan.targets.length)
+                }}
+                onShowTarget={showTarget}
               >
                 {machineTier(STEAM_BOILER) <= catalog.tier && <BoilerRoom ledger={ledger.find((l) => l.resource === 'heat')!} mods={mods} />}
               </BusPanel>
@@ -465,6 +537,9 @@ export function PlannerPage({
                   onRoundUp={(row, on) => onUpdatePlan((p) => setRoundUp(p, row, on))}
                   units={units}
                   onUnits={(row, unit) => onUpdatePlan((p) => setUnits(p, row, unit))}
+                  targets={plan.targets.map(targetSlot)}
+                  onAddTarget={addTarget}
+                  shownTarget={shownTarget}
                 />
               </section>
 
@@ -529,6 +604,7 @@ function BusPanel({
   overflowFrom,
   onFeedback,
   onProvide,
+  onShowTarget,
   children,
 }: {
   ledgers: ResourceLedger[]
@@ -542,6 +618,8 @@ function BusPanel({
   /** Feeds a source back (the plan uses it) or not (it goes out to the bus). */
   onFeedback: (item: string, target: number | null, on: boolean) => void
   onProvide: (item: string) => void
+  /** Shows a target's row in the production tree. */
+  onShowTarget: (index: number) => void
   children?: ReactNode
 }) {
   const margin = money.value - money.cost
@@ -554,7 +632,10 @@ function BusPanel({
           <h3>Into the plan</h3>
           <div className="bus-inputs">
             {resources.map((l) => (
-              <ResourceIn key={l.resource} ledger={l} plan={plan} catalog={catalog} busPick={busPick(l.resource)} onProvide={onProvide} />
+              <ResourceIn
+                key={l.resource} ledger={l} plan={plan} catalog={catalog} busPick={busPick(l.resource)} onProvide={onProvide}
+                onShowTarget={onShowTarget}
+              />
             ))}
             <MoneyIn money={money} />
           </div>
@@ -566,7 +647,7 @@ function BusPanel({
           ) : (
             <ul className="bus-outputs">
               {money.outputs.map((o) => (
-                <OutputLine key={o.item} row={o} overflowFrom={overflowFrom} onFeedback={onFeedback} />
+                <OutputLine key={o.item} row={o} overflowFrom={overflowFrom} onFeedback={onFeedback} onShowTarget={onShowTarget} />
               ))}
             </ul>
           )}
@@ -597,12 +678,14 @@ function ResourceIn({
   catalog,
   busPick,
   onProvide,
+  onShowTarget,
 }: {
   ledger: ResourceLedger
   plan: Plan
   catalog: ProcessCatalog
   busPick: ReactNode
   onProvide: (item: string) => void
+  onShowTarget: (index: number) => void
 }) {
   const { title, unit, verb } = RESOURCE[ledger.resource]
   const perSecond = (perMinute: number) => `${fmt(perMinute / 60)} ${unit}`
@@ -622,7 +705,7 @@ function ResourceIn({
         </span>
         {ledger.absorbedBy !== null ? (
           <span className="ledger-provided hint-inline">
-            provided by <TargetLink index={ledger.absorbedBy} />
+            provided by <TargetLink index={ledger.absorbedBy} onShow={onShowTarget} />
           </span>
         ) : (
           net < 0 &&
@@ -725,10 +808,12 @@ function OutputLine({
   row,
   overflowFrom,
   onFeedback,
+  onShowTarget,
 }: {
   row: OutputRow
   overflowFrom: Map<string, string[]>
   onFeedback: (item: string, target: number | null, on: boolean) => void
+  onShowTarget: (index: number) => void
 }) {
   const uses = (Object.entries(row.used) as [BusUse, number][]).filter(([, n]) => n > 0)
   return (
@@ -759,7 +844,7 @@ function OutputLine({
             <li key={s.target ?? 'overflow'}>
               <span className="ledger-what">
                 <span>
-                  {s.target === null ? 'overflow' : <TargetLink index={s.target} />} · {fmt(s.amount)}/min
+                  {s.target === null ? 'overflow' : <TargetLink index={s.target} onShow={onShowTarget} />} · {fmt(s.amount)}/min
                 </span>
                 {idle && (
                   <span className="warn-text" title="Made but used nowhere in the plan: route it somewhere or it backs up the machines">
@@ -827,18 +912,10 @@ function ResourceUsers({ title, users, unit }: { title: string; users: ResourceU
   )
 }
 
-/** Scrolls to a target in the list and pulses it. */
-function TargetLink({ index }: { index: number }) {
-  const show = () => {
-    const el = document.getElementById(`target-${index}`)
-    if (!el) return
-    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    el.classList.remove('pulse')
-    void el.offsetWidth // restart the animation
-    el.classList.add('pulse')
-  }
+/** Shows a target's row in the production tree. */
+function TargetLink({ index, onShow }: { index: number; onShow: (index: number) => void }) {
   return (
-    <button className="tree-link" onClick={show}>
+    <button className="tree-link" onClick={() => onShow(index)}>
       Target {index + 1}
     </button>
   )
@@ -968,61 +1045,31 @@ function BoilerRoom({ ledger, mods }: { ledger: ResourceLedger; mods: Modifiers 
 
 type Unit = NonNullable<PlanTarget['unit']>
 
-function TargetRow({
-  index,
+/** A target's amount and unit: items per minute, machines' worth, or net of what the plan uses. */
+function TargetAmount({
   target,
   resolved,
   feedsInto,
   absorbs,
   fedBack,
-  ownFeedback,
-  onFeedback,
   onChange,
-  onMove,
-  first,
-  last,
-  onRemove,
 }: {
-  index: number
   target: PlanTarget
   resolved: ResolvedTarget | undefined
   /** What the item could feed back into ('heat', 'fertilizer', both, or '' when nothing). */
   feedsInto: string
   /** What this net-surplus target covers the rest of ('heat', 'fertilizer', both, or ''). */
   absorbs: string
+  /** The plan feeds the item back (so net can take some off). */
   fedBack: boolean
-  /** The target sets its own feedback instead of following its item's. */
-  ownFeedback: boolean
-  onFeedback: (on: boolean) => void
   onChange: (patch: Partial<PlanTarget>) => void
-  /** Moves the target up (-1) or down (1) the list; absent with only one target. */
-  onMove?: (by: number) => void
-  first: boolean
-  last: boolean
-  onRemove: () => void
 }) {
   const unit = target.unit ?? 'items'
   const perMachine = resolved?.perMachine ?? null
   const made = resolved?.made ?? 0
   return (
-    <div className="target" id={`target-${index}`}>
-      <div className="target-row">
-        <ItemPicker value={target.item || null} options={targetItems} onChange={(k) => onChange({ item: k ?? '' })} />
-        {onMove && (
-          <>
-            <button className="icon-button" title="Move up" aria-label="Move target up" disabled={first} onClick={() => onMove(-1)}>
-              ↑
-            </button>
-            <button className="icon-button" title="Move down" aria-label="Move target down" disabled={last} onClick={() => onMove(1)}>
-              ↓
-            </button>
-          </>
-        )}
-        <button className="icon-button" title="Remove target" onClick={onRemove}>
-          ×
-        </button>
-      </div>
-      <div className="target-row">
+    <>
+      <div className="target-amount">
         <input
           type="number"
           min={0}
@@ -1030,6 +1077,7 @@ function TargetRow({
           value={target.rate}
           onChange={(e) => onChange({ rate: Math.max(0, Number(e.target.value)) })}
           aria-label="Target amount"
+          title="Items per minute, or a number of machines' worth of the chosen recipe"
         />
         <select
           value={unit}
@@ -1044,7 +1092,7 @@ function TargetRow({
           }}
           aria-label="Target unit"
         >
-          <option value="items">items /min</option>
+          <option value="items">/min</option>
           <option value="machines" disabled={!perMachine}>
             {resolved?.machineName ? machineNameFor(resolved.machineName, target.rate) : 'machines'}
           </option>
@@ -1055,28 +1103,74 @@ function TargetRow({
           )}
         </select>
       </div>
-      {target.item && (
-        <div className="target-hint">
-          {unit === 'net' && absorbs && (
-            <>
-              Makes {fmt(made)}/min, {fmt(made - (resolved?.rate ?? 0))} of it for the plan&apos;s {absorbs}.{' '}
-            </>
-          )}
-          {perMachine === null
-            ? 'Bought or not made by a machine: set items /min.'
-            : unit === 'machines'
-              ? `= ${fmt(made)} items /min (${fmt(perMachine)}/min each)`
-              : `≈ ${fmt(made / perMachine)} ${machineNameFor(resolved?.machineName ?? '', made / perMachine)} (${fmt(perMachine)}/min each)`}
+      {unit === 'machines' && perMachine !== null && (
+        <div className="machine-meta" title={`${fmt(perMachine)}/min each`}>
+          = {fmt(made)}/min
         </div>
       )}
+      {unit === 'net' && absorbs && (
+        <>
+          <div className="machine-meta" title={`Made in all: the net amount, plus what the plan uses for its ${absorbs}`}>
+            = {fmt(made)}/min
+          </div>
+          <div className="machine-meta">
+            {fmt(made - (resolved?.rate ?? 0))} for the plan&apos;s {absorbs}
+          </div>
+        </>
+      )}
       {unit === 'net' && !absorbs && target.item && (
-        <div className="target-hint">
-          {!feedsInto
-            ? "Not a fuel or the nurseries' fertilizer: same as items /min."
-            : !fedBack
-              ? 'Not fed back: same as items /min.'
-              : `A net target above covers the plan's ${feedsInto}: same as items /min.`}
+        <div
+          className="machine-meta"
+          title={
+            !feedsInto
+              ? "Not a fuel or the nurseries' fertilizer: nothing to take off"
+              : !fedBack
+                ? 'Not fed back into the plan: nothing to take off'
+                : `A net target above covers the plan's ${feedsInto}`
+          }
+        >
+          {!feedsInto ? 'not fuel' : !fedBack ? 'not fed back' : 'covered above'}: same as /min
         </div>
+      )}
+    </>
+  )
+}
+
+/** Under a target's recipe: what its amount comes to, and whether the plan feeds it back. */
+function TargetNotes({
+  target,
+  resolved,
+  feedsInto,
+  fedBack,
+  ownFeedback,
+  onFeedback,
+  sharedWith,
+  onShowTarget,
+}: {
+  target: PlanTarget
+  resolved: ResolvedTarget | undefined
+  /** What the item could feed back into ('heat', 'fertilizer', both, or '' when nothing). */
+  feedsInto: string
+  fedBack: boolean
+  /** The target sets its own feedback instead of following its item's. */
+  ownFeedback: boolean
+  onFeedback: (on: boolean) => void
+  /** The earlier target whose row also builds this one's item (built separately), if any. */
+  sharedWith: number | null
+  onShowTarget: (index: number) => void
+}) {
+  if (!target.item) return <span className="leaf-note">Pick what to make</span>
+  const unit = target.unit ?? 'items'
+  const perMachine = resolved?.perMachine ?? null
+  return (
+    <>
+      {sharedWith !== null && (
+        <div className="note-line">
+          ⇲ built separately, in the row of <TargetLink index={sharedWith} onShow={onShowTarget} />
+        </div>
+      )}
+      {unit === 'machines' && perMachine === null && (
+        <div className="note-line">Bought or not made by a machine: set items /min.</div>
       )}
       {feedsInto && (
         <label className="check target-feedback" title="Covers the plan's own need before the bus does, in target order">
@@ -1085,7 +1179,7 @@ function TargetRow({
           {ownFeedback && <span className="hint-inline">(this target only)</span>}
         </label>
       )}
-    </div>
+    </>
   )
 }
 

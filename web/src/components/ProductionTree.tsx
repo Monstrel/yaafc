@@ -46,6 +46,27 @@ interface Props {
   onUnits: (row: string, unit: Unitizing | null) => void
   /** Per item, the share of its overflow the plan feeds back into its own heat or fertilizer. */
   fed: Map<string, { share: number; into: BusUse[] }>
+  /** The plan's targets in order: each is set in its own row at the top of the tree. */
+  targets: TargetSlot[]
+  onAddTarget: () => void
+  /** A target to show (unfolded, scrolled to and pulsed); `n` is bumped for every request. */
+  shownTarget: { index: number; n: number } | null
+}
+
+/** A target's controls, laid into the tree row that meets it. */
+export interface TargetSlot {
+  /** The root row meeting the target, once it has one (none without an item). */
+  rootId: string | null
+  /** In the item column: which item. */
+  item: ReactNode
+  /** In the rate column: how much of it. */
+  amount: ReactNode
+  /** Under the recipe: what the amount comes to, and feeding it back. */
+  notes: ReactNode
+  /** Before the row actions: move up and down. */
+  move: ReactNode
+  /** In the first row action slot, in line with "build separately" below it. */
+  remove: ReactNode
 }
 
 /** Where a link points: every row it matches, largest share first. */
@@ -76,6 +97,9 @@ export function ProductionTree({
   units,
   onUnits,
   fed,
+  targets: slots,
+  onAddTarget,
+  shownTarget,
 }: Props) {
   const rounded = useMemo(() => new Set(roundUp), [roundUp])
   // Folded rows survive leaving the planner and reloads (row ids are stable paths).
@@ -95,9 +119,11 @@ export function ProductionTree({
       return next
     })
 
-  const view = useMemo(() => viewOf(tree), [tree])
-  const targets = view[0]?.id === PLAN_ROOT ? view[0].children : view
-  /** What items built at the top of the plan are shown "with". */
+  // The slots' controls are new every render: lay out the view only when their rows change.
+  const rootIds = JSON.stringify(slots.map((s) => s.rootId))
+  const { view, slotRows } = useMemo(() => viewOf(tree, JSON.parse(rootIds)), [tree, rootIds])
+  const slotByRow = new Map(slots.map((s, i) => [slotRows[i], s]))
+  const targets = view[0]?.id === PLAN_ROOT ? view[0].children : view  /** What items built at the top of the plan are shown "with". */
   const topName = topAnchorName(tree)
   const separateByproducts = useMemo(() => byproductsMadeSeparately(tree), [tree])
   // Rows where "Use as my default" would change something: only those offer it.
@@ -144,8 +170,7 @@ export function ProductionTree({
     const group = ancestors.findIndex(isTopGroupId)
     const anchors = ancestors
       .slice(Math.max(group, 0))
-      // A lone target gathers the same uses as the top of the plan: don't offer it twice.
-      .filter((id) => id !== PLAN_ROOT && !(targets.length === 1 && id === targets[0].id))
+      .filter((id) => id !== PLAN_ROOT)
       .map((id) => byId.get(id)!.node)
       .filter((a) => a.kind === 'produce' && a.item !== node.item)
       .reverse()
@@ -251,6 +276,19 @@ export function ProductionTree({
     }
   }, [pulse])
 
+  // Showing a target (from a link elsewhere on the page, or just added): unfold its row and pulse
+  // it, once per request rather than whenever the tree changes under it.
+  const [shown, setShown] = useState(shownTarget)
+  if (shown !== shownTarget) {
+    setShown(shownTarget)
+    const id = shownTarget && slotRows[shownTarget.index]
+    const ancestors = id ? byId.get(id)?.ancestors : undefined
+    if (id && ancestors) {
+      setCollapsed((c) => (ancestors.some((a) => c.has(a)) ? new Set([...c].filter((x) => !ancestors.includes(x))) : c))
+      setPulse((p) => ({ id, n: (p?.n ?? 0) + 1 }))
+    }
+  }
+
   /** A link from `from` to the rows `match` picks out; plain text when there are none. */
   const link: LinkFn = (from, key, match, label, title) => {
     const id = `${from.id}|${key}`
@@ -279,6 +317,9 @@ export function ProductionTree({
   return (
     <>
       <div className="tree-toolbar">
+        <button className="compact-button primary" onClick={onAddTarget}>
+          + Add target
+        </button>
         <button className="compact-button" onClick={() => setCollapsed(new Set())}>
           Expand all
         </button>
@@ -302,7 +343,7 @@ export function ProductionTree({
             {lines.map((line) =>
               line.kind === 'with' ? (
                 <tr
-                  className={`tree-with in-with ${line.afterBranch ? 'after-branch' : ''}`}
+                  className={`tree-with in-with band band-start ${line.afterBranch ? 'after-branch' : ''}`}
                   key={`${line.anchorId}/with`}
                   style={cardStyle(line.depth)}
                 >
@@ -352,6 +393,7 @@ export function ProductionTree({
                   logistics={logistics}
                   mods={mods}
                   link={link}
+                  target={slotByRow.get(line.node.id)}
                 />
               ),
             )}
@@ -458,7 +500,10 @@ function TreeRow({
   afterBranch,
   topName,
   separateByproducts,
+  target,
 }: {
+  /** The controls of the target the row meets, for a target's own row. */
+  target?: TargetSlot
   /** What items built at the top of the plan are shown "with". */
   topName: string
   /** Per item, the rows making their own that have it as a by-product (shared only if picked). */
@@ -508,7 +553,7 @@ function TreeRow({
   const node = copies === 1 ? whole : shareOf(whole, copies)
   if (node.id === PLAN_ROOT)
     return (
-      <tr data-node-id={node.id} className="kind-plan depth-0">
+      <tr data-node-id={node.id} className="kind-plan depth-0 band band-start" style={bandStyle(edgeX(0))}>
         <td className="tree-item">
           <Edges edges={edges} />
           <div className="tree-cell">
@@ -519,6 +564,31 @@ function TreeRow({
           </div>
         </td>
         <td colSpan={5} />
+      </tr>
+    )
+  // A target with no row of its own yet: just its controls.
+  if (target && !node.item)
+    return (
+      <tr
+        data-node-id={node.id}
+        className={`kind-target target band band-start depth-${Math.min(depth, 1)} ${afterBranch ? 'after-branch' : ''}`}
+        style={bandStyle(edgeX(depth))}
+      >
+        <td className="tree-item">
+          <Edges edges={edges} />
+          <div className="tree-cell" style={{ paddingLeft: depth * 20 }}>
+            <span className="fold-spacer" />
+            {target.item}
+          </div>
+        </td>
+        <td className="num rate-cell">{target.amount}</td>
+        <td>{target.notes}</td>
+        <td colSpan={2} />
+        <td className="row-actions">
+          <span className="target-actions">{target.move}</span>
+          <span className="row-action-slot">{target.remove}</span>
+          <span className="row-action-slot" />
+        </td>
       </tr>
     )
 
@@ -566,11 +636,44 @@ function TreeRow({
     </span>
   ))
 
+  // A target's own row is tinted from its edge; rows of a "with" card share the card's tint.
+  const band = target
+    ? 'target band band-start'
+    : card !== undefined
+      ? `in-with band ${endsCard(edges, card) ? 'band-end' : ''}`
+      : ''
+
+  const separateAction = node.separation ? (
+    <button
+      type="button"
+      className="tree-action"
+      title={`Merge back: ${mergeHint(node.separation, name)}`}
+      aria-label={`Merge ${name} back into the tree`}
+      onClick={() => onSeparate(node.separation!, false)}
+    >
+      <BoxArrowIcon inward />
+    </button>
+  ) : (
+    node.kind === 'produce' &&
+    depth > 0 && (
+      <button
+        type="button"
+        className="tree-action"
+        title={`Build separately: gather the uses of ${name} into one place, at the top of the plan or with an item above it`}
+        aria-label={`Build ${name} separately`}
+        aria-haspopup="menu"
+        onClick={(e) => onSeparateMenu(whole, e.currentTarget)}
+      >
+        <BoxArrowIcon />
+      </button>
+    )
+  )
+
   return (
     <tr
       data-node-id={node.id}
-      className={`kind-${node.kind} depth-${Math.min(depth, 1)} ${node.rate === 0 ? 'idle' : ''} ${totals ? 'unit-totals' : ''} ${card !== undefined ? 'in-with' : ''} ${afterBranch ? 'after-branch' : ''}`}
-      style={cardStyle(card)}
+      className={`kind-${node.kind} depth-${Math.min(depth, 1)} ${node.rate === 0 ? 'idle' : ''} ${totals ? 'unit-totals' : ''} ${band} ${afterBranch ? 'after-branch' : ''}`}
+      style={target ? bandStyle(edgeX(depth)) : cardStyle(card)}
     >
       <td className="tree-item">
         <Edges edges={edges} />
@@ -582,7 +685,7 @@ function TreeRow({
           ) : (
             <span className="fold-spacer" />
           )}
-          <ItemLabel item={node.item} />
+          {target ? target.item : <ItemLabel item={node.item} />}
           {unit && (
             <button
               type="button"
@@ -603,7 +706,7 @@ function TreeRow({
         </div>
       </td>
       <td className="num rate-cell">
-        {fmt(node.rate)}
+        {target ? target.amount : fmt(node.rate)}
         {beltsNeeded > 1 && (
           <div className="machine-meta" title={`${fmt(mods.beltSpeed)} items/min per belt`}>
             {beltsNeeded} belts
@@ -744,6 +847,7 @@ function TreeRow({
             )}
           </>
         )}
+        {target?.notes}
       </td>
       <td className="num">
         {node.kind === 'produce' && p?.machine && (
@@ -783,34 +887,15 @@ function TreeRow({
         {node.nutrients > 0 && <div className="machine-meta">{fmt(node.nutrients)} nutrients/s</div>}
       </td>
       <td className="row-actions">
+        {/* A target's remove button takes the first slot: its own build-separately action moves out front. */}
+        {target && (
+          <span className="target-actions">
+            {separateAction}
+            {target.move}
+          </span>
+        )}
         {/* One slot per action, kept when empty, so the icons line up down the table. */}
-        <span className="row-action-slot">
-          {node.separation ? (
-            <button
-              type="button"
-              className="tree-action"
-              title={`Merge back: ${mergeHint(node.separation, name)}`}
-              aria-label={`Merge ${name} back into the tree`}
-              onClick={() => onSeparate(node.separation!, false)}
-            >
-              <BoxArrowIcon inward />
-            </button>
-          ) : (
-            node.kind === 'produce' &&
-            depth > 0 && (
-              <button
-                type="button"
-                className="tree-action"
-                title={`Build separately: gather the uses of ${name} into one place, at the top of the plan or with an item above it`}
-                aria-label={`Build ${name} separately`}
-                aria-haspopup="menu"
-                onClick={(e) => onSeparateMenu(whole, e.currentTarget)}
-              >
-                <BoxArrowIcon />
-              </button>
-            )
-          )}
-        </span>
+        <span className="row-action-slot">{target ? target.remove : separateAction}</span>
         <span className="row-action-slot">
           {node.kind === 'produce' &&
             (savable ? (
@@ -957,17 +1042,32 @@ const PLAN_ROOT = 'plan'
 /** The root of an item built at the top of the plan (not a row inside it). */
 const isTopGroupId = (id: string) => /^separate\/[^/]+$/.test(id)
 
+/** The row of a target that has none in the tree yet (no item, or not solved yet). */
+const pendingId = (index: number) => `target/${index}`
+
 /**
- * The tree as shown: items built at the top of the plan join the target as a "with" group, or,
- * with several targets, an "All targets" row holding the targets and the group.
+ * The tree as shown: one row per target, in the plan's order (a bare one for a target the tree
+ * has no row for yet). Items built at the top of the plan join the target as a "with" group, or,
+ * with several targets, an "All targets" row holding the targets and the group. Also the row each
+ * target sits in.
  */
-function viewOf(tree: TreeNode[]): TreeNode[] {
+function viewOf(tree: TreeNode[], rootIds: (string | null)[]): { view: TreeNode[]; slotRows: string[] } {
+  const roots = new Map(tree.map((n) => [n.id, n]))
+  // Rows of targets that have since moved or gone wait for the next solve.
+  const targets = rootIds.map((id, i) => (id && roots.get(id)) || blankRow(pendingId(i)))
+  const slotRows = targets.map((n) => n.id)
   const groups = tree.filter((n) => n.id.startsWith('separate/'))
-  if (!groups.length) return tree
-  const targets = tree.filter((n) => !n.id.startsWith('separate/'))
-  if (targets.length === 1) return [{ ...targets[0], children: [...targets[0].children, ...groups] }]
-  const plan: TreeNode = {
-    id: PLAN_ROOT,
+  if (!groups.length) return { view: targets, slotRows }
+  const made = targets.filter((n) => n.item)
+  if (made.length === 1)
+    return { view: targets.map((n) => (n === made[0] ? { ...n, children: [...n.children, ...groups] } : n)), slotRows }
+  return { view: [blankRow(PLAN_ROOT, [...targets, ...groups])], slotRows }
+}
+
+/** A row standing for something other than an item: all targets, or a target with no item. */
+function blankRow(id: string, children: TreeNode[] = []): TreeNode {
+  return {
+    id,
     item: '',
     kind: 'produce',
     rate: 0,
@@ -986,9 +1086,8 @@ function viewOf(tree: TreeNode[]): TreeNode[] {
     defaultCatalysts: [],
     reuse: true,
     reuseChosen: false,
-    children: [...targets, ...groups],
+    children,
   }
-  return [plan]
 }
 
 /**
@@ -1090,9 +1189,19 @@ function Edges({ edges }: { edges: Edge[] }) {
   ))
 }
 
-/** Where a "with" card's tint starts: at its edge, so the margin outside stays clear. */
-const cardStyle = (level?: number) =>
-  level === undefined ? undefined : ({ '--card-x': `${edgeX(cardLevel(level))}px` } as CSSProperties)
+/** Where a tinted row's tint starts: at its edge, so the margin outside stays clear. */
+const bandStyle = (x: number) => ({ '--band-x': `${x}px` }) as CSSProperties
+
+/** Where a "with" card's tint starts. */
+const cardStyle = (level?: number) => (level === undefined ? undefined : bandStyle(edgeX(cardLevel(level))))
+
+/**
+ * Whether a row is the last of its "with" card (its edge rounds off there), with no card around it
+ * going on below, whose tint would then be cut short.
+ */
+const endsCard = (edges: Edge[], card: number) =>
+  edges.some((e) => e.accent && e.piece === 'bottom' && e.level === cardLevel(card)) &&
+  !edges.some((e) => e.accent && e.piece !== 'bottom' && e.level < cardLevel(card))
 
 /**
  * Choices for a row's machine count: just what the plan needs, or the next whole number of

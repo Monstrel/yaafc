@@ -954,23 +954,6 @@ td.under {
   min-width: 0;
 }
 
-.target-row {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  margin-bottom: 8px;
-}
-
-.target-row .picker {
-  flex: 1;
-  min-width: 0;
-}
-
-/* The rate box only: not the item picker's search box. */
-.target-row > input {
-  width: 80px;
-}
-
 .unit {
   color: var(--muted);
   font-size: 12px;
@@ -1221,10 +1204,6 @@ tr.idle {
   font-variant-numeric: tabular-nums;
 }
 
-.target-feedback {
-  margin: 6px 0 0;
-}
-
 .hint-inline {
   color: var(--muted);
   font-size: 13px;
@@ -1332,8 +1311,8 @@ tr.idle {
   width: 22px;
 }
 
-.production.tree tr.depth-0 td {
-  background: var(--panel-2);
+.production.tree tr.depth-0 td,
+.production.tree tr.target td {
   font-weight: 600;
 }
 
@@ -1414,6 +1393,85 @@ tr.kind-separate .item-label .name {
   padding: 3px 0;
 }
 
+/* A target's own row: its item, amount and unit are set right in the tree. */
+.tree-cell .picker {
+  width: 220px;
+  max-width: none;
+  margin-top: 0;
+  font-weight: 600;
+}
+
+.target-amount {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  font-weight: normal;
+}
+
+.target-amount input {
+  width: 76px;
+  padding: 3px 6px;
+  font-size: 13px;
+  text-align: right;
+}
+
+.target-amount select {
+  width: auto;
+  padding: 3px 6px;
+  font-size: 13px;
+}
+
+.production.tree .target-feedback {
+  margin: 4px 0 0;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: normal;
+  white-space: nowrap;
+}
+
+.production.tree .target-feedback .hint-inline {
+  flex: none;
+  font-size: 12px;
+}
+
+/* A target's move buttons, out front of the row action slots; its remove button takes the first. */
+.target-actions {
+  display: inline-flex;
+  gap: 4px;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+
+/* Outlined, unlike the quiet row actions: they change the plan's targets, not how a row is built. */
+.target-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 5px;
+  font-size: 13px;
+  font-weight: normal;
+  line-height: 1;
+  color: var(--muted);
+  vertical-align: middle;
+}
+
+.target-button:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.target-button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.empty-state-action {
+  margin-top: 16px;
+}
+
 /*
  * Card edges: each open branch gets a rounded "[" from its row down to its last row. Rows are
  * separated only from the rate column on, so the edges have the item column to themselves.
@@ -1458,12 +1516,8 @@ tr.kind-separate .item-label .name {
   top: 19px;
 }
 
-/* A "with" card starts at its divider: keep the space above it out of the card's tint. */
 .production.tree tr.tree-with.after-branch td {
   padding-top: 20px;
-  background:
-    linear-gradient(var(--panel), var(--panel)) top / 100% 12px no-repeat,
-    linear-gradient(to right, transparent var(--card-x), var(--card-tint) var(--card-x));
 }
 
 .edge.accent {
@@ -1471,15 +1525,57 @@ tr.kind-separate .item-label .name {
   color: var(--accent);
 }
 
-/* A "with" group: tinted, so it reads as part of its anchor rather than the rows after it. */
-.production.tree tr.in-with td {
-  --card-tint: color-mix(in srgb, var(--accent) 6%, transparent);
-  background: var(--card-tint);
+/*
+ * Tinted rows: targets (and "All targets") stand out, and a "with" group reads as part of its anchor
+ * rather than the rows after it. The tint stays inside the row's edge: from its line rather than the
+ * cell's left side, from the top of its rounded corner rather than across the space above a branch,
+ * and, at the end of a "with" card, down to its bottom corner.
+ */
+.production.tree tr.band {
+  --band-top: 0px;
+  --band-bottom: 0px;
 }
 
-.production.tree tr.in-with td.tree-item,
-.production.tree tr.tree-with td {
-  background: linear-gradient(to right, transparent var(--card-x), var(--card-tint) var(--card-x));
+.production.tree tr.target,
+.production.tree tr.kind-plan {
+  --band: var(--panel-2);
+}
+
+.production.tree tr.in-with {
+  --band: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
+/* In step with `.edge.top` and `.edge.bottom`. */
+.production.tree tr.band-start {
+  --band-top: 7px;
+}
+
+.production.tree tr.band-start.after-branch {
+  --band-top: 19px;
+}
+
+.production.tree tr.band-end {
+  --band-bottom: 7px;
+}
+
+.production.tree tr.band td {
+  background: linear-gradient(var(--band), var(--band)) 0 var(--band-top) / 100%
+    calc(100% - var(--band-top) - var(--band-bottom)) no-repeat;
+}
+
+.production.tree tr.band td.tree-item,
+.production.tree tr.band.tree-with td {
+  background-position: var(--band-x, 0px) var(--band-top);
+  background-size: calc(100% - var(--band-x, 0px)) calc(100% - var(--band-top) - var(--band-bottom));
+}
+
+/* The usual cell padding, counted from where the tint starts and ends rather than the cell's edges. */
+.production.tree tr.band.band-start td {
+  padding-top: calc(var(--band-top) + 6px);
+}
+
+.production.tree tr.band.band-end td {
+  padding-bottom: calc(var(--band-bottom) + 6px);
 }
 
 /* Divider above the rows an anchor builds "with" its own ingredients. */
@@ -1666,26 +1762,6 @@ tr.kind-separate .item-label .name {
 
 .byproduct {
   margin-right: 8px;
-}
-
-.target {
-  padding-bottom: 10px;
-  margin-bottom: 10px;
-  border-bottom: 1px solid var(--border);
-}
-
-.target .target-row {
-  margin-bottom: 6px;
-}
-
-.target .target-row select {
-  flex: 1;
-  min-width: 0;
-}
-
-.target-hint {
-  color: var(--muted);
-  font-size: 12px;
 }
 
 .belt-limited {
@@ -2130,10 +2206,6 @@ tr.kind-separate .item-label .name {
 .provider-actions {
   display: flex;
   gap: 8px;
-}
-
-.target.pulse {
-  animation: tree-pulse 1.2s ease-in-out 3;
 }
 
 .stat-label .positive {

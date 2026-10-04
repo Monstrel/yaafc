@@ -12,10 +12,21 @@ interface Props {
   detail?: (item: Item) => string
   /** Sized to sit beside a compact recipe button (in the production tree). */
   compact?: boolean
+  /** Starts open (a row just added, waiting for its item). */
+  defaultOpen?: boolean
 }
 
-export function ItemPicker({ value, options, onChange, placeholder = 'Choose item…', allowClear, detail, compact }: Props) {
-  const [open, setOpen] = useState(false)
+export function ItemPicker({
+  value,
+  options,
+  onChange,
+  placeholder = 'Choose item…',
+  allowClear,
+  detail,
+  compact,
+  defaultOpen = false,
+}: Props) {
+  const [open, setOpen] = useState(defaultOpen)
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
   const root = useRef<HTMLDivElement>(null)
