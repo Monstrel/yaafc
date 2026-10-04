@@ -32,6 +32,9 @@ import {
   clearBranchChoice,
   keepDefaultInPlan,
   addProvider,
+  addOverflowTarget,
+  convertOverflowTarget,
+  linkToOverflow,
   migrateCatalysts,
   migrateFeedback,
   moveTarget,
@@ -44,7 +47,7 @@ import {
   setRowCatalysts,
   type ProducerPick,
 } from '../lib/choices'
-import type { PlanResult, ResolvedTarget } from '../lib/solver'
+import type { OverflowUse, PlanResult, ResolvedTarget } from '../lib/solver'
 import { separationsOf, withSeparation, withoutSeparation } from '../lib/separate'
 import { buildingNameFor, machineNameFor, noun } from '../lib/plural'
 import { boilerHeat, boilersFor } from '../lib/steamBoiler'
@@ -248,6 +251,9 @@ export function PlannerPage({
           onFeedback={(on) => onUpdatePlan((p) => setTargetFeedback(p, i, on))}
           sharedWith={sharedWith === i ? null : sharedWith}
           onShowTarget={showTarget}
+          onConvert={() => onUpdatePlan((p) => convertOverflowTarget(p, i, resolvedByRow[i]?.rate ?? 0))}
+          overflowing={overflowing}
+          onUseOverflow={(consumes) => onUpdatePlan((p) => linkToOverflow(p, i, consumes))}
         />
       ),
       move: plan.targets.length > 1 && (
@@ -293,8 +299,11 @@ export function PlannerPage({
 
   const overflowSources = useMemo(() => overflowRows(result.tree), [result.tree])
   const deficits = result.balances.filter((b) => b.deficit > 0)
+  const runaways = resolvedByRow.flatMap((r, index) => (r?.overflow?.runaway ? [{ index, item: r.overflow.item }] : []))
   const heat = result.balances.find((b) => b.item === HEAT)
   const money = useMemo(() => moneyLedger(plan, catalog, result, ledger), [plan, catalog, result, ledger])
+  // Items the plan overflows (including what overflow targets take), which a target can switch to using.
+  const overflowing = money.outputs.filter((o) => o.sources.some((s) => s.target === null)).map((o) => o.item)
   // Overflow the plan feeds back into its heat, fertilizer or money isn't overflow: it gets used.
   const fed = useMemo(() => fedOverflow(money), [money])
 
@@ -466,6 +475,22 @@ export function PlannerPage({
                 </div>
               )}
 
+              {runaways.length > 0 && (
+                <div className="panel warning">
+                  <strong>Overflow loop runs away.</strong> These overflow targets overflow at least as much as they take, so
+                  they would need an endless factory. They make nothing until their recipes change or they become standard
+                  targets:
+                  <ul>
+                    {runaways.map(({ index, item }) => (
+                      <li key={index}>
+                        <TargetLink index={index} onShow={showTarget} /> · <ItemLabel item={plan.targets[index].item} /> from{' '}
+                        <ItemLabel item={item} /> overflow
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
               {beyond.length > 0 && (
                 <div className="panel notice">
                   <strong>Beyond research tier {tierName(catalog.tier)}.</strong> These steps need research you haven&apos;t
@@ -510,6 +535,10 @@ export function PlannerPage({
                 }
                 onProvide={(item) => {
                   onUpdatePlan((p) => addProvider(p, item))
+                  showTarget(plan.targets.length)
+                }}
+                onUseOverflow={(item, consumes) => {
+                  onUpdatePlan((p) => addOverflowTarget(p, item, consumes))
                   showTarget(plan.targets.length)
                 }}
                 onShowTarget={showTarget}
@@ -604,6 +633,7 @@ function BusPanel({
   overflowFrom,
   onFeedback,
   onProvide,
+  onUseOverflow,
   onShowTarget,
   children,
 }: {
@@ -618,6 +648,8 @@ function BusPanel({
   /** Feeds a source back (the plan uses it) or not (it goes out to the bus). */
   onFeedback: (item: string, target: number | null, on: boolean) => void
   onProvide: (item: string) => void
+  /** Adds an overflow target making `item` from the overflow of `consumes`. */
+  onUseOverflow: (item: string, consumes: string) => void
   /** Shows a target's row in the production tree. */
   onShowTarget: (index: number) => void
   children?: ReactNode
@@ -647,7 +679,14 @@ function BusPanel({
           ) : (
             <ul className="bus-outputs">
               {money.outputs.map((o) => (
-                <OutputLine key={o.item} row={o} overflowFrom={overflowFrom} onFeedback={onFeedback} onShowTarget={onShowTarget} />
+                <OutputLine
+                  key={o.item}
+                  row={o}
+                  overflowFrom={overflowFrom}
+                  onFeedback={onFeedback}
+                  onUseOverflow={onUseOverflow}
+                  onShowTarget={onShowTarget}
+                />
               ))}
             </ul>
           )}
@@ -808,14 +847,18 @@ function OutputLine({
   row,
   overflowFrom,
   onFeedback,
+  onUseOverflow,
   onShowTarget,
 }: {
   row: OutputRow
   overflowFrom: Map<string, string[]>
   onFeedback: (item: string, target: number | null, on: boolean) => void
+  /** Adds an overflow target making `item` from this item's overflow. */
+  onUseOverflow: (item: string, consumes: string) => void
   onShowTarget: (index: number) => void
 }) {
   const uses = (Object.entries(row.used) as [BusUse, number][]).filter(([, n]) => n > 0)
+  const [using, setUsing] = useState(false)
   return (
     <li className="bus-output">
       <div className="bus-output-head">
@@ -837,9 +880,10 @@ function OutputLine({
       )}
       <ul className="bus-output-sources">
         {row.sources.map((s) => {
-          const used = Object.values(s.used).reduce((t, n) => t + (n ?? 0), 0)
+          const fed = Object.values(s.used).reduce((t, n) => t + (n ?? 0), 0)
+          const used = fed + s.taken.reduce((t, x) => t + x.amount, 0)
           const left = s.amount - used
-          const idle = s.target === null && !s.fedBack && left > 0
+          const idle = s.target === null && !s.fedBack && left > 1e-9 * s.amount
           return (
             <li key={s.target ?? 'overflow'}>
               <span className="ledger-what">
@@ -847,14 +891,24 @@ function OutputLine({
                   {s.target === null ? 'overflow' : <TargetLink index={s.target} onShow={onShowTarget} />} · {fmt(s.amount)}/min
                 </span>
                 {idle && (
-                  <span className="warn-text" title="Made but used nowhere in the plan: route it somewhere or it backs up the machines">
+                  <button
+                    className="tree-link warn-text"
+                    title="Made but used nowhere in the plan: route it somewhere or it backs up the machines. Click to add a target that uses it."
+                    aria-expanded={using}
+                    onClick={() => setUsing((u) => !u)}
+                  >
                     ⚠ nothing uses it
-                  </span>
+                  </button>
                 )}
                 {s.target === null && (
                   <span className="hint-inline">from {(overflowFrom.get(row.item) ?? []).join(', ')}</span>
                 )}
-                {s.fedBack && used > 0 && left > 1e-9 * s.amount && (
+                {s.taken.map((x) => (
+                  <span key={x.target} className="fed-text">
+                    {fmt(x.amount)}/min taken by <TargetLink index={x.target} onShow={onShowTarget} />
+                  </span>
+                ))}
+                {s.fedBack && fed > 0 && left > 1e-9 * s.amount && (
                   <span className="hint-inline">{fmt(left)}/min left over</span>
                 )}
               </span>
@@ -880,7 +934,51 @@ function OutputLine({
           )
         })}
       </ul>
+      {using && (
+        <OverflowTargetForm
+          item={row.item}
+          onAdd={(item) => {
+            onUseOverflow(item, row.item)
+            setUsing(false)
+          }}
+          onCancel={() => setUsing(false)}
+        />
+      )}
     </li>
+  )
+}
+
+/**
+ * Adds a target that uses an item's overflow: the planner makes as many of what the player picks as
+ * that overflow comes to. Any item can be picked; a cauldron recipe can take almost anything.
+ */
+function OverflowTargetForm({
+  item,
+  onAdd,
+  onCancel,
+}: {
+  item: string
+  onAdd: (item: string) => void
+  onCancel: () => void
+}) {
+  const [picked, setPicked] = useState<string | null>(null)
+  return (
+    <div className="provider-form">
+      <label className="stacked">
+        Make from the overflow
+        <ItemPicker value={picked} options={targetItems} onChange={setPicked} defaultOpen compact />
+      </label>
+      <p className="hint">
+        Adds a target sized to use the {itemName(item)} nothing else uses. If its recipes don&apos;t take {itemName(item)},
+        pick ones that do in its rows.
+      </p>
+      <div className="provider-actions">
+        <button className="primary" disabled={!picked} onClick={() => picked && onAdd(picked)}>
+          Add {picked ? itemName(picked) : ''} target
+        </button>
+        <button onClick={onCancel}>Cancel</button>
+      </div>
+    </div>
   )
 }
 
@@ -1067,6 +1165,12 @@ function TargetAmount({
   const unit = target.unit ?? 'items'
   const perMachine = resolved?.perMachine ?? null
   const made = resolved?.made ?? 0
+  if (unit === 'overflow')
+    return (
+      <div className="target-amount" title="As many as the overflow it takes makes">
+        <strong>{fmt(made)}</strong> /min
+      </div>
+    )
   return (
     <>
       <div className="target-amount">
@@ -1146,6 +1250,9 @@ function TargetNotes({
   onFeedback,
   sharedWith,
   onShowTarget,
+  onConvert,
+  overflowing,
+  onUseOverflow,
 }: {
   target: PlanTarget
   resolved: ResolvedTarget | undefined
@@ -1158,6 +1265,12 @@ function TargetNotes({
   /** The earlier target whose row also builds this one's item (built separately), if any. */
   sharedWith: number | null
   onShowTarget: (index: number) => void
+  /** Makes an overflow target an ordinary one. */
+  onConvert: () => void
+  /** Items the plan overflows, which a standard target can switch to using. */
+  overflowing: string[]
+  /** Makes a standard target use the plan's overflow of an item. */
+  onUseOverflow: (consumes: string) => void
 }) {
   if (!target.item) return <span className="leaf-note">Pick what to make</span>
   const unit = target.unit ?? 'items'
@@ -1172,6 +1285,28 @@ function TargetNotes({
       {unit === 'machines' && perMachine === null && (
         <div className="note-line">Bought or not made by a machine: set items /min.</div>
       )}
+      {unit === 'overflow' && target.consumes ? (
+        <OverflowTargetNote consumes={target.consumes} use={resolved?.overflow} onShowTarget={onShowTarget} onConvert={onConvert} />
+      ) : (
+        overflowing.some((item) => item !== target.item) && (
+          <select
+            className="overflow-link"
+            value=""
+            onChange={(e) => e.target.value && onUseOverflow(e.target.value)}
+            aria-label="Use the plan's overflow instead"
+            title="Make as many as the plan's overflow of an item makes, instead of a set amount"
+          >
+            <option value="">↪ Use overflow of…</option>
+            {overflowing
+              .filter((item) => item !== target.item)
+              .map((item) => (
+                <option key={item} value={item}>
+                  {itemName(item)}
+                </option>
+              ))}
+          </select>
+        )
+      )}
       {feedsInto && (
         <label className="check target-feedback" title="Covers the plan's own need before the bus does, in target order">
           <input type="checkbox" checked={fedBack} onChange={(e) => onFeedback(e.target.checked)} />
@@ -1179,6 +1314,60 @@ function TargetNotes({
           {ownFeedback && <span className="hint-inline">(this target only)</span>}
         </label>
       )}
+    </>
+  )
+}
+
+/**
+ * What an overflow target takes, or why it takes nothing: its recipes don't use the item, a target
+ * above takes it all, or nothing overflows. It can become an ordinary target at any time.
+ */
+function OverflowTargetNote({
+  consumes,
+  use,
+  onShowTarget,
+  onConvert,
+}: {
+  consumes: string
+  use: OverflowUse | undefined
+  onShowTarget: (index: number) => void
+  onConvert: () => void
+}) {
+  const name = itemName(consumes)
+  return (
+    <>
+      <div className="note-line">
+        ↪ uses the plan&apos;s overflow of <ItemLabel item={consumes} size={16} />
+        {use && use.taken > 0 && <span className="hint-inline"> · {fmt(use.taken)}/min</span>}
+      </div>
+      {use && !use.uses ? (
+        <div className="note-line warn-text">
+          ⚠ Its recipes don&apos;t use {name}: pick ones that do in the rows below, or it makes none.
+        </div>
+      ) : use?.runaway ? (
+        <div className="note-line warn-text" title="Each one it makes leads to at least as much overflow as it takes">
+          ⚠ Runs away: its loop overflows at least as much {name} as it takes, so it would need an endless factory. It makes
+          none until you change its recipes or make it a standard target.
+        </div>
+      ) : use && use.unused > 0 ? (
+        <div className="note-line warn-text">
+          ⚠ Can&apos;t use {fmt(use.unused)}/min of it without leaving something short.
+        </div>
+      ) : use?.takenBy != null ? (
+        <div className="note-line warn-text">
+          ⚠ <TargetLink index={use.takenBy} onShow={onShowTarget} /> above takes all the {name} overflow.
+        </div>
+      ) : (
+        use?.taken === 0 && <div className="note-line warn-text">⚠ No {name} overflows in the plan now.</div>
+      )}
+      <button
+        type="button"
+        className="compact-button"
+        title="Keep making what it makes now as an ordinary target, whatever the overflow does"
+        onClick={onConvert}
+      >
+        Make it a standard target
+      </button>
     </>
   )
 }

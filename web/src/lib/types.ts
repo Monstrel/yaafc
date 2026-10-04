@@ -20,9 +20,15 @@ export interface PlanTarget {
   /**
    * 'items' = items per minute (default); 'machines' = that many of the producer's machines' output;
    * 'net' = items per minute left over after the plan burns or spreads what it needs of a fed-back
-   * fuel or fertilizer (the planner sizes the build).
+   * fuel or fertilizer (the planner sizes the build); 'overflow' = as many as the overflow of
+   * `consumes` makes (the planner sizes the build, and `rate` is unused).
    */
-  unit?: 'items' | 'machines' | 'net'
+  unit?: 'items' | 'machines' | 'net' | 'overflow'
+  /**
+   * For an 'overflow' target: the item whose overflow (what the rest of the plan makes and nothing
+   * uses) its rows of that item take, instead of making or buying it.
+   */
+  consumes?: string
   /**
    * Whether this target's output feeds the plan's own heat or fertilizer need (when the item is a
    * fuel, or the nurseries' fertilizer). Absent = as the plan's `feedbackItems` says for the item.

@@ -47,15 +47,18 @@ function distinctIds<T extends { id: string }>(items: T[], newId: () => string):
   })
 }
 
-const UNITS = new Set(['items', 'machines', 'net'])
+const UNITS = new Set(['items', 'machines', 'net', 'overflow'])
 
 function target(v: unknown): PlanTarget | undefined {
   if (!isObj(v)) return undefined
   const item = str(v.item)
   const rate = num(v.rate)
   if (!item || rate === undefined || rate < 0) return undefined
-  const unit = UNITS.has(v.unit as string) ? (v.unit as PlanTarget['unit']) : undefined
-  return defined({ item, rate, unit, feedback: bool(v.feedback) })
+  const consumes = str(v.consumes) || undefined
+  let unit = UNITS.has(v.unit as string) ? (v.unit as PlanTarget['unit']) : undefined
+  // An overflow target with nothing to consume is an ordinary one.
+  if (unit === 'overflow' && !consumes) unit = undefined
+  return defined({ item, rate, unit, consumes: unit === 'overflow' ? consumes : undefined, feedback: bool(v.feedback) })
 }
 
 function branch(v: unknown): BranchChoice | undefined {

@@ -164,6 +164,37 @@ export const addProvider = (plan: Plan, item: string): Plan => ({
 })
 
 /**
+ * Adds a target of `item` that uses the plan's overflow of `consumes`, at the end of the list: the
+ * planner makes as many as that overflow comes to. Removing it puts the plan back as it was.
+ */
+export const addOverflowTarget = (plan: Plan, item: string, consumes: string): Plan => ({
+  ...plan,
+  targets: [...plan.targets, { item, rate: 0, unit: 'overflow', consumes }],
+})
+
+/**
+ * Makes a target an overflow target, using the plan's overflow of `consumes`: the planner sizes it
+ * from then on. Making it a standard target again keeps what it makes then.
+ */
+export const linkToOverflow = (plan: Plan, index: number, consumes: string): Plan => ({
+  ...plan,
+  targets: plan.targets.map((t, i) => (i === index ? { ...t, unit: 'overflow', consumes } : t)),
+})
+
+/**
+ * Makes an overflow target an ordinary one, making what it makes now (`rate` per minute; when it
+ * makes none, a new target's 10 per minute).
+ */
+export const convertOverflowTarget = (plan: Plan, index: number, rate: number): Plan => ({
+  ...plan,
+  targets: plan.targets.map((t, i) => {
+    if (i !== index || t.unit !== 'overflow') return t
+    const { consumes: _, unit: __, ...rest } = t
+    return { ...rest, rate: rate > 0 ? Math.round(rate * 1000) / 1000 : 10 }
+  }),
+})
+
+/**
  * Puts the targets in a new order (`order` lists old indexes; leaving one out removes it). Tree
  * row ids start with their target's place, so per-row picks, catalysts and build-separately rows
  * move with their target, and a removed target's go with it.

@@ -24,6 +24,8 @@ export interface OutputSource {
   fedBack: boolean
   /** Items per minute the plan uses of it, per what it feeds. */
   used: Partial<Record<BusUse, number>>
+  /** For overflow: what overflow targets take of it (index in the plan's targets, items per minute). */
+  taken: { target: number; amount: number }[]
 }
 
 /** An item leaving the plan: all its sources, what the plan feeds back of it, and the rest. */
@@ -75,16 +77,29 @@ export function moneyLedger(plan: Plan, catalog: ProcessCatalog, result: PlanRes
   const total = (lines: MoneyLine[]) => lines.reduce((t, l) => t + l.count * (l.price ?? 0), 0)
   const need = total(purchases) + total(coins)
 
-  // Every source of every output: targets (in order), then overflow.
+  // Every source of every output: targets (in order), then overflow, with what overflow targets take
+  // of it (they come first: what they leave is fed back or goes out to the bus).
   let resolved = 0
-  const made = plan.targets.map((t) => (t.item ? (result.targets[resolved++]?.made ?? 0) : 0))
+  const resolvedAt = plan.targets.map((t) => (t.item ? result.targets[resolved++] : undefined))
   const sources: (OutputSource & { item: string })[] = []
   plan.targets.forEach((t, i) => {
-    if (t.item && made[i] > 0) sources.push({ item: t.item, target: i, amount: made[i], fedBack: targetFedBack(plan, t), used: {} })
+    const made = resolvedAt[i]?.made ?? 0
+    if (t.item && made > 0) sources.push({ item: t.item, target: i, amount: made, fedBack: targetFedBack(plan, t), used: {}, taken: [] })
   })
-  for (const b of result.balances)
-    if (!b.item.startsWith('@') && b.surplus > 0)
-      sources.push({ item: b.item, target: null, amount: b.surplus, fedBack: itemFedBack(plan, b.item), used: {} })
+  const taken = new Map<string, { target: number; amount: number }[]>()
+  resolvedAt.forEach((r, i) => {
+    const o = r?.overflow
+    if (o && o.taken > 0) taken.set(o.item, [...(taken.get(o.item) ?? []), { target: i, amount: o.taken }])
+  })
+  const overflowing = new Set([
+    ...result.balances.filter((b) => !b.item.startsWith('@') && b.surplus > 0).map((b) => b.item),
+    ...taken.keys(),
+  ])
+  for (const item of overflowing) {
+    const to = taken.get(item) ?? []
+    const amount = to.reduce((t, x) => t + x.amount, result.balances.find((b) => b.item === item)?.surplus ?? 0)
+    sources.push({ item, target: null, amount, fedBack: itemFedBack(plan, item), used: {}, taken: to })
+  }
   const find = (item: string, target: number | null) => sources.find((s) => s.item === item && s.target === target)
 
   // Heat and fertilizer took their share already (see ledger.ts).
@@ -99,7 +114,8 @@ export function moneyLedger(plan: Plan, catalog: ProcessCatalog, result: PlanRes
   for (const s of [...sources.filter((s) => s.target === null), ...sources.filter((s) => s.target !== null)]) {
     const face = coinValue(s.item)
     if (face === null || !s.fedBack || remaining <= 0) continue
-    const used = Math.min(s.amount, remaining / face)
+    const left = s.amount - s.taken.reduce((t, x) => t + x.amount, 0)
+    const used = Math.min(left, remaining / face)
     s.used.money = used
     remaining -= used * face
   }
@@ -120,7 +136,7 @@ export function moneyLedger(plan: Plan, catalog: ProcessCatalog, result: PlanRes
     }
     const { item: _, ...source } = s
     row.sources.push(source)
-    let used = 0
+    let used = s.taken.reduce((t, x) => t + x.amount, 0)
     for (const [use, n] of Object.entries(s.used) as [BusUse, number][]) {
       row.used[use] = (row.used[use] ?? 0) + n
       used += n
@@ -132,18 +148,30 @@ export function moneyLedger(plan: Plan, catalog: ProcessCatalog, result: PlanRes
   return { purchases, coins, need, covered: need - remaining, cost: remaining, outputs, value }
 }
 
+/** The share of an item's overflow the plan uses after all, and what for. */
+export interface FedOverflow {
+  share: number
+  into: BusUse[]
+  /** Overflow targets (index in the plan's targets) taking some of it, if any. */
+  taken?: number[]
+}
+
 /**
- * Per item, the share of its overflow the plan feeds back into its heat, fertilizer or money, and
- * what into: that part isn't overflow, since the plan uses it.
+ * Per item, the share of its overflow that overflow targets take or the plan feeds back into its
+ * heat, fertilizer or money, and what into: that part isn't overflow, since the plan uses it.
  */
-export function fedOverflow(money: MoneyLedger): Map<string, { share: number; into: BusUse[] }> {
-  const fed = new Map<string, { share: number; into: BusUse[] }>()
+export function fedOverflow(money: MoneyLedger): Map<string, FedOverflow> {
+  const fed = new Map<string, FedOverflow>()
   for (const o of money.outputs)
     for (const s of o.sources) {
       const into = (Object.entries(s.used) as [BusUse, number][]).filter(([, n]) => n > 0)
-      if (s.target !== null || !into.length || s.amount <= 0) continue
-      const used = into.reduce((t, [, n]) => t + n, 0)
-      fed.set(o.item, { share: Math.min(1, used / s.amount), into: into.map(([use]) => use) })
+      if (s.target !== null || (!into.length && !s.taken.length) || s.amount <= 0) continue
+      const used = into.reduce((t, [, n]) => t + n, 0) + s.taken.reduce((t, x) => t + x.amount, 0)
+      fed.set(o.item, {
+        share: Math.min(1, used / s.amount),
+        into: into.map(([use]) => use),
+        ...(s.taken.length > 0 && { taken: s.taken.map((x) => x.target) }),
+      })
     }
   return fed
 }

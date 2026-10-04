@@ -1263,6 +1263,13 @@ tr.idle {
   font-size: 13px;
 }
 
+.overflow-link {
+  display: block;
+  margin-top: 4px;
+  padding: 2px 6px;
+  font-size: 12px;
+}
+
 .production.tree td {
   vertical-align: middle;
 }
@@ -1709,6 +1716,14 @@ tr.kind-separate .item-label .name {
 }
 
 .tree-link:hover {
+  color: var(--accent);
+}
+
+.tree-link.warn-text {
+  color: var(--red);
+}
+
+.tree-link.warn-text:hover {
   color: var(--accent);
 }
 

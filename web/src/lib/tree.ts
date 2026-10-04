@@ -13,6 +13,7 @@ export type TreeNodeKind =
   | 'bus' // fuel/fertilizer taken from the factory bus
   | 'loop' // already produced further up this branch (cycle)
   | 'separate' // built separately: its machines are under the row `groupId`
+  | 'overflow' // the plan's overflow of the item, taken by an overflow target
 
 export interface TreeNode {
   /** Stable path id (item keys from the root), used for folding and per-branch choices. */
@@ -130,6 +131,8 @@ export function buildTree(roots: PlanNode[], flows: Map<PlanNode, RowFlows>, mod
         return { ...base, kind: 'bus' }
       case 'loop':
         return { ...base, kind: 'loop' }
+      case 'overflow':
+        return { ...base, kind: 'overflow' }
       case 'separate':
         return { ...base, kind: 'separate', groupId: n.ref!.id, groupAnchor: n.groupAnchor }
       case 'import':
@@ -166,6 +169,9 @@ export function buildTree(roots: PlanNode[], flows: Map<PlanNode, RowFlows>, mod
   }
   return roots.map(toNode)
 }
+
+/** Whether a row runs on the plan's overflow: a row below it takes an overflow target's overflow. */
+export const onOverflow = (n: TreeNode): boolean => n.children.some((c) => c.kind === 'overflow' || onOverflow(c))
 
 /** Every node id that has children (for "expand/collapse all"). */
 export function branchIds(nodes: TreeNode[]): string[] {

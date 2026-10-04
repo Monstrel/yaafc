@@ -4,11 +4,11 @@ import { fmt } from '../lib/format'
 import { buildingNameFor, machineNameFor, noun } from '../lib/plural'
 import { sanitizeStrings } from '../lib/sanitize'
 import { foldKey, usePersistentState } from '../lib/store'
-import type { BusUse } from '../lib/money'
+import type { BusUse, FedOverflow } from '../lib/money'
 import type { LogisticsCheck } from '../lib/logistics'
 import { itemsPerSlot, onBelt } from '../lib/machineRate'
 import type { ProcessCatalog } from '../lib/processes'
-import { branchIds, type TreeNode } from '../lib/tree'
+import { branchIds, onOverflow, type TreeNode } from '../lib/tree'
 import { rememberChanges, rowsById, type ProducerPick } from '../lib/choices'
 import { parentId, rowItem } from '../lib/unfold'
 import type { Separation, Unitizing } from '../lib/types'
@@ -45,7 +45,7 @@ interface Props {
   /** Builds a row in units, or as one line (null). */
   onUnits: (row: string, unit: Unitizing | null) => void
   /** Per item, the share of its overflow the plan feeds back into its own heat or fertilizer. */
-  fed: Map<string, { share: number; into: BusUse[] }>
+  fed: Map<string, FedOverflow>
   /** The plan's targets in order: each is set in its own row at the top of the tree. */
   targets: TargetSlot[]
   onAddTarget: () => void
@@ -541,7 +541,7 @@ function TreeRow({
   pinned: boolean
   onReveal: (id: string, how: 'enter' | 'leave' | 'pin') => void
   onMachinesMenu: (node: TreeNode, button: HTMLElement) => void
-  fed: Map<string, { share: number; into: BusUse[] }>
+  fed: Map<string, FedOverflow>
   logistics: Map<string, LogisticsCheck>
   mods: Modifiers
   link: LinkFn
@@ -729,6 +729,10 @@ function TreeRow({
           </span>
         ) : node.kind === 'bus' ? (
           <span className="leaf-note">from the bus</span>
+        ) : node.kind === 'overflow' ? (
+          <span className="leaf-note" title="What the rest of the plan makes of it and nothing else uses">
+            ↪ from the plan&apos;s overflow
+          </span>
         ) : (
           <>
             {canChoose && (
@@ -1239,6 +1243,8 @@ function MachinesMenu({
   const splits = wholePerCopy(node, copiesAbove, () => utilization)
   const choices = unitChoices(splits)
   const rate = node.rate / copiesAbove
+  // A row running on overflow can't run faster than it comes: rounded up, its machines run underfed.
+  const fed = onOverflow(node)
   return (
     <>
       <div className="tree-menu-title">Machines for {itemsByKey.get(node.item)?.name}</div>
@@ -1260,7 +1266,9 @@ function MachinesMenu({
         <span>
           Round up to whole machines
           <span className="tree-menu-hint">
-            {rounded
+            {fed
+              ? `${whole} ${names(whole)}${perCopy}, running underfed on the overflow below`
+              : rounded
               ? 'the extra output overflows'
               : whole === built || Math.abs(whole - built) < 1e-9
                 ? 'already a whole number'
@@ -1338,7 +1346,7 @@ function OverflowNote({
 }: {
   item: string
   amount: number
-  fed: Map<string, { share: number; into: BusUse[] }>
+  fed: Map<string, FedOverflow>
   /** Part of a by-product line rather than a line of its own. */
   inline?: boolean
   /** Show the amount even inline (the by-product also goes elsewhere). */
@@ -1348,12 +1356,17 @@ function OverflowNote({
   const used = amount * (f?.share ?? 0)
   const left = amount - used
   const parts: ReactNode[] = []
-  if (used > 1e-9 * amount)
+  if (used > 1e-9 * amount) {
+    const into = [
+      ...(f!.taken?.length ? [`taken by ${f!.taken.map((i) => `Target ${i + 1}`).join(' and ')}`] : []),
+      ...f!.into.map((r) => FED_INTO[r]),
+    ]
     parts.push(
       <span key="fed" className="fed-text">
-        {fmt(used)}/min {f!.into.map((r) => FED_INTO[r]).join(' and ')}
+        {fmt(used)}/min {into.join(' and ')}
       </span>,
     )
+  }
   if (left > 1e-9 * amount)
     parts.push(
       <span key="left" className="warn-text" title="Made by this row's machines but used nowhere in the plan">

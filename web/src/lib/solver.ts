@@ -4,10 +4,10 @@ import { unitScales } from './units'
 import { solveLP } from './lp'
 import { craftsPerMachine } from './machineRate'
 import { runKey, type Process, type ProcessCatalog } from './processes'
-import { NO_FLOWS, buildTree, type ByproductRoute, type RowFlows, type TreeNode } from './tree'
+import { NO_FLOWS, buildTree, onOverflow, type ByproductRoute, type RowFlows, type TreeNode } from './tree'
 import type { Plan } from './types'
 import { PSEUDO, absorbers, supplyAhead } from './ledger'
-import { planProducer, unfold, type PlanNode, type PlanShape } from './unfold'
+import { consumedBy, isTargetRow, planProducer, unfold, type PlanNode, type PlanShape } from './unfold'
 import type { Modifiers } from './upgrades'
 
 export interface ProcessRun {
@@ -40,6 +40,69 @@ export interface ResolvedTarget {
   /** Items per minute one of the chosen producer's machines makes, or null if bought/not made by a machine. */
   perMachine: number | null
   machineName: string | null
+  /** For an overflow target: the overflow it takes. */
+  overflow?: OverflowUse
+}
+
+/** What an overflow target takes of the plan's overflow of an item. */
+export interface OverflowUse {
+  item: string
+  /** Its rows use the item (else it can take none). */
+  uses: boolean
+  /** Items per minute of the overflow it takes. */
+  taken: number
+  /** Items per minute of the overflow it can't use (taking more would leave something short). */
+  unused: number
+  /** The overflow target above it (index in the plan's targets) that takes it all instead, if any. */
+  takenBy: number | null
+  /**
+   * It's in a loop of overflow targets that overflows at least as much as it takes: it would need an
+   * endless factory, so it takes none.
+   */
+  runaway: boolean
+}
+
+/**
+ * Items of overflow targets in a runaway loop. A loop runs through the items overflow targets take:
+ * from each to the items the rows of the target taking it make. An item whose overflow its target
+ * can't use all of (`unused`) while in such a loop runs away, and so does the rest of its loop.
+ */
+function runawayItems(
+  takerOf: Map<string, number>,
+  takers: Map<number, PlanNode[]>,
+  inTaker: Set<PlanNode>,
+  unused: (item: string) => boolean,
+): Set<string> {
+  // Per taking target's root row, the items it makes that another overflow target takes.
+  const makes = new Map<PlanNode, Set<string>>()
+  for (const n of inTaker) {
+    if (n.kind !== 'make') continue
+    const root = rootOf(n)
+    for (const o of n.process!.outputs)
+      if (takerOf.has(o.item)) makes.set(root, (makes.get(root) ?? new Set()).add(o.item))
+  }
+  const roots = new Map<number, PlanNode | undefined>()
+  for (const [i, leaves] of takers) roots.set(i, leaves[0] && rootOf(leaves[0]))
+  const next = (item: string) => makes.get(roots.get(takerOf.get(item)!)!) ?? new Set<string>()
+  const reach = (from: string) => {
+    const seen = new Set<string>()
+    const todo = [...next(from)]
+    while (todo.length) {
+      const x = todo.pop()!
+      if (seen.has(x)) continue
+      seen.add(x)
+      todo.push(...next(x))
+    }
+    return seen
+  }
+  const found = new Set<string>()
+  for (const item of takerOf.keys()) {
+    if (found.has(item) || !unused(item)) continue
+    const ahead = reach(item)
+    if (!ahead.has(item)) continue
+    for (const x of ahead) if (reach(x).has(item)) found.add(x)
+  }
+  return found
 }
 
 export interface PlanResult {
@@ -68,6 +131,10 @@ const SIDE_RUN_FACTOR = 1.001
 // By-products go to the nearest rows that use them: priced by the steps between the two rows.
 const FLOW_COST = 1e-7
 const SHORTFALL_ROW = 'shortfall'
+// Overflow an overflow target can't use is counted with shortfalls, so it uses all it can, but costs
+// less than any shortfall: falling short somewhere never stands in for leaving overflow unused (a
+// shortfall in a runaway loop would make it look like it settles).
+const UNUSED_OVERFLOW_COST = 1
 
 /**
  * Fuel and fertilizer come off the factory bus: their processes draw from a separate pool
@@ -94,7 +161,8 @@ function resolveTargets(plan: Plan, shape: PlanShape, mods: Modifiers): Resolved
       const p = shape.targetRows[i]?.process
       const perMachine = p ? outputPerMachine(p, t.item, mods) : null
       const amount = t.rate || 0
-      const rate = t.unit === 'machines' ? amount * (perMachine ?? 0) : amount
+      // An overflow target's rate comes from the solve.
+      const rate = t.unit === 'machines' ? amount * (perMachine ?? 0) : consumedBy(t) ? 0 : amount
       return {
         item: t.item,
         rate,
@@ -140,7 +208,8 @@ export function solvePlan(plan: Plan, catalog: ProcessCatalog, mods: Modifiers):
     const { copies } = unitScales(result.tree, plan.units, utilization)
     const visit = (n: TreeNode) => {
       const p = n.run?.process
-      if (rounded.has(n.id) && n.kind === 'produce' && p?.machine && p.seconds > 0) {
+      // Rows running on overflow can't run faster than it comes: their whole machines run underfed.
+      if (rounded.has(n.id) && n.kind === 'produce' && p?.machine && p.seconds > 0 && !onOverflow(n)) {
         const built = wholeMachines(p, n.machines / (copies.get(n.id) ?? 1), mods)
         if (built !== null && built.count > built.exact + 1e-9) {
           floors.set(n.id, (built.count / built.exact) * n.run!.craftsPerMinute)
@@ -188,6 +257,37 @@ function solveFed(plan: Plan, catalog: ProcessCatalog, mods: Modifiers, floors: 
   return result
 }
 
+/**
+ * Crafts per minute of each row (by id) with the plan's overflow targets taking nothing: ordinary
+ * targets of nothing, so the rest of the plan is laid out and solved as it is without them.
+ */
+function baselineCrafts(
+  plan: Plan,
+  catalog: ProcessCatalog,
+  mods: Modifiers,
+  absorbing: Map<string, Absorbing>,
+  floors: Map<string, number>,
+): Map<string, number> {
+  const without = {
+    ...plan,
+    targets: plan.targets.map((t) => (consumedBy(t) ? { item: t.item, rate: 0 } : t)),
+  }
+  const crafts = new Map<string, number>()
+  const visit = (n: TreeNode) => {
+    if (n.run) crafts.set(n.id, n.run.craftsPerMinute)
+    n.children.forEach(visit)
+  }
+  solveRound(without, catalog, mods, absorbing, floors).tree.forEach(visit)
+  return crafts
+}
+
+/** The root row of a row's tree. */
+function rootOf(n: PlanNode): PlanNode {
+  let r = n
+  while (r.parent) r = r.parent
+  return r
+}
+
 /** The row that supplies a row: itself, or the row a loop or separate build points to. */
 function supplierOf(n: PlanNode): PlanNode {
   let s = n
@@ -222,6 +322,12 @@ const outputOf = (p: Process, item: string) => p.outputs.find((s) => s.item === 
  * the nearest first, and what's left over is surplus. Heat and nutrients are plan-wide: fuel and
  * fertilizer come off the bus for every machine, unless a net-surplus target covers them (`absorbing`).
  * A row with a floor runs at least that many crafts per minute; what nothing uses overflows.
+ * An overflow target takes all of its item's overflow (the first such target in order that uses the
+ * item does), its rows of the item drawing from it, and its rate is what that makes. The overflow
+ * includes what the overflow target's own rows overflow, so chains and loops of them are solved
+ * together. Its rows make only what it needs, so the overflow can't be used up by making extra.
+ * Overflow it can't use is priced like a shortfall: a loop that overflows at least as much as it
+ * takes would need an endless factory, so it takes none and is flagged as running away.
  */
 function solveRound(
   plan: Plan,
@@ -235,6 +341,34 @@ function solveRound(
   const index = new Map(shape.nodes.map((n, k) => [n, k]))
   const bal = (n: PlanNode) => `b:${index.get(supplierOf(n))}`
 
+  // Overflow targets (by index among the targets with an item), the rows that take their item's
+  // overflow under each, and per item the one that takes it.
+  const planIndex = plan.targets.flatMap((t, i) => (t.item ? [i] : []))
+  const takers = new Map<number, PlanNode[]>()
+  const inTaker = new Set<PlanNode>()
+  targets.forEach((_, i) => {
+    const item = consumedBy(plan.targets[planIndex[i]])
+    const row = shape.targetRows[i]
+    // A target sharing the row of an item built separately has no rows of its own.
+    if (!item || !row || !isTargetRow(row.id)) return
+    takers.set(i, [])
+  })
+  for (const n of shape.nodes) {
+    const root = rootOf(n)
+    const i = shape.targetRows.indexOf(root)
+    if (!takers.has(i)) continue
+    inTaker.add(n)
+    if (n.kind === 'overflow') takers.get(i)!.push(n)
+  }
+  const takerOf = new Map<string, number>()
+  for (const [i, leaves] of takers) {
+    const item = consumedBy(plan.targets[planIndex[i]])!
+    if (leaves.length && !takerOf.has(item)) takerOf.set(item, i)
+  }
+  // Overflow targets take what the rest of the plan overflows as it is without them: its targets'
+  // rows run as they would (running one harder could soak up the overflow into a surplus of its own).
+  const held = takerOf.size ? baselineCrafts(plan, catalog, mods, absorbing, floors) : null
+
   const equalities: Record<string, number> = {}
   const columns: Record<string, Record<string, number>> = {}
   const add = (col: Record<string, number>, row: string, v: number) => {
@@ -245,8 +379,16 @@ function solveRound(
   for (const s of supplies) {
     const k = index.get(s)!
     equalities[`b:${k}`] = 0
-    columns[`s:${k}`] = { [`b:${k}`]: -1, cost: SURPLUS_COST }
+    // An overflow target's rows of its item get only the overflow taken, and its other rows make no
+    // more than it needs. A row making an item an overflow target takes overflows into its pool.
+    if (s.kind !== 'overflow' && (!inTaker.has(s) || floors.has(s.id)))
+      columns[`s:${k}`] = {
+        [`b:${k}`]: -1,
+        ...(s.kind === 'make' && takerOf.has(s.item) && { [`o:${s.item}`]: 1 }),
+        cost: SURPLUS_COST,
+      }
     if (s.kind === 'import' || s.kind === 'bus') columns[`i:${k}`] = { [`b:${k}`]: 1, cost: IMPORT_COST }
+    else if (s.kind === 'overflow') continue
     else {
       const cost = Math.max(MIN_DEFICIT_COST, DEFICIT_COST * DEFICIT_DEPTH_FACTOR ** s.depth)
       columns[`d:${k}`] = { [`b:${k}`]: 1, cost }
@@ -256,6 +398,14 @@ function solveRound(
     const row = shape.targetRows[i]
     if (row) equalities[bal(row)] += t.rate
   })
+  // Each item's overflow pools (rows add to it as it overflows them) and goes to the rows of the
+  // overflow target taking it, sizing that target; what it can't use is priced as a shortfall.
+  for (const [item, i] of takerOf) {
+    equalities[`o:${item}`] = 0
+    for (const leaf of takers.get(i)!) columns[`od:${index.get(leaf)}`] = { [`o:${item}`]: -1, [`b:${index.get(leaf)}`]: 1, cost: 0 }
+    columns[`t:${i}`] = { [bal(shape.targetRows[i])]: -1, cost: 0 }
+    columns[`d:o:${item}`] = { [`o:${item}`]: -1, cost: UNUSED_OVERFLOW_COST }
+  }
 
   // Plan-wide heat and nutrients, supplied by the preferred fuel and fertilizer from the bus, or
   // by a net-surplus target's row after the fed-back sources ahead of it.
@@ -307,6 +457,11 @@ function solveRound(
       cost: CRAFT_COST * Math.max(p.seconds, 1) * (p.product === n.item ? 1 : SIDE_RUN_FACTOR),
     }
     columns[`x:${k}`] = col
+    const fixed = !inTaker.has(n) && isTargetRow(rootOf(n).id) ? held?.get(n.id) : undefined
+    if (fixed !== undefined) {
+      equalities[`h:${k}`] = fixed
+      col[`h:${k}`] = 1
+    }
     const floor = floors.get(n.id)
     if (floor) {
       equalities[`r:${k}`] = floor
@@ -324,7 +479,7 @@ function solveRound(
       const pool = `p:${k}:${o.item}`
       equalities[pool] = 0
       add(col, pool, o.count)
-      columns[`ps:${k}:${o.item}`] = { [pool]: -1, cost: SURPLUS_COST }
+      columns[`ps:${k}:${o.item}`] = { [pool]: -1, ...(takerOf.has(o.item) && { [`o:${o.item}`]: 1 }), cost: SURPLUS_COST }
       // A row making its own keeps to itself: its by-products only go where reuse was picked.
       for (const c of consumers.get(o.item) ?? []) {
         if (!n.reuse && !c.reuseChosen) continue
@@ -384,6 +539,26 @@ function solveRound(
   const crafts = (n: PlanNode) => (n.kind === 'make' ? v(`x:${index.get(n)}`) : 0)
   // A net-surplus target's row also makes what the plan burns or spreads of it.
   for (const [item, a] of absorbing) if (globals.has(item)) targets[a.target].made += v(`fb:${item}`)
+  // An overflow target makes what the overflow it takes comes to.
+  const taken = (i: number) => (takers.get(i) ?? []).reduce((t, leaf) => t + v(`od:${index.get(leaf)}`), 0)
+  const unused = (item: string) => {
+    const x = v(`d:o:${item}`)
+    return cleaned(x, RELATIVE_NOISE * Math.max(1, x + taken(takerOf.get(item)!)))
+  }
+  const runaway = runawayItems(takerOf, takers, inTaker, (item) => unused(item) > 0)
+  for (const [i, leaves] of takers) {
+    const item = consumedBy(plan.targets[planIndex[i]])!
+    const by = takerOf.get(item)
+    targets[i].rate = targets[i].made = v(`t:${i}`)
+    targets[i].overflow = {
+      item,
+      uses: leaves.length > 0,
+      taken: by === i ? taken(i) : 0,
+      unused: by === i ? unused(item) : 0,
+      takenBy: by !== undefined && by !== i && leaves.length > 0 ? planIndex[by] : null,
+      runaway: by === i && runaway.has(item),
+    }
+  }
   const own = new Map<PlanNode, number>()
   targets.forEach((t, i) => {
     const row = shape.targetRows[i]
@@ -434,7 +609,8 @@ function solveRound(
     }
     const need = demand.get(n) ?? 0
     const x = crafts(n)
-    const made = n.kind === 'make' ? outputOf(n.process!, n.item) * x : 0
+    // An overflow target's rows of its item get the overflow it takes.
+    const made = n.kind === 'make' ? outputOf(n.process!, n.item) * x : n.kind === 'overflow' ? v(`od:${index.get(n)}`) : 0
     const tol = RELATIVE_NOISE * Math.max(1, need, made)
     const draws = (drawn.get(n) ?? []).filter((d) => d.amount > tol * 1e-2).sort((a, b) => b.amount - a.amount)
     const fromByproduct = draws.reduce((sum, d) => sum + d.amount, 0)

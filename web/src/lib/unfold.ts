@@ -1,7 +1,7 @@
 import { HEAT, NUTRIENTS, buyTier, itemsByKey, realItem } from './gameData'
 import { defaultProducer, sameRecipe, type Process, type ProcessCatalog } from './processes'
 import { separationsOf } from './separate'
-import type { MyDefault, Plan, Separation } from './types'
+import type { MyDefault, Plan, PlanTarget, Separation } from './types'
 
 export const IMPORT = 'import'
 const MAX_DEPTH = 40
@@ -12,6 +12,7 @@ export type PlanNodeKind =
   | 'bus' // fuel/fertilizer taken from the factory bus
   | 'loop' // fed by the row `ref` further up this branch (or cut off, too deep, with no `ref`)
   | 'separate' // built separately, by the row `ref`
+  | 'overflow' // the plan's overflow of the item, taken by an overflow target's rows
 
 /**
  * One row of the production tree, as a place in the factory: its machines feed the row above
@@ -57,6 +58,9 @@ export interface PlanShape {
   targetRows: PlanNode[]
   nodes: PlanNode[]
 }
+
+/** The item an overflow target takes the overflow of, or null for any other target. */
+export const consumedBy = (t: PlanTarget) => (t.unit === 'overflow' && t.consumes ? t.consumes : null)
 
 export interface ResolvedChoice {
   /** Process id, or 'import'. */
@@ -201,6 +205,8 @@ export function unfold(plan: Plan, catalog: ProcessCatalog): PlanShape {
   /** Row gathering every use of a top-of-plan item (null: not made by machines). */
   const topRows = new Map<string, PlanNode | null>()
   const pending: PlanNode[] = []
+  /** The item whose overflow the target being laid out takes, when it's an overflow target. */
+  let linked: string | null = null
 
   const create = (item: string, id: string, depth: number, parent: PlanNode | undefined, fields: Partial<PlanNode>) => {
     const n: PlanNode = {
@@ -253,6 +259,7 @@ export function unfold(plan: Plan, catalog: ProcessCatalog): PlanShape {
     const id = `${parent.id}/${item}`
     const depth = parent.depth + 1
     if (realItem(item) !== item) return create(realItem(item), id, depth, parent, { kind: 'bus' })
+    if (item === linked) return create(item, id, depth, parent, { kind: 'overflow', reuse: false, reuseChosen: false })
     const choice = resolveChoice(plan, catalog, item, id)
     if (!choice.process) return create(item, id, depth, parent, { ...picked(choice) })
     for (let a: PlanNode | undefined = parent; a; a = a.parent)
@@ -290,6 +297,7 @@ export function unfold(plan: Plan, catalog: ProcessCatalog): PlanShape {
 
   const roots: PlanNode[] = []
   const targetRows: PlanNode[] = []
+  const consumes = new Map<PlanNode, string>()
   plan.targets
     .filter((t) => t.item)
     .forEach((t, i) => {
@@ -310,10 +318,16 @@ export function unfold(plan: Plan, catalog: ProcessCatalog): PlanShape {
           })
         : create(t.item, id, 0, undefined, { ...picked(choice) })
       if (sep) topRows.set(t.item, n.kind === 'make' ? n : null)
+      const from = consumedBy(t)
+      if (from) consumes.set(n, from)
       roots.push(n)
       targetRows.push(n)
     })
-  for (const n of [...roots]) if (n.kind === 'make') expand(n)
+  for (const n of [...roots]) {
+    linked = consumes.get(n) ?? null
+    if (n.kind === 'make') expand(n)
+  }
+  linked = null
   // Expanding a separate build can turn up more of them; `pending` grows as we go.
   for (let i = 0; i < pending.length; i++) {
     expand(pending[i])

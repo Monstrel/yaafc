@@ -15,7 +15,7 @@ import {
   research,
   upgrades,
 } from './gameData'
-import { buildCatalog, defaultProducer, paradoxSeconds, processTitle, type ProcessCatalog } from './processes'
+import { buildCatalog, defaultProducer, paradoxSeconds, processTitle, savedRecipeProcess, type ProcessCatalog } from './processes'
 import { ledgers } from './ledger'
 import { fedOverflow, moneyLedger, type MoneyLedger } from './money'
 import { allowedIngredients, builtinGroups, emptyPrefs, onlyGroup, preferredCount, setPrefs } from './itemGroups'
@@ -23,11 +23,14 @@ import { countRecipes, diagnoseNoResults, type FinderQuery } from './diagnose'
 import { buildingCounts, checkLogistics, checkProcess, resourceUsers } from './logistics'
 import { craftsPerMachine } from './machineRate'
 import { solvePlan, type PlanResult } from './solver'
-import type { TreeNode } from './tree'
+import { onOverflow, type TreeNode } from './tree'
 import {
   chooseProducer,
   clearBranchChoice,
   addProvider,
+  addOverflowTarget,
+  convertOverflowTarget,
+  linkToOverflow,
   migrateCatalysts,
   migrateFeedback,
   moveTarget,
@@ -1152,6 +1155,181 @@ describe('the bus: money in, items out', () => {
     expect(panacea.used.fertilizer).toBeGreaterThan(0)
     expect(panacea.toBus).toBeCloseTo(12.5 - panacea.used.heat! - panacea.used.fertilizer!)
     expect(money.value).toBeCloseTo(panacea.toBus * itemsByKey.get('PanaceaElixir')!.sellPrice!) // steel and flax don't sell
+  })
+})
+
+describe('overflow targets', () => {
+  const mods = modifiers({})
+  const catalog = buildCatalog({ saved: [], machines: {}, mods, fertilizer: null })
+  // Blast Potions this way overflow Iron Ingots nothing in the plan uses.
+  const blast = plan({ targets: [{ item: 'BlastPotion', rate: 21 }], producers: { Mors: 'paradox:BlackPowder' } })
+  const using = (p: Plan, item: string, consumes = 'IronIngot') => addOverflowTarget(p, item, consumes)
+  const surplus = (r: PlanResult, item: string) => r.balances.find((b) => b.item === item)?.surplus ?? 0
+  const alone = solvePlan(blast, catalog, mods)
+  const iron = surplus(alone, 'IronIngot')
+  const rows = (r: PlanResult) => [...rowsById(r.tree).values()]
+
+  it('makes as much as the overflow it takes comes to, leaving none of it', () => {
+    expect(iron).toBeGreaterThan(0)
+    const p = using(blast, 'Nails')
+    const r = solvePlan(p, catalog, mods)
+    expectBalanced(r)
+    const nails = r.targets[1]
+    expect(nails.overflow).toEqual({ item: 'IronIngot', uses: true, taken: expect.closeTo(iron), unused: 0, takenBy: null, runaway: false })
+    const leaf = rows(r).find((n) => n.id === '1/Nails/IronIngot')!
+    expect(leaf.kind).toBe('overflow')
+    expect(leaf.rate).toBeCloseTo(iron)
+    expect(leaf.shortfall).toBe(0)
+    const perIron = catalog.byId.get(rows(r).find((n) => n.id === '1/Nails')!.producer)!.outputs[0].count
+    expect(nails.rate).toBeCloseTo(iron * perIron)
+    expect(surplus(r, 'IronIngot')).toBeCloseTo(0)
+    expect(r.targets[0].rate).toBe(21) // the rest of the plan is as it was
+  })
+
+  it('shows the overflow it takes on the bus, none of it going out', () => {
+    const p = using(blast, 'Nails')
+    const r = solvePlan(p, catalog, mods)
+    const l = ledgers(p, catalog, r)
+    const money = moneyLedger(p, catalog, r, l)
+    const out = money.outputs.find((o) => o.item === 'IronIngot')!
+    expect(out.sources).toEqual([expect.objectContaining({ target: null, amount: expect.closeTo(iron), taken: [{ target: 1, amount: expect.closeTo(iron) }] })])
+    expect(out.toBus).toBe(0)
+    expect(fedOverflow(money).get('IronIngot')).toEqual({ share: expect.closeTo(1), into: [], taken: [1] })
+  })
+
+  it('leaves the rest of the plan as it was, taking what it overflows', () => {
+    // Mars with its Copper Powder row rounded up overflows Copper Powder. Running the Copper Ingot
+    // row above it harder would soak that up into a Copper Ingot surplus; the plan stays put instead.
+    const mars = setRoundUp(plan({ targets: [{ item: 'Mars', rate: 0.13 }] }), '0/Mars/CopperBearing/CopperIngot/CopperPowder2', true)
+    const before = solvePlan(mars, catalog, mods)
+    const powder = surplus(before, 'CopperPowder2')
+    expect(powder).toBeGreaterThan(0)
+    const r = solvePlan(using(mars, 'CopperBearing', 'CopperPowder2'), catalog, mods)
+    expectBalanced(r)
+    expect(r.targets[1].overflow).toMatchObject({ taken: expect.closeTo(powder), unused: 0 })
+    expect(r.targets[1].rate).toBeGreaterThan(0)
+    expect(surplus(r, 'CopperIngot')).toBe(0)
+    const machines = (x: PlanResult) => rows(x).filter((n) => n.id.startsWith('0/')).map((n) => [n.id, round1(n.machines)])
+    expect(machines(r)).toEqual(machines(before))
+  })
+
+  it("makes none, saying why, when its recipes don't use the item", () => {
+    const r = solvePlan(using(blast, 'Bandage'), catalog, mods)
+    expectBalanced(r)
+    expect(r.targets[1]).toMatchObject({ rate: 0, overflow: { uses: false, taken: 0, takenBy: null } })
+    expect(surplus(r, 'IronIngot')).toBeCloseTo(iron)
+  })
+
+  it('makes none when nothing overflows', () => {
+    const r = solvePlan(using(plan({ targets: [{ item: 'WoodBoard', rate: 10 }] }), 'Nails'), catalog, mods)
+    expectBalanced(r)
+    expect(r.targets[1]).toMatchObject({ rate: 0, overflow: { uses: true, taken: 0 } })
+  })
+
+  it('gives the overflow to the first target in order that uses it', () => {
+    const p = using(using(using(blast, 'Bandage'), 'Cart'), 'Nails')
+    const r = solvePlan(p, catalog, mods)
+    expectBalanced(r)
+    expect(r.targets[1].overflow).toMatchObject({ uses: false })
+    expect(r.targets[2].overflow).toMatchObject({ uses: true, taken: expect.closeTo(iron), unused: 0, takenBy: null, runaway: false })
+    expect(r.targets[3]).toMatchObject({ rate: 0, overflow: { uses: true, taken: 0, takenBy: 2 } })
+    const swapped = solvePlan(moveTarget(p, 3, 2), catalog, mods)
+    expect(swapped.targets[2].overflow).toMatchObject({ item: 'IronIngot', taken: expect.closeTo(iron) })
+    expect(swapped.targets[3].overflow).toMatchObject({ takenBy: 2 })
+  })
+
+  it("solves a chain together: one overflow target's overflow sizes the next", () => {
+    // Nails rounded up to whole machines overflow; Mars takes them, and its Steel Gear row rounded
+    // up overflows gears for a second Mars.
+    const nailsFirst = setRoundUp(plan({ targets: [{ item: 'Nails', rate: 10 }] }), '0/Nails', true)
+    const p = using(setRoundUp(using(nailsFirst, 'Mars', 'Nails'), '1/Mars/SteelGear', true), 'Mars', 'SteelGear')
+    const r = solvePlan(p, catalog, mods)
+    expectBalanced(r)
+    const nails = rows(r).find((n) => n.id === '0/Nails')!
+    const gears = rows(r).find((n) => n.id === '1/Mars/SteelGear')!
+    expect(nails.overflow).toBeGreaterThan(0)
+    expect(gears.overflow).toBeGreaterThan(0)
+    expect(r.targets[1].overflow).toMatchObject({ item: 'Nails', uses: true, taken: expect.closeTo(nails.overflow) })
+    const mars = catalog.byId.get(rows(r).find((n) => n.id === '1/Mars')!.producer)!
+    const per = (item: string) => mars.outputs[0].count / mars.inputs.find((s) => s.item === item)!.count
+    expect(r.targets[1].rate).toBeCloseTo(nails.overflow * per('Nails'))
+    expect(r.targets[2].overflow).toMatchObject({ item: 'SteelGear', uses: true, taken: expect.closeTo(gears.overflow) })
+    expect(r.targets[2].rate).toBeCloseTo(gears.overflow * per('SteelGear'))
+    expect(surplus(r, 'Nails')).toBeCloseTo(0)
+    expect(surplus(r, 'SteelGear')).toBeCloseTo(0)
+  })
+
+  it("doesn't round up rows running on overflow: they can't run faster than it comes", () => {
+    const exact = solvePlan(using(blast, 'Nails'), catalog, mods)
+    const r = solvePlan(setRoundUp(using(blast, 'Nails'), '1/Nails', true), catalog, mods)
+    expectBalanced(r)
+    const nails = rows(r).find((n) => n.id === '1/Nails')!
+    expect(nails.machines).toBeCloseTo(rows(exact).find((n) => n.id === '1/Nails')!.machines)
+    expect(onOverflow(nails)).toBe(true)
+    const leaf = rows(r).find((n) => n.id === '1/Nails/IronIngot')!
+    expect(leaf.rate).toBeCloseTo(iron)
+    expect(leaf.shortfall).toBe(0)
+  })
+
+  it('solves loops through its own overflow exactly', () => {
+    // Steel's failed crafts give back 3 iron for every 4 it takes: 4× the overflow in all.
+    const r = solvePlan(using(blast, 'SteelIngot'), catalog, mods)
+    expectBalanced(r)
+    expect(r.targets[1].overflow).toMatchObject({ taken: expect.closeTo(4 * iron), unused: 0, runaway: false })
+    expect(surplus(r, 'IronIngot')).toBeCloseTo(0)
+  })
+
+  describe('a loop that overflows at least as much as it takes', () => {
+    // Every Gentian nursery craft also makes Gentian Nectar, as much as Gentian.
+    const vitae = (inputs: [string, string, string]) => {
+      const saved: SavedRecipe = { id: 'v', mode: 'normal', inputs, output: evaluateNormal(inputs)!.output.key, createdAt: 0 }
+      const c = buildCatalog({ saved: [saved], machines: {}, mods, fertilizer: null })
+      const p = plan({ targets: [{ item: 'Gentian', rate: 80 }], producers: { [saved.output]: savedRecipeProcess(saved)!.id } })
+      return { result: solvePlan(addOverflowTarget(p, saved.output, 'GentianNectar'), c, mods), item: saved.output }
+    }
+
+    it('settles when it gives back less than it takes', () => {
+      // 2 Nectar and 1 Gentian Powder: half the Nectar comes back, so it takes twice the overflow.
+      const { result } = vitae(['GentianNectar', 'GentianNectar', 'GentianPowder'])
+      expectBalanced(result)
+      expect(result.targets[1].overflow).toMatchObject({ taken: expect.closeTo(160), unused: 0, runaway: false })
+    })
+
+    it('runs away, making none, when it gives back as much or more, without falling short anywhere', () => {
+      // 1 Nectar and 2 Gentian Powder: twice the Nectar comes back.
+      const { result } = vitae(['GentianNectar', 'GentianPowder', 'GentianPowder'])
+      expectBalanced(result)
+      expect(result.targets[1]).toMatchObject({ rate: 0, overflow: { taken: 0, unused: expect.closeTo(80), runaway: true } })
+      expect(result.balances.every((b) => b.deficit === 0)).toBe(true)
+      expect(surplus(result, 'GentianNectar')).toBeCloseTo(80) // back out to the bus
+    })
+  })
+
+  it('turns a standard target into one using the overflow, and back', () => {
+    const standard = plan({ ...blast, targets: [...blast.targets, { item: 'Nails', rate: 5, unit: 'machines' }] })
+    const linked = linkToOverflow(standard, 1, 'IronIngot')
+    expect(linked.targets[1]).toEqual({ item: 'Nails', rate: 5, unit: 'overflow', consumes: 'IronIngot' })
+    const r = solvePlan(linked, catalog, mods)
+    expect(r.targets[1].overflow!.taken).toBeCloseTo(iron)
+    expect(linked.targets[0]).toBe(standard.targets[0])
+    expect(convertOverflowTarget(linked, 1, r.targets[1].rate).targets[1]).toEqual({
+      item: 'Nails',
+      rate: Math.round(r.targets[1].rate * 1000) / 1000,
+    })
+  })
+
+  it('becomes a standard target making what it makes now, and round-trips through saving', () => {
+    const p = using(blast, 'Nails')
+    const rate = solvePlan(p, catalog, mods).targets[1].rate
+    const converted = convertOverflowTarget(p, 1, rate)
+    expect(converted.targets[1]).toEqual({ item: 'Nails', rate: Math.round(rate * 1000) / 1000 })
+    expect(convertOverflowTarget(using(blast, 'Bandage'), 1, 0).targets[1]).toEqual({ item: 'Bandage', rate: 10 })
+    expect(removeTarget(p, 1)).toEqual(blast)
+    expect(sanitizePlans([p], () => 'n')![0].targets[1]).toEqual({ item: 'Nails', rate: 0, unit: 'overflow', consumes: 'IronIngot' })
+    expect(sanitizePlans([{ ...blast, targets: [{ item: 'Nails', rate: 3, unit: 'overflow' }] }], () => 'n')![0].targets[0]).toEqual({
+      item: 'Nails',
+      rate: 3,
+    })
   })
 })
 
