@@ -2512,6 +2512,14 @@ tr.unit-totals td.num {
   gap: 4px 12px;
 }
 
+/* The item, and the rows it overflows from. */
+.bus-output-item {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+
 /* What goes out and its worth, together at the right edge. */
 .bus-net {
   display: inline-flex;

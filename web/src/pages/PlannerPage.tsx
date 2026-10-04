@@ -186,6 +186,14 @@ export function PlannerPage({
   // Targets are set in their own rows of the production tree.
   const [shownTarget, setShownTarget] = useState<{ index: number; n: number } | null>(null)
   const showTarget = (index: number) => setShownTarget((s) => ({ index, n: (s?.n ?? 0) + 1 }))
+  // Rows shown from links elsewhere on the page: each click on the same rows shows the next of them.
+  const [shownRow, setShownRow] = useState<{ id: string; n: number; of: string[] } | null>(null)
+  const showRow = (ids: string[]) =>
+    setShownRow((s) => {
+      const same = s && s.of.join() === ids.join()
+      const id = ids[same ? (ids.indexOf(s.id) + 1) % ids.length : 0]
+      return { id, n: (s?.n ?? 0) + 1, of: ids }
+    })
   /** The target just added, whose item picker opens. */
   const [added, setAdded] = useState<{ plan: string; index: number } | null>(null)
   const addTarget = () => {
@@ -542,6 +550,7 @@ export function PlannerPage({
                   showTarget(plan.targets.length)
                 }}
                 onShowTarget={showTarget}
+                onShowRow={showRow}
               >
                 {machineTier(STEAM_BOILER) <= catalog.tier && <BoilerRoom ledger={ledger.find((l) => l.resource === 'heat')!} mods={mods} />}
               </BusPanel>
@@ -569,6 +578,7 @@ export function PlannerPage({
                   targets={plan.targets.map(targetSlot)}
                   onAddTarget={addTarget}
                   shownTarget={shownTarget}
+                  shownRow={shownRow}
                 />
               </section>
 
@@ -635,6 +645,7 @@ function BusPanel({
   onProvide,
   onUseOverflow,
   onShowTarget,
+  onShowRow,
   children,
 }: {
   ledgers: ResourceLedger[]
@@ -644,7 +655,7 @@ function BusPanel({
   /** Picks the fuel or fertilizer the bus supplies. */
   busPick: (resource: Resource) => ReactNode
   /** Per overflowing item, the rows it overflows from. */
-  overflowFrom: Map<string, string[]>
+  overflowFrom: Map<string, OverflowSource[]>
   /** Feeds a source back (the plan uses it) or not (it goes out to the bus). */
   onFeedback: (item: string, target: number | null, on: boolean) => void
   onProvide: (item: string) => void
@@ -652,6 +663,8 @@ function BusPanel({
   onUseOverflow: (item: string, consumes: string) => void
   /** Shows a target's row in the production tree. */
   onShowTarget: (index: number) => void
+  /** Shows the next of these rows in the production tree. */
+  onShowRow: (ids: string[]) => void
   children?: ReactNode
 }) {
   const margin = money.value - money.cost
@@ -686,6 +699,7 @@ function BusPanel({
                   onFeedback={onFeedback}
                   onUseOverflow={onUseOverflow}
                   onShowTarget={onShowTarget}
+                  onShowRow={onShowRow}
                 />
               ))}
             </ul>
@@ -849,20 +863,44 @@ function OutputLine({
   onFeedback,
   onUseOverflow,
   onShowTarget,
+  onShowRow,
 }: {
   row: OutputRow
-  overflowFrom: Map<string, string[]>
+  overflowFrom: Map<string, OverflowSource[]>
   onFeedback: (item: string, target: number | null, on: boolean) => void
   /** Adds an overflow target making `item` from this item's overflow. */
   onUseOverflow: (item: string, consumes: string) => void
   onShowTarget: (index: number) => void
+  /** Shows the next of these rows in the production tree. */
+  onShowRow: (ids: string[]) => void
 }) {
   const uses = (Object.entries(row.used) as [BusUse, number][]).filter(([, n]) => n > 0)
+  // Rows overflowing it, when the plan overflows it.
+  const from = row.sources.some((s) => s.target === null) ? (overflowFrom.get(row.item) ?? []) : []
   const [using, setUsing] = useState(false)
   return (
     <li className="bus-output">
       <div className="bus-output-head">
-        <ItemLabel item={row.item} size={18} />
+        <span className="bus-output-item">
+          <ItemLabel item={row.item} size={18} />
+          {from.length > 0 && (
+            <span className="hint-inline">
+              from{' '}
+              {from.map((f, i) => (
+                <span key={f.label}>
+                  {i > 0 && ', '}
+                  <button
+                    className="tree-link"
+                    title={`Show ${f.title} in the plan${f.ids.length > 1 ? ` (${f.ids.length} places, click again for the next)` : ''}`}
+                    onClick={() => onShowRow(f.ids)}
+                  >
+                    {f.label}
+                  </button>
+                </span>
+              ))}
+            </span>
+          )}
+        </span>
         <span className="bus-net">
           {row.toBus > 0 ? <strong>+{fmt(row.toBus)}/min out</strong> : <span className="hint-inline">none out</span>}
           {row.toBus > 0 &&
@@ -899,9 +937,6 @@ function OutputLine({
                   >
                     ⚠ nothing uses it
                   </button>
-                )}
-                {s.target === null && (
-                  <span className="hint-inline">from {(overflowFrom.get(row.item) ?? []).join(', ')}</span>
                 )}
                 {s.taken.map((x) => (
                   <span key={x.target} className="fed-text">
@@ -1409,17 +1444,31 @@ function LogisticsLine({ check, label }: { check: LogisticsCheck; label: string 
   )
 }
 
+/** Where an item overflows from: the rows of one kind of machine (by name). */
+interface OverflowSource {
+  /** The machines, as "Athanors" (or the item made, for rows not made by a machine). */
+  label: string
+  /** What the rows make, as "Athanors making Copper Powder, Steel Ingot". */
+  title: string
+  /** The tree rows it overflows from, biggest first. */
+  ids: string[]
+}
+
 /**
- * Per overflowing item, the rows it overflows from, as "Athanors making Copper Powder": the
- * machines, and the item they're run for (the overflow may be their main product or a side one).
+ * Per overflowing item, the rows it overflows from, by machine: the overflow may be their main
+ * product or a side one.
  */
-function overflowRows(tree: TreeNode[]): Map<string, string[]> {
-  const found = new Map<string, Set<string>>()
+function overflowRows(tree: TreeNode[]): Map<string, OverflowSource[]> {
+  const found = new Map<string, Map<string, { machines: number; making: Set<string>; rows: TreeNode[] }>>()
   const note = (item: string, n: TreeNode) => {
-    const machine = n.run?.process.machine?.name
-    const what = itemName(n.item)
-    const from = machine ? `${machineNameFor(machine, n.machines)} making ${what}` : what
-    found.set(item, (found.get(item) ?? new Set()).add(from))
+    const machine = n.run?.process.machine?.name ?? ''
+    const byMachine = found.get(item) ?? new Map()
+    found.set(item, byMachine)
+    const g = byMachine.get(machine) ?? { machines: 0, making: new Set(), rows: [] }
+    byMachine.set(machine, g)
+    g.machines += n.machines
+    g.making.add(itemName(n.item))
+    g.rows.push(n)
   }
   const visit = (n: TreeNode) => {
     if (n.overflow > 0) note(n.item, n)
@@ -1427,7 +1476,20 @@ function overflowRows(tree: TreeNode[]): Map<string, string[]> {
     n.children.forEach(visit)
   }
   tree.forEach(visit)
-  return new Map([...found].map(([item, from]) => [item, [...from]]))
+  return new Map(
+    [...found].map(([item, byMachine]) => [
+      item,
+      [...byMachine].map(([machine, g]) => {
+        const making = [...g.making].join(', ')
+        const label = machine ? machineNameFor(machine, g.machines) : making
+        return {
+          label,
+          title: machine ? `${label} making ${making}` : making,
+          ids: g.rows.sort((a, b) => b.machines - a.machines).map((n) => n.id),
+        }
+      }),
+    ]),
+  )
 }
 
 /** Steps of the plan whose own recipe, machine or purchase needs research beyond `tier`. */

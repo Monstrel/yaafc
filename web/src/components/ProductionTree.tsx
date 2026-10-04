@@ -51,6 +51,8 @@ interface Props {
   onAddTarget: () => void
   /** A target to show (unfolded, scrolled to and pulsed); `n` is bumped for every request. */
   shownTarget: { index: number; n: number } | null
+  /** A row to show (unfolded, scrolled to and pulsed); `n` is bumped for every request. */
+  shownRow?: { id: string; n: number } | null
 }
 
 /** A target's controls, laid into the tree row that meets it. */
@@ -100,6 +102,7 @@ export function ProductionTree({
   targets: slots,
   onAddTarget,
   shownTarget,
+  shownRow = null,
 }: Props) {
   const rounded = useMemo(() => new Set(roundUp), [roundUp])
   // Folded rows survive leaving the planner and reloads (row ids are stable paths).
@@ -278,15 +281,23 @@ export function ProductionTree({
 
   // Showing a target (from a link elsewhere on the page, or just added): unfold its row and pulse
   // it, once per request rather than whenever the tree changes under it.
-  const [shown, setShown] = useState(shownTarget)
-  if (shown !== shownTarget) {
-    setShown(shownTarget)
-    const id = shownTarget && slotRows[shownTarget.index]
+  const show = (id: string | null | undefined) => {
     const ancestors = id ? byId.get(id)?.ancestors : undefined
     if (id && ancestors) {
       setCollapsed((c) => (ancestors.some((a) => c.has(a)) ? new Set([...c].filter((x) => !ancestors.includes(x))) : c))
       setPulse((p) => ({ id, n: (p?.n ?? 0) + 1 }))
     }
+  }
+  const [shown, setShown] = useState(shownTarget)
+  if (shown !== shownTarget) {
+    setShown(shownTarget)
+    show(shownTarget && slotRows[shownTarget.index])
+  }
+  // Showing a row the same way (from the bus panel's overflow sources).
+  const [shownAt, setShownAt] = useState(shownRow)
+  if (shownAt !== shownRow) {
+    setShownAt(shownRow)
+    show(shownRow?.id)
   }
 
   /** A link from `from` to the rows `match` picks out; plain text when there are none. */
