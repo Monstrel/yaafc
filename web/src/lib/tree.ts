@@ -31,6 +31,8 @@ export interface TreeNode {
   mine: boolean
   /** Catalysts the row loads unless it sets its own. */
   defaultCatalysts: string[]
+  /** Height the row's machines are built at unless it sets its own. */
+  defaultHeight: number
   /** The row takes other rows' by-products of its item first (else it makes all of it). */
   reuse: boolean
   /** Reuse was picked: the row also takes by-products from rows that make their own. */
@@ -113,6 +115,7 @@ export function buildTree(roots: PlanNode[], flows: Map<PlanNode, RowFlows>, mod
       ownChoice: n.ownChoice,
       mine: n.mine,
       defaultCatalysts: n.defaultCatalysts,
+      defaultHeight: n.defaultHeight,
       reuse: n.reuse,
       reuseChosen: n.reuseChosen,
       machines: 0,

@@ -1,5 +1,5 @@
 import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
-import { CATALYSTS, coinValue, itemsByKey } from '../lib/gameData'
+import { CATALYSTS, coinValue, heightMultiplier, itemsByKey } from '../lib/gameData'
 import { fmt } from '../lib/format'
 import { buildingNameFor, machineNameFor, noun } from '../lib/plural'
 import { sanitizeStrings } from '../lib/sanitize'
@@ -29,6 +29,8 @@ interface Props {
   /** Loads catalysts into one row's machines. */
   /** Loads catalysts into a row ('inherited': what it loads without its own setting). */
   onCatalysts: (row: string, catalysts: string[], inherited: string[]) => void
+  /** Builds a row's machines at a height ('inherited': the height without its own setting). */
+  onHeight: (row: string, height: number, inherited: number) => void
   /** Use as my default: remember how this row and everything below it is made. */
   onRemember: (row: TreeNode) => void
   /** Stop using an item's saved default; this plan keeps being made that way. */
@@ -89,6 +91,7 @@ export function ProductionTree({
   onProducer,
   onResetProducer,
   onCatalysts,
+  onHeight,
   onRemember,
   onForget,
   onSeparate,
@@ -387,6 +390,7 @@ export function ProductionTree({
                   onProducer={onProducer}
                   onResetProducer={onResetProducer}
                   onCatalysts={onCatalysts}
+                  onHeight={onHeight}
                   onRemember={onRemember}
                   onForget={onForget}
                   savable={savable.has(line.node.id)}
@@ -489,6 +493,7 @@ function TreeRow({
   onProducer,
   onResetProducer,
   onCatalysts,
+  onHeight,
   onRemember,
   onForget,
   savable,
@@ -531,6 +536,8 @@ function TreeRow({
   /** Loads catalysts into one row's machines. */
   /** Loads catalysts into a row ('inherited': what it loads without its own setting). */
   onCatalysts: (row: string, catalysts: string[], inherited: string[]) => void
+  /** Builds a row's machines at a height ('inherited': the height without its own setting). */
+  onHeight: (row: string, height: number, inherited: number) => void
   /** Use as my default: remember how this row and everything below it is made. */
   onRemember: (row: TreeNode) => void
   onForget: (item: string) => void
@@ -810,6 +817,27 @@ function TreeRow({
                   )
                 })}
               </div>
+            )}
+            {p?.acceptsHeight && node.kind === 'produce' && (
+              <label
+                className="build-height"
+                title={`The Height its inspect panel shows. The higher up it's built, the greater its output.`}
+              >
+                Height
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={p.height}
+                  onChange={(e) =>
+                    onHeight(node.id, Math.max(0, Math.round(Number(e.target.value) || 0)), node.defaultHeight)
+                  }
+                  aria-label={`Height the ${p.machine?.name ?? 'machines'} are built at`}
+                />
+                <span className="hint-inline">
+                  ×{heightMultiplier(p.height).toLocaleString(undefined, { maximumFractionDigits: 3 })} output
+                </span>
+              </label>
             )}
             {node.kind === 'byproduct' && <div className="note-line">♻ by-product of {sources}</div>}
             {node.kind !== 'byproduct' && node.fromByproduct > 0 && (
@@ -1099,6 +1127,7 @@ function blankRow(id: string, children: TreeNode[] = []): TreeNode {
     ownChoice: false,
     mine: false,
     defaultCatalysts: [],
+    defaultHeight: 0,
     reuse: true,
     reuseChosen: false,
     children,

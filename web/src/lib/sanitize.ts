@@ -104,6 +104,7 @@ function plan(v: unknown, newId: () => string): Plan | undefined {
     coinStack: num(v.coinStack),
     rowCatalysts: record(v.rowCatalysts, strings),
     catalysts: record(v.catalysts, strings),
+    rowHeights: record(v.rowHeights, num),
     separate: list(v.separate, separation),
     noReuse: strings(v.noReuse),
     roundUp: strings(v.roundUp),
@@ -149,7 +150,7 @@ function myDefault(v: unknown): MyDefault | undefined {
   if (!isObj(v)) return undefined
   const producer = str(v.producer)
   if (producer === undefined) return undefined
-  return defined({ producer, machine: str(v.machine), catalysts: strings(v.catalysts) })
+  return defined({ producer, machine: str(v.machine), catalysts: strings(v.catalysts), height: num(v.height) })
 }
 
 export const sanitizeMyDefaults = (v: unknown): MyDefaults | undefined => record(v, myDefault)

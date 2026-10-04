@@ -2149,6 +2149,20 @@ tr.kind-separate .item-label .name {
   color: var(--muted);
 }
 
+.build-height {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.build-height input {
+  width: 64px;
+}
+
 .catalyst.on {
   border-color: var(--violet);
   color: var(--text);

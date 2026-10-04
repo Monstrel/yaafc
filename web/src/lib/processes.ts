@@ -5,6 +5,7 @@ import {
   ATHANOR,
   CATALYSTS,
   HEAT,
+  heightMultiplier,
   NURSERY,
   NUTRIENTS,
   MAX_TIER,
@@ -61,6 +62,10 @@ export interface Process {
   catalysts: string[]
   /** Whether this process can take catalysts on its current machine. */
   acceptsCatalysts: boolean
+  /** Height its machines are built at, in grid spaces, when that sets their output (else 0). */
+  height: number
+  /** Whether its current machine's output depends on the height it's built at (Thermal Extractor). */
+  acceptsHeight: boolean
   /** Research tier its recipe and machine need (seeds too, for nurseries). */
   tier: number
   /** License the recipe needs, if any (alternate ingots). */
@@ -76,6 +81,8 @@ export interface ProcessContext {
   fertilizer: string | null
   /** Catalysts loaded per process id (Advanced Athanor). */
   catalysts?: Record<string, string[]>
+  /** Height machines are built at per process id, where it sets their output (Thermal Extractor). */
+  heights?: Record<string, number>
   /** Research tier reached: defaults stick to what it unlocks (all tiers when absent). */
   tier?: number
   /** The player's saved defaults, used where a plan picks nothing. */
@@ -119,7 +126,11 @@ function recipeProcess(r: GameRecipe, ctx: ProcessContext): Process {
   const baseSeconds = r.time * r.batch
   const seconds = baseSeconds / (machine?.speed ?? 1)
 
-  let yieldMultiplier = machine?.outputMultiplier ?? 1
+  const acceptsHeight = !!machine?.heightScaled
+  const height = acceptsHeight ? (ctx.heights?.[id] ?? 0) : 0
+  let yieldMultiplier = acceptsHeight ? heightMultiplier(height) : 1
+  if (acceptsHeight)
+    notes.push(`Built at height ${height}: ×${yieldMultiplier.toLocaleString(undefined, { maximumFractionDigits: 3 })} output`)
   if (r.craftType === 'Extract') yieldMultiplier *= ctx.mods.extractor
   if (r.craftType === 'Distill' || r.craftType === 'AdDistill') yieldMultiplier *= ctx.mods.alembic
 
@@ -173,6 +184,8 @@ function recipeProcess(r: GameRecipe, ctx: ProcessContext): Process {
     notes,
     catalysts: catalysts.map((c) => c.key),
     acceptsCatalysts,
+    height,
+    acceptsHeight,
     tier: Math.max(recipeTier(r.key), machine ? machineTier(machine.key) : 1),
     license: licenseFor(r.key),
   }
@@ -226,6 +239,8 @@ export function savedRecipeProcess(s: SavedRecipe): Process | null {
     notes,
     catalysts: [],
     acceptsCatalysts: false,
+    height: 0,
+    acceptsHeight: false,
     tier: machine ? machineTier(machine.key) : 1,
   }
 }
@@ -273,6 +288,8 @@ function nurseryProcesses(ctx: ProcessContext): Process[] {
       alternate: false,
       catalysts: [],
       acceptsCatalysts: false,
+      height: 0,
+      acceptsHeight: false,
       // Nurseries grow from bought seeds.
       tier: Math.max(machine ? machineTier(machine.key) : 1, buyTier(worldTree ? 'WorldTreeSeed' : s.seed)),
       notes: [
@@ -340,6 +357,8 @@ function paradoxProcesses(mods: Modifiers): Process[] {
       notes,
       catalysts: [],
       acceptsCatalysts: false,
+      height: 0,
+      acceptsHeight: false,
       tier: machine ? machineTier(machine.key) : 1,
     }
   })
@@ -369,6 +388,8 @@ function fuelProcesses(mods: Modifiers): Process[] {
       notes: [],
       catalysts: [],
       acceptsCatalysts: false,
+      height: 0,
+      acceptsHeight: false,
       tier: 1,
     }))
 }
@@ -391,6 +412,8 @@ function fertilizerProcesses(mods: Modifiers): Process[] {
       notes: [],
       catalysts: [],
       acceptsCatalysts: false,
+      height: 0,
+      acceptsHeight: false,
       tier: 1,
     }))
 }
@@ -402,15 +425,22 @@ export const defaultMachine = (p: Process, tier: number) =>
 /** Items a building makes natively, outside the recipe tables. */
 const BUILDING_MADE: Record<string, string> = { Steam: 'SteamBoiler' }
 
+/** How one row runs a process: its machine, catalysts and the height its machines are built at. */
+export interface RunChange {
+  machine?: string
+  catalysts?: string[]
+  height?: number
+}
+
 export interface ProcessCatalog {
   byId: Map<string, Process>
   /** Producer options per product item, game recipes first, then saved cauldron recipes. */
   byProduct: Map<string, Process[]>
   /**
    * The process as it runs on another of its machines (for previewing the choice), and with the
-   * catalysts loaded in one row of the plan.
+   * catalysts loaded and height built at in one row of the plan.
    */
-  variant: (p: Process, change: { machine?: string; catalysts?: string[] }) => Process
+  variant: (p: Process, change: RunChange) => Process
   /** Research tier the plan has reached. */
   tier: number
   /** Earliest research tier an item can be had at: bought, or made from things reachable by then. */
@@ -423,14 +453,15 @@ export interface ProcessCatalog {
 
 export function buildCatalog(ctx: ProcessContext): ProcessCatalog {
   const recipes = new Map(gameRecipes.map((r) => [`recipe:${r.key}`, r]))
-  const variant = (p: Process, { machine = p.machine?.key, catalysts = p.catalysts }: { machine?: string; catalysts?: string[] }) => {
+  const variant = (p: Process, { machine = p.machine?.key, catalysts = p.catalysts, height = p.height }: RunChange) => {
     const r = recipes.get(p.id)
     const same = (a: string[], b: string[]) => a.length === b.length && a.every((k) => b.includes(k))
-    if (!r || (p.machine?.key === machine && same(p.catalysts, catalysts))) return p
+    if (!r || (p.machine?.key === machine && same(p.catalysts, catalysts) && p.height === height)) return p
     return recipeProcess(r, {
       ...ctx,
       machines: machine ? { ...ctx.machines, [p.id]: machine } : ctx.machines,
       catalysts: { ...ctx.catalysts, [p.id]: catalysts },
+      heights: { ...ctx.heights, [p.id]: height },
     })
   }
   const all: Process[] = [
@@ -523,13 +554,17 @@ export function defaultProducer(catalog: ProcessCatalog, item: string, asTarget 
 }
 
 /**
- * Identifies a process on its machine with its catalysts: branches can run one recipe on
- * different machines, or load different catalysts.
+ * Identifies a process on its machine with its catalysts and height: branches can run one recipe
+ * on different machines, load different catalysts, or build them at different heights.
  */
 export const runKey = (p: Process) =>
-  [p.machine && p.machineOptions.length > 1 ? `${p.id}@${p.machine.key}` : p.id, ...[...p.catalysts].sort()].join('+')
+  [
+    p.machine && p.machineOptions.length > 1 ? `${p.id}@${p.machine.key}` : p.id,
+    ...[...p.catalysts].sort(),
+    ...(p.acceptsHeight ? [`h${p.height}`] : []),
+  ].join('+')
 
-/** The same recipe on the same machine (catalysts aside): what a row loops back to. */
+/** The same recipe on the same machine (catalysts and height aside): what a row loops back to. */
 export const sameRecipe = (a: Process, b: Process) => a.id === b.id && a.machine?.key === b.machine?.key
 
 /**

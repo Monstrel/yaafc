@@ -8,6 +8,7 @@ import {
   buyTier,
   cauldronIngredients,
   gameRecipes,
+  heightMultiplier,
   items,
   itemsByKey,
   licenseFor,
@@ -15,7 +16,15 @@ import {
   research,
   upgrades,
 } from './gameData'
-import { buildCatalog, defaultProducer, paradoxSeconds, processTitle, savedRecipeProcess, type ProcessCatalog } from './processes'
+import {
+  buildCatalog,
+  defaultProducer,
+  paradoxSeconds,
+  processTitle,
+  savedRecipeProcess,
+  type Process,
+  type ProcessCatalog,
+} from './processes'
 import { ledgers } from './ledger'
 import { fedOverflow, moneyLedger, type MoneyLedger } from './money'
 import { allowedIngredients, builtinGroups, emptyPrefs, onlyGroup, preferredCount, setPrefs } from './itemGroups'
@@ -44,6 +53,7 @@ import {
   rowsById,
   setRoundUp,
   setRowCatalysts,
+  setRowHeight,
 } from './choices'
 import { sanitizePlans } from './sanitize'
 import { dropUnits, setUnits, unitChoices, unitScales, wholePerCopy } from './units'
@@ -835,6 +845,86 @@ describe('Advanced Athanor catalysts', () => {
     expect(o.GoldDust3).toBeCloseTo(0.1)
     expect(o.GoldDust2).toBeCloseTo(0.3)
     expect(o.GoldDust).toBeCloseTo(0.6)
+  })
+})
+
+describe('Thermal Extractor height', () => {
+  const mods = modifiers({})
+  const oil = 'recipe:LinseedOil'
+  const extract = (machine: string, height?: number) =>
+    buildCatalog({
+      saved: [],
+      machines: { [oil]: machine },
+      mods,
+      fertilizer: null,
+      ...(height !== undefined && { heights: { [oil]: height } }),
+    }).byId.get(oil)!
+  const made = (p: Process) => p.outputs.find((s) => s.item === 'LinseedOil')!.count
+
+  it('adds height / 128 to the output, up to 3× (GetProductionMultiplier)', () => {
+    expect([-4, 0, 32, 64, 128, 200, 256, 999].map(heightMultiplier)).toEqual([1, 1, 1.25, 1.5, 2, 2.5625, 3, 3])
+  })
+
+  it('sets the output of Thermal Extractors only', () => {
+    const base = made(extract('Extractor'))
+    expect(made(extract('ThermalExtractor'))).toBeCloseTo(base)
+    expect(made(extract('ThermalExtractor', 64))).toBeCloseTo(base * 1.5)
+    expect(made(extract('Extractor', 64))).toBeCloseTo(base)
+    expect(extract('Extractor', 64)).toMatchObject({ acceptsHeight: false, height: 0 })
+    expect(extract('ThermalExtractor', 64)).toMatchObject({ acceptsHeight: true, height: 64 })
+  })
+
+  describe('per row', () => {
+    const catalog = buildCatalog({ saved: [], machines: { [oil]: 'ThermalExtractor' }, mods, fertilizer: null })
+    const two = plan({
+      targets: [{ item: 'LinseedOil', rate: 60 }, { item: 'LinseedOil', rate: 60 }],
+      machines: { [oil]: 'ThermalExtractor' },
+    })
+
+    it('builds each row at its own height', () => {
+      const r = solvePlan(setRowHeight(two, '1/LinseedOil', 128), catalog, mods)
+      expectBalanced(r)
+      expect(r.tree.map((n) => n.run?.process.height)).toEqual([0, 128])
+      expect(r.tree[1].machines).toBeCloseTo(r.tree[0].machines / 2)
+      expect(r.runs.filter((x) => x.process.id === oil)).toHaveLength(2)
+    })
+
+    it('keeps only heights that differ from what the row has anyway', () => {
+      const raised = setRowHeight(two, '1/LinseedOil', 128)
+      expect(raised.rowHeights).toEqual({ '1/LinseedOil': 128 })
+      expect(setRowHeight(raised, '1/LinseedOil', 0).rowHeights).toBeUndefined()
+      expect(setRowHeight(two, '1/LinseedOil', 64, 64).rowHeights).toBeUndefined()
+    })
+
+    it('are dropped when the row no longer runs on Thermal Extractors', () => {
+      const raised = setRowHeight(two, '1/LinseedOil', 128)
+      expect(pruneChoices(raised, catalog)).toBeNull()
+      const plain = chooseProducer(raised, catalog, { item: 'LinseedOil', producer: oil, machine: 'Extractor', row: '1/LinseedOil' })
+      expect(pruneChoices(plain, catalog)?.rowHeights).toBeUndefined()
+    })
+
+    it('move with their target', () => {
+      const moved = moveTarget(setRowHeight(two, '1/LinseedOil', 128), 1, 0)
+      expect(moved.rowHeights).toEqual({ '0/LinseedOil': 128 })
+    })
+
+    it('are saved with my defaults, and kept by the plan when un-saved', () => {
+      const raised = setRowHeight(plan({ targets: [{ item: 'LinseedOil', rate: 60 }] }), '0/LinseedOil', 96)
+      const picked = chooseProducer(raised, catalog, { item: 'LinseedOil', producer: oil, machine: 'ThermalExtractor', row: '0/LinseedOil' })
+      const before = solvePlan(picked, catalog, mods)
+      const saved = rememberSetup(picked, catalog, before.tree, before.tree[0])
+      expect(saved.mine.LinseedOil).toEqual({ producer: oil, machine: 'ThermalExtractor', height: 96 })
+      expect(saved.plan.rowHeights).toEqual({})
+
+      const withMine = buildCatalog({ saved: [], machines: {}, mods, fertilizer: null, mine: saved.mine })
+      const after = solvePlan(saved.plan, withMine, mods)
+      expect(after.tree[0]).toMatchObject({ mine: true, defaultHeight: 96 })
+      expect(after.tree[0].run?.process.height).toBe(96)
+
+      const kept = keepDefaultInPlan(saved.plan, after.tree, 'LinseedOil', saved.mine.LinseedOil)
+      expect(kept.rowHeights).toEqual({ '0/LinseedOil': 96 })
+      expect(solvePlan(kept, catalog, mods).tree[0].run?.process.height).toBe(96)
+    })
   })
 })
 

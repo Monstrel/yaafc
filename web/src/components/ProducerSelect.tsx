@@ -498,8 +498,10 @@ function ChoiceTags({ choice, item, machine }: { choice: Choice; item: string; m
       {p.alternate && <span className="tag">alt</span>}
       {p.product !== item && <span className="tag">by-product</span>}
       {machine && choice.machine && p.machine && p.machine.speed !== 1 && <span className="tag">×{p.machine.speed} speed</span>}
-      {machine && choice.machine && p.machine && p.machine.outputMultiplier !== 1 && (
-        <span className="tag">{p.machine.outputMultiplier}× output</span>
+      {machine && choice.machine && p.acceptsHeight && (
+        <span className="tag" title="Set the height it's built at on its row">
+          output by height
+        </span>
       )}
       {machine && choice.machine && p.acceptsCatalysts && <span className="tag">catalysts</span>}
     </>

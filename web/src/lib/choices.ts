@@ -94,6 +94,16 @@ export function setRowCatalysts(plan: Plan, row: string, catalysts: string[], in
 }
 
 /**
+ * Builds one row's Thermal Extractors at a height (the in-game "Height"). The row keeps its own
+ * height only when it differs from the one it has anyway (`inherited`: a saved default's, else 0).
+ */
+export function setRowHeight(plan: Plan, row: string, height: number, inherited = 0): Plan {
+  const rest = without(plan.rowHeights, (id) => id === row) ?? {}
+  const rowHeights = height === inherited ? rest : { ...rest, [row]: height }
+  return { ...plan, rowHeights: Object.keys(rowHeights).length ? rowHeights : undefined }
+}
+
+/**
  * Plans saved before catalysts were per row kept them per recipe: loads them into every row running
  * that recipe where they apply. Returns null when there's nothing to move.
  */
@@ -196,7 +206,7 @@ export const convertOverflowTarget = (plan: Plan, index: number, rate: number): 
 
 /**
  * Puts the targets in a new order (`order` lists old indexes; leaving one out removes it). Tree
- * row ids start with their target's place, so per-row picks, catalysts and build-separately rows
+ * row ids start with their target's place, so per-row picks, catalysts, heights and build-separately rows
  * move with their target, and a removed target's go with it.
  */
 export function reorderTargets(plan: Plan, order: number[]): Plan {
@@ -234,6 +244,7 @@ export function reorderTargets(plan: Plan, order: number[]): Plan {
     targets,
     branches: rows(plan.branches),
     rowCatalysts: rows(plan.rowCatalysts),
+    rowHeights: rows(plan.rowHeights),
     separate,
     roundUp: roundUp?.length ? roundUp : undefined,
     units: rows(plan.units),
@@ -253,8 +264,8 @@ export const removeTarget = (plan: Plan, index: number) =>
   )
 
 /**
- * "Use as my default": remembers how a row and everything below it is made (recipe, machine and
- * catalysts per item, the topmost row winning when an item appears more than once), following
+ * "Use as my default": remembers how a row and everything below it is made (recipe, machine,
+ * catalysts and height per item, the topmost row winning when an item appears more than once), following
  * separate builds to the rows that make them. An item made the built-in way drops any saved
  * default instead. The plan's own picks in that part of the tree that now match the saved
  * defaults are dropped, so those rows follow the defaults.
@@ -287,23 +298,29 @@ export function rememberSetup(
       plan.rowCatalysts,
       (id) => underRow(id) && sameSet(plan.rowCatalysts![id], setups.get(rowItem(id))?.setup.catalysts ?? []),
     ),
+    rowHeights: without(
+      plan.rowHeights,
+      (id) => underRow(id) && plan.rowHeights![id] === (setups.get(rowItem(id))?.setup.height ?? 0),
+    ),
   }
   return { mine, plan: next }
 }
 
 /**
  * Un-saving a default from a row of the plan: the rows following it keep being made that way, as
- * the plan's own picks (recipe, machine, catalysts), so only other plans lose it.
+ * the plan's own picks (recipe, machine, catalysts, height), so only other plans lose it.
  */
 export function keepDefaultInPlan(plan: Plan, tree: TreeNode[], item: string, saved: MyDefault): Plan {
   const branches = { ...plan.branches }
   const rowCatalysts = { ...plan.rowCatalysts }
+  const rowHeights = { ...plan.rowHeights }
   for (const n of rowsById(tree).values()) {
     if (n.item !== item || !n.mine) continue
     branches[n.id] = { ...branches[n.id], producer: saved.producer, ...(saved.machine && { machine: saved.machine }) }
     if (saved.catalysts?.length && !rowCatalysts[n.id]) rowCatalysts[n.id] = [...saved.catalysts]
+    if (saved.height && rowHeights[n.id] === undefined) rowHeights[n.id] = saved.height
   }
-  return { ...plan, branches, rowCatalysts }
+  return { ...plan, branches, rowCatalysts, rowHeights: Object.keys(rowHeights).length ? rowHeights : undefined }
 }
 
 /**
@@ -357,6 +374,7 @@ function setupsBelow(rows: Map<string, TreeNode>, row: TreeNode) {
           producer: n.producer,
           ...(p && p.machineOptions.length > 1 && p.machine && { machine: p.machine.key }),
           ...(p?.catalysts.length && { catalysts: [...p.catalysts] }),
+          ...(p?.acceptsHeight && p.height && { height: p.height }),
         },
       })
     queue.push(...n.children)
@@ -375,14 +393,16 @@ function isBuiltIn(catalog: ProcessCatalog, item: string, s: MyDefault): boolean
   return (
     s.producer === defaultProducer(catalog, item) &&
     (!p || machineOfSetup(catalog, s) === defaultMachine(p, catalog.tier)) &&
-    !s.catalysts
+    !s.catalysts &&
+    !s.height
   )
 }
 
 const sameSetup = (catalog: ProcessCatalog, a: MyDefault, b: MyDefault) =>
   a.producer === b.producer &&
   machineOfSetup(catalog, a) === machineOfSetup(catalog, b) &&
-  sameSet(a.catalysts ?? [], b.catalysts ?? [])
+  sameSet(a.catalysts ?? [], b.catalysts ?? []) &&
+  (a.height ?? 0) === (b.height ?? 0)
 
 /** Drops a row's own pick, so it follows the rows above it (or the plan) again. */
 export function clearBranchChoice(plan: Plan, row: string): Plan {
@@ -390,7 +410,7 @@ export function clearBranchChoice(plan: Plan, row: string): Plan {
 }
 
 /**
- * Drops producer, machine, catalyst, branch and build-separately choices for items, processes and
+ * Drops producer, machine, catalyst, height, branch and build-separately choices for items, processes and
  * rows no longer in the plan, so an item that's removed and added back starts from its default
  * recipe instead of whatever was last picked for it. A build-separately choice that gathers
  * nothing (its anchor no longer sits above the item, say) goes too. Fuel and fertilizer choices
@@ -415,6 +435,9 @@ export function pruneChoices(plan: Plan, catalog: ProcessCatalog): Plan | null {
   // Catalysts stay with a row only while its machines can take them.
   const loadable = new Set(nodes.flatMap((n) => (n.process?.acceptsCatalysts ? [n.id] : [])))
   const c = keep(plan.rowCatalysts, (id) => loadable.has(id))
+  // Heights stay with a row only while its machines' output depends on it.
+  const raised = new Set(nodes.flatMap((n) => (n.process?.acceptsHeight ? [n.id] : [])))
+  const h = keep(plan.rowHeights, (id) => raised.has(id))
   const b = keep(plan.branches, (id) => rows.has(id))
   const separate = plan.separate && separationsOf(plan.separate).filter((s) => gathering.has(separationKey(s)))
   const s = separate?.length !== plan.separate?.length
@@ -429,12 +452,13 @@ export function pruneChoices(plan: Plan, catalog: ProcessCatalog): Plan | null {
   const roundUp = plan.roundUp?.filter((id) => running.has(id))
   const u = roundUp?.length !== plan.roundUp?.length
   const units = keep(plan.units, (id) => running.has(id))
-  if (!p.dropped && !m.dropped && !c.dropped && !b.dropped && !s && !r && !f && !u && !units.dropped) return null
+  if (!p.dropped && !m.dropped && !c.dropped && !h.dropped && !b.dropped && !s && !r && !f && !u && !units.dropped) return null
   return {
     ...plan,
     producers: p.record!,
     machines: m.record!,
     rowCatalysts: c.record,
+    rowHeights: h.record && Object.keys(h.record).length ? h.record : undefined,
     branches: b.record,
     separate,
     noReuse: noReuse?.length ? noReuse : undefined,

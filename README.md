@@ -70,7 +70,9 @@ dotnet run -- export     # writes web/src/data/game-data.json and web/public/ico
   curve over the output's target value (values 1/100/1k/10k/1M → 3/6/12/24/60 s and
   1/20/200/1.5k/10k P/s). This reproduces every fixed cauldron recipe time in the game data.
   Advanced cauldrons use the same curve.
-- Thermal Extractor triples output. Alchemy Skill multiplies Extractor/Alembic output.
+- Thermal Extractor output grows with the height it's built at (the inspect panel's "Height", set
+  per tree row): × (1 + height / 128), up to ×3 (from `UExtractFacilityComponent` in the game
+  binary). Alchemy Skill multiplies Extractor/Alembic output.
 - Recipe outcomes follow each recipe's `ProductSequence` (0 = product, k = fail product k; e.g.
   Steel [1,1,1,0] = 75% fail), averaged per craft.
 - Advanced Athanor: it runs Athanor recipes with the standard Athanor's heat, as its description

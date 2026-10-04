@@ -208,7 +208,8 @@ export interface Machine {
   icon: string | null
   heatCost: number // P/s while running at speed 1
   speed: number // blueprint speed multiplier (e.g. GrindingSpeed)
-  outputMultiplier: number // e.g. Thermal Extractor triples output
+  /** Output grows with the height it's built at (Thermal Extractor): see `heightMultiplier`. */
+  heightScaled: boolean
   usesFactorySpeed: boolean
   ports: Ports
 }
@@ -224,8 +225,14 @@ const CRAFT_TYPE_BUILDINGS: Record<string, string[]> = {
   Athanor: ['AdvancedAthanor'],
 }
 
-/** Output multipliers not present in the data tables (community-verified). */
-const OUTPUT_MULTIPLIER: Record<string, number> = { ThermalExtractor: 3 }
+/**
+ * Output multiplier of an extractor built `height` grid spaces up (the inspect panel's "Height"):
+ * 1 + height / 128, up to 3×. The panel's "Production Multiplier" shows the bonus, height / 128.
+ * From UExtractFacilityComponent (build 25321648): GetProductionMultiplier (0x144A1D3C0) returns
+ * bThermal ? clamp(BuiltHeight / 128, 0, 2) : 0, and a finished extraction (0x144A29330) outputs
+ * ExtractingLiquidInfo.Count × (1 + that) × the Alchemy Skill multiplier.
+ */
+export const heightMultiplier = (height: number) => 1 + Math.min(Math.max(height / 128, 0), 2)
 
 /** Machines unaffected by Factory Efficiency. */
 const NO_FACTORY_SPEED = new Set(['SeedPlot'])
@@ -238,7 +245,7 @@ function toMachine(b: Building): Machine {
     icon: b.icon,
     heatCost: b.heatCost,
     speed: (speedComponent?.GrindingSpeed as number | undefined) ?? 1,
-    outputMultiplier: OUTPUT_MULTIPLIER[b.key] ?? 1,
+    heightScaled: b.components.some((c) => c.type === 'ExtractFacilityComponent' && c.bThermal === true),
     usesFactorySpeed: !NO_FACTORY_SPEED.has(b.key),
     ports: b.ports,
   }

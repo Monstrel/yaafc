@@ -34,6 +34,8 @@ export interface PlanNode {
   mine: boolean
   /** Catalysts the row loads unless it sets its own (a saved default's). */
   defaultCatalysts: string[]
+  /** Height the row's machines are built at unless it sets its own (a saved default's, else 0). */
+  defaultHeight: number
   /** The row takes other rows' by-products of its item first (else it makes all of it). */
   reuse: boolean
   /**
@@ -72,9 +74,16 @@ export interface ResolvedChoice {
   mine: boolean
   /** Catalysts the row loads unless it sets its own. */
   defaultCatalysts: string[]
+  /** Height the row's machines are built at unless it sets its own. */
+  defaultHeight: number
 }
 
-const picked = (c: ResolvedChoice) => ({ ownChoice: c.own, mine: c.mine, defaultCatalysts: c.defaultCatalysts })
+const picked = (c: ResolvedChoice) => ({
+  ownChoice: c.own,
+  mine: c.mine,
+  defaultCatalysts: c.defaultCatalysts,
+  defaultHeight: c.defaultHeight,
+})
 
 /** The row above a row (null for a root). */
 export const parentId = (id: string) => {
@@ -111,6 +120,9 @@ export const rowItem = (id: string) => {
 const makes = (p: Process | undefined, item: string) =>
   !!p && (p.product === item || p.secondary.includes(item) || p.outputs.some((o) => o.item === item))
 
+/** What a row loads and how high it's built when it follows no saved default. */
+const NO_SETUP = { defaultCatalysts: [] as string[], defaultHeight: 0 }
+
 const knownMachine = (p: Process, machine: string | undefined) =>
   machine && p.machineOptions.some((m) => m.key === machine) ? machine : undefined
 
@@ -124,13 +136,17 @@ export function myDefault(catalog: ProcessCatalog, item: string): MyDefault | un
   if (mine.producer === IMPORT) return itemsByKey.get(item)?.buyPrice == null || buyTier(item) <= catalog.tier ? mine : undefined
   const p = catalog.byId.get(mine.producer)
   if (!makes(p, item)) return undefined
-  const run = catalog.variant(p!, { machine: knownMachine(p!, mine.machine), catalysts: mine.catalysts ?? [] })
+  const run = catalog.variant(p!, {
+    machine: knownMachine(p!, mine.machine),
+    catalysts: mine.catalysts ?? [],
+    height: mine.height ?? 0,
+  })
   return catalog.reach(run) <= catalog.tier ? mine : undefined
 }
 
 /**
  * The plan-wide producer of an item: the plan's pick if it still makes the item, else the player's
- * saved default (with its machine and catalysts), else the built-in default (for a target's row when
+ * saved default (with its machine, catalysts and height), else the built-in default (for a target's row when
  * `asTarget`: coins are minted there, and taken in everywhere else).
  */
 export function planChoice(plan: Plan, catalog: ProcessCatalog, item: string, asTarget = false): MyDefault & { mine: boolean } {
@@ -157,20 +173,22 @@ export function resolveChoice(
   for (let at = inherited ? parentId(id) : id; at !== null; at = parentId(at)) {
     const pick = plan.branches?.[at]
     if (!pick || rowItem(at) !== item) continue
-    if (pick.producer === IMPORT) return { producer: IMPORT, own: at === id, mine: false, defaultCatalysts: [] }
+    if (pick.producer === IMPORT) return { producer: IMPORT, own: at === id, mine: false, ...NO_SETUP }
     const p = catalog.byId.get(pick.producer)
     if (makes(p, item)) return onRow(p!, pick.machine, at === id)
   }
   const choice = planChoice(plan, catalog, item, isTargetRow(id))
   const p = catalog.byId.get(choice.producer)
-  if (!p) return { producer: IMPORT, own: false, mine: choice.mine, defaultCatalysts: [] }
-  return onRow(p, choice.machine, false, choice.mine, choice.mine ? (choice.catalysts ?? []) : [])
+  if (!p) return { producer: IMPORT, own: false, mine: choice.mine, ...NO_SETUP }
+  const defaults = choice.mine ? { defaultCatalysts: choice.catalysts ?? [], defaultHeight: choice.height ?? 0 } : NO_SETUP
+  return onRow(p, choice.machine, false, choice.mine, defaults)
 
-  /** The process on the picked machine, with the row's own catalysts (else the default's). */
-  function onRow(p: Process, machine: string | undefined, own: boolean, mine = false, defaults: string[] = []): ResolvedChoice {
-    const catalysts = plan.rowCatalysts?.[id] ?? defaults
-    const process = catalog.variant(p, { machine: knownMachine(p, machine), catalysts })
-    return { producer: p.id, process, own, mine, defaultCatalysts: defaults }
+  /** The process on the picked machine, with the row's own catalysts and height (else the default's). */
+  function onRow(p: Process, machine: string | undefined, own: boolean, mine = false, defaults = NO_SETUP): ResolvedChoice {
+    const catalysts = plan.rowCatalysts?.[id] ?? defaults.defaultCatalysts
+    const height = plan.rowHeights?.[id] ?? defaults.defaultHeight
+    const process = catalog.variant(p, { machine: knownMachine(p, machine), catalysts, height })
+    return { producer: p.id, process, own, mine, ...defaults }
   }
 }
 
@@ -217,7 +235,7 @@ export function unfold(plan: Plan, catalog: ProcessCatalog): PlanShape {
       parent,
       ownChoice: false,
       mine: false,
-      defaultCatalysts: [],
+      ...NO_SETUP,
       reuse: reusesByproducts(plan, item, id),
       reuseChosen: reuseChosen(plan, item, id) === true,
       children: [],

@@ -83,6 +83,11 @@ export interface Plan {
   rowCatalysts?: Record<string, string[]>
   /** Plans saved before catalysts were per row: per process id (moved to `rowCatalysts` on load). */
   catalysts?: Record<string, string[]>
+  /**
+   * Height a row's Thermal Extractors are built at (the in-game "Height", in grid spaces), per tree
+   * row id; it sets their output. Absent = the saved default's, else 0 (on the ground).
+   */
+  rowHeights?: Record<string, number>
   /** Items the production tree builds separately, gathering their uses instead of a copy per branch. */
   separate?: Separation[]
   /** Items whose rows make all of it themselves, taking no other rows' by-products (unless a branch says so). */
@@ -131,6 +136,8 @@ export interface MyDefault {
   machine?: string
   /** Catalysts loaded into it (Advanced Athanor). */
   catalysts?: string[]
+  /** Height its machines are built at, when that sets their output (Thermal Extractor). */
+  height?: number
 }
 
 /** The player's saved defaults, per item. */

@@ -90,11 +90,13 @@ function withDefaults(plan: Plan, defaults: MyDefaults, saved: SavedRecipe[], pr
     })
     const branches = { ...plan.branches }
     const rowCatalysts = { ...plan.rowCatalysts }
+    const rowHeights = { ...plan.rowHeights }
     for (const n of unfold(plan, catalog).nodes) {
       const d = n.mine ? defaults[n.item] : undefined
       if (!d) continue
       branches[n.id] = { ...branches[n.id], producer: d.producer, ...(d.machine && { machine: d.machine }) }
       if (n.defaultCatalysts.length && !rowCatalysts[n.id]) rowCatalysts[n.id] = [...n.defaultCatalysts]
+      if (n.defaultHeight && rowHeights[n.id] === undefined) rowHeights[n.id] = n.defaultHeight
     }
     // Heat and nutrients come off the bus rather than from rows: the plan-wide pick says what feeds them.
     const producers = { ...plan.producers }
@@ -102,7 +104,13 @@ function withDefaults(plan: Plan, defaults: MyDefaults, saved: SavedRecipe[], pr
       const choice = planChoice(plan, catalog, item)
       if (choice.mine) producers[item] = choice.producer
     }
-    return { ...plan, producers, branches, rowCatalysts }
+    return {
+      ...plan,
+      producers,
+      branches,
+      rowCatalysts,
+      rowHeights: Object.keys(rowHeights).length ? rowHeights : undefined,
+    }
   } catch {
     // A plan the catalog can't lay out still imports, just without its defaults.
     return plan

@@ -45,6 +45,7 @@ import {
   rememberSetup,
   setRoundUp,
   setRowCatalysts,
+  setRowHeight,
   type ProducerPick,
 } from '../lib/choices'
 import type { OverflowUse, PlanResult, ResolvedTarget } from '../lib/solver'
@@ -160,6 +161,8 @@ export function PlannerPage({
   }
   const setCatalysts = (row: string, catalysts: string[], inherited: string[]) =>
     onUpdatePlan((p) => setRowCatalysts(p, row, catalysts, inherited))
+  const setHeight = (row: string, height: number, inherited: number) =>
+    onUpdatePlan((p) => setRowHeight(p, row, height, inherited))
   const remember = (row: TreeNode) => {
     const next = rememberSetup(plan, catalog, result.tree, row)
     onMyDefaults(next.mine)
@@ -567,6 +570,7 @@ export function PlannerPage({
                   onRemember={remember}
                   onForget={unsave}
                   onCatalysts={setCatalysts}
+                  onHeight={setHeight}
                   onSeparate={setSeparate}
                   logistics={logistics}
                   mods={mods}
@@ -1586,6 +1590,7 @@ function MyDefaultsPanel({
                   <span className="hint-inline">
                     {how}
                     {d.catalysts?.length ? ` + ${d.catalysts.map(itemName).join(', ')}` : ''}
+                    {d.height ? ` · height ${d.height}` : ''}
                   </span>
                   <button className="icon-button" title={`Forget how you make ${itemName(item)}`} onClick={() => onForget(item)}>
                     ×
