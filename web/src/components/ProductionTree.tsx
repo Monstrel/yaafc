@@ -1,4 +1,4 @@
-import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
+import { type CSSProperties, type ReactNode, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { CATALYSTS, coinValue, heightMultiplier, itemsByKey } from '../lib/gameData'
 import { fmt } from '../lib/format'
 import { buildingNameFor, machineNameFor, noun } from '../lib/plural'
@@ -369,28 +369,36 @@ export function ProductionTree({
         <button className="compact-button primary" onClick={onAddTarget}>
           + Add target
         </button>
-        <button className="compact-button" onClick={() => setCollapsed(new Set())}>
-          Expand all
-        </button>
-        <button className="compact-button" onClick={() => setCollapsed(new Set(targets.flatMap((n) => branchIds(n.children))))}>
-          Collapse to targets
-        </button>
-        <button
-          className="compact-button"
-          onClick={onSeparateShared}
-          disabled={!onSeparateShared}
-          title="Build separately every item made in more than one row, gathered with the nearest item above all its uses (or at the top of the plan)"
-        >
-          Build shared separately
-        </button>
-        <button
-          className="compact-button"
-          onClick={onMergeSingles}
-          disabled={!onMergeSingles}
-          title="Merge back every item built separately that has only one use"
-        >
-          Merge single uses
-        </button>
+        <ToolbarMenu
+          label="View"
+          items={[
+            { label: 'Expand all', hint: 'show every row', onClick: () => setCollapsed(new Set()) },
+            {
+              label: 'Collapse to targets',
+              hint: 'show just the targets and what’s built at the top of the plan',
+              onClick: () => setCollapsed(new Set(targets.flatMap((n) => branchIds(n.children)))),
+            },
+          ]}
+        />
+        <ToolbarMenu
+          label="Organize"
+          items={[
+            {
+              label: 'Build shared separately',
+              hint: onSeparateShared
+                ? 'gather every item made in more than one row, with the nearest item above all its uses (or at the top of the plan)'
+                : 'nothing is made in more than one row that could be gathered',
+              onClick: onSeparateShared,
+            },
+            {
+              label: 'Merge single uses',
+              hint: onMergeSingles
+                ? 'merge back every item built separately that has only one use'
+                : 'everything built separately has more than one use',
+              onClick: onMergeSingles,
+            },
+          ]}
+        />
       </div>
       <div className="tree-scroll">
         <table className="production tree">
@@ -1090,6 +1098,59 @@ function BoxArrowIcon({ inward = false }: { inward?: boolean }) {
       <path d="M13.5 2.5 7.5 8.5" />
       <path d={inward ? 'M7.5 4.5v4h4' : 'M9.5 2.5h4v4'} />
     </svg>
+  )
+}
+
+interface ToolbarMenuItem {
+  label: string
+  hint: string
+  /** Absent: the item is shown, but does nothing now (the hint says why). */
+  onClick?: () => void
+}
+
+/** A toolbar button opening a menu of related actions below it. */
+function ToolbarMenu({ label, items }: { label: string; items: ToolbarMenuItem[] }) {
+  const id = useId()
+  const ref = useRef<HTMLDivElement>(null)
+  // The button toggles the menu itself (as its popover target); this lines it up below the button first.
+  const place = (button: HTMLElement) => {
+    const rect = button.getBoundingClientRect()
+    const menu = ref.current
+    if (!menu) return
+    menu.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - 288))}px`
+    menu.style.top = `${rect.bottom + 4}px`
+  }
+  return (
+    <>
+      <button
+        type="button"
+        className="compact-button"
+        aria-haspopup="menu"
+        popoverTarget={id}
+        onClick={(e) => place(e.currentTarget)}
+      >
+        {label} <span aria-hidden>▾</span>
+      </button>
+      <div id={id} ref={ref} popover="auto" className="tree-menu" role="menu" aria-label={label}>
+        {items.map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              role="menuitem"
+              disabled={!item.onClick}
+              onClick={() => {
+                ref.current?.hidePopover()
+                item.onClick?.()
+              }}
+            >
+              <span>
+                {item.label}
+                <span className="tree-menu-hint">{item.hint}</span>
+              </span>
+            </button>
+          ))}
+      </div>
+    </>
   )
 }
 

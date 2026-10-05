@@ -1687,9 +1687,14 @@ tr.kind-separate .item-label .name {
   border-radius: 6px;
 }
 
-.tree-menu button:hover,
+.tree-menu button:not(:disabled):hover,
 .tree-menu button:focus-visible {
   background: var(--panel-2);
+}
+
+.tree-menu button:disabled {
+  opacity: 0.55;
+  cursor: default;
 }
 
 .tree-menu-top {
