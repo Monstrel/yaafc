@@ -13,6 +13,17 @@ export function fmt(n: number): string {
   return n.toPrecision(2)
 }
 
+/** Machines to build: never a fraction of one. */
+export const wholeMachines = (n: number) => Math.ceil(n - 1e-9)
+
+/** Machines as built, with how much of them is used when it's less: "16 (15.6)". */
+export function fmtMachines(n: number): string {
+  if (!Number.isFinite(n)) return fmt(n)
+  const whole = fmt(wholeMachines(n))
+  const used = fmt(n)
+  return used === whole ? whole : `${whole} (${used})`
+}
+
 export function fmtSeconds(s: number): string {
   return s >= 100 ? `${Math.round(s)}s` : `${fmt(s)}s`
 }

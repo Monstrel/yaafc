@@ -2311,6 +2311,13 @@ tr.kind-separate .item-label .name {
   cursor: pointer;
   border-bottom: 1px dotted var(--muted);
   border-radius: 0;
+  white-space: nowrap;
+}
+
+.machines-used {
+  color: var(--muted);
+  font-size: 0.78em;
+  font-variant-numeric: tabular-nums;
 }
 
 .machines-button:hover {

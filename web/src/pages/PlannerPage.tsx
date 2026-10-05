@@ -22,7 +22,7 @@ import {
   tierIcon,
   tierName,
 } from '../lib/gameData'
-import { fmt } from '../lib/format'
+import { fmt, fmtMachines, wholeMachines } from '../lib/format'
 import { buildingCounts, checkLogistics, resourceUsers, type LogisticsCheck, type ResourceUser } from '../lib/logistics'
 import { fedOverflow, moneyLedger, type BusUse, type MoneyLedger, type OutputRow } from '../lib/money'
 import { processTitle, type ProcessCatalog } from '../lib/processes'
@@ -1429,8 +1429,8 @@ function LogisticsLine({ check, label }: { check: LogisticsCheck; label: string 
             {' '}
             → runs at {Math.round(check.utilization * 100)}% ·{' '}
             <span className="belt-limited">
-              {fmt(check.machinesNeeded)} {machineNameFor(check.machineName, check.machinesNeeded)} instead of{' '}
-              {fmt(check.machines)}
+              {fmtMachines(check.machinesNeeded)} {machineNameFor(check.machineName, wholeMachines(check.machinesNeeded))}{' '}
+              instead of {fmtMachines(check.machines)}
             </span>
           </>
         )}

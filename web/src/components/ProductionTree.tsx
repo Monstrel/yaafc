@@ -1,6 +1,6 @@
 import { type CSSProperties, type ReactNode, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { CATALYSTS, coinValue, heightMultiplier, itemsByKey } from '../lib/gameData'
-import { fmt } from '../lib/format'
+import { fmt, fmtMachines, wholeMachines } from '../lib/format'
 import { buildingNameFor, machineNameFor, noun } from '../lib/plural'
 import { sanitizeStrings } from '../lib/sanitize'
 import { foldKey, usePersistentState } from '../lib/store'
@@ -994,7 +994,13 @@ function TreeRow({
               aria-haspopup="menu"
               onClick={(e) => onMachinesMenu(whole, e.currentTarget)}
             >
-              <span className="machines-value">{fmt(node.machines)}</span>
+              <span className="machines-value">{fmt(wholeMachines(node.machines))}</span>
+              {fmt(node.machines) !== fmt(wholeMachines(node.machines)) && (
+                <span className="machines-used" title="Machines' worth of work this row uses">
+                  {' '}
+                  ({fmt(node.machines)})
+                </span>
+              )}
               {rounded && (
                 <span className="rounded-mark" aria-label="rounded up">
                   ↑
@@ -1003,11 +1009,11 @@ function TreeRow({
             </button>
             {limited && (
               <div className="belt-limited" title="Machines needed once conveyor limits slow them down">
-                → {belts.utilization > 0 ? fmt(node.machines / belts.utilization) : '∞'} (belts)
+                → {belts.utilization > 0 ? fmtMachines(node.machines / belts.utilization) : '∞'} (belts)
               </div>
             )}
             <div className="machine-meta">
-              {buildingNameFor(p.machine.key, node.machines)}
+              {buildingNameFor(p.machine.key, wholeMachines(node.machines))}
               {copies > 1 && ' per copy'}
             </div>
           </>
