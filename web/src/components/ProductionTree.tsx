@@ -6,8 +6,8 @@ import { sanitizeStrings } from '../lib/sanitize'
 import { foldKey, usePersistentState } from '../lib/store'
 import type { BusUse, FedOverflow } from '../lib/money'
 import type { LogisticsCheck } from '../lib/logistics'
-import { itemsPerSlot, onBelt } from '../lib/machineRate'
-import type { ProcessCatalog } from '../lib/processes'
+import { COIN_STACK, itemsPerSlot, onBelt } from '../lib/machineRate'
+import { DEFAULT_BANK_STACK, MAX_BANK_STACK, clampBankStack, type ProcessCatalog } from '../lib/processes'
 import { branchIds, onOverflow, type TreeNode } from '../lib/tree'
 import { rememberChanges, rowsById, type ProducerPick } from '../lib/choices'
 import { parentId, rowItem } from '../lib/unfold'
@@ -31,6 +31,8 @@ interface Props {
   onCatalysts: (row: string, catalysts: string[], inherited: string[]) => void
   /** Builds a row's machines at a height ('inherited': the height without its own setting). */
   onHeight: (row: string, height: number, inherited: number) => void
+  /** Sets the coins a row's Bank Portals output per entry ('inherited': the stack without its own setting). */
+  onStack: (row: string, stack: number, inherited: number) => void
   /** Use as my default: remember how this row and everything below it is made. */
   onRemember: (row: TreeNode) => void
   /** Stop using an item's saved default; this plan keeps being made that way. */
@@ -100,6 +102,7 @@ export function ProductionTree({
   onResetProducer,
   onCatalysts,
   onHeight,
+  onStack,
   onRemember,
   onForget,
   onSeparate,
@@ -546,6 +549,7 @@ export function ProductionTree({
                   onResetProducer={onResetProducer}
                   onCatalysts={onCatalysts}
                   onHeight={onHeight}
+                  onStack={onStack}
                   onRemember={onRemember}
                   onForget={onForget}
                   savable={savable.has(line.node.id)}
@@ -765,6 +769,7 @@ function TreeRow({
   onResetProducer,
   onCatalysts,
   onHeight,
+  onStack,
   onRemember,
   onForget,
   savable,
@@ -812,6 +817,8 @@ function TreeRow({
   onCatalysts: (row: string, catalysts: string[], inherited: string[]) => void
   /** Builds a row's machines at a height ('inherited': the height without its own setting). */
   onHeight: (row: string, height: number, inherited: number) => void
+  /** Sets the coins a row's Bank Portals output per entry ('inherited': the stack without its own setting). */
+  onStack: (row: string, stack: number, inherited: number) => void
   /** Use as my default: remember how this row and everything below it is made. */
   onRemember: (row: TreeNode) => void
   onForget: (item: string) => void
@@ -907,7 +914,7 @@ function TreeRow({
       : undefined
   // Belts it takes to carry this row's items (liquids go by pipe).
   const beltsNeeded = onBelt(node.item)
-    ? Math.ceil(node.rate / itemsPerSlot(node.item, mods) / mods.beltSpeed - 1e-9)
+    ? Math.ceil(node.rate / itemsPerSlot(node.item, node.run?.process.stack) / mods.beltSpeed - 1e-9)
     : 0
   const canChoose = !!node.producer && ((catalog.byProduct.get(node.item)?.length ?? 0) > 0 || !!reuse)
   const coin = coinValue(node.item)
@@ -1135,6 +1142,26 @@ function TreeRow({
                 </span>
               </label>
             )}
+            {p?.stack !== undefined && node.kind === 'produce' && (
+              <label
+                className="bank-stack"
+                title={`The Conversion Amount its panel shows: coins in each stack it puts on the belt (1–${MAX_BANK_STACK}). Bigger stacks move more coins per belt.`}
+              >
+                Conversion amount
+                <input
+                  type="number"
+                  min={1}
+                  max={MAX_BANK_STACK}
+                  step={1}
+                  value={p.stack}
+                  onChange={(e) => onStack(node.id, clampBankStack(Number(e.target.value)), node.defaultStack)}
+                  aria-label={`Coins the ${p.machine?.name ?? 'machines'} output per belt entry`}
+                />
+                <span className="hint-inline">
+                  up to {fmt(p.stack * mods.beltSpeed)}/min per portal
+                </span>
+              </label>
+            )}
             {node.kind === 'byproduct' && <div className="note-line">♻ by-product of {sources}</div>}
             {node.kind !== 'byproduct' && node.fromByproduct > 0 && (
               <div className="note-line">
@@ -1170,7 +1197,14 @@ function TreeRow({
             ))}
             {p?.license && node.kind === 'produce' && <div className="note-line">needs the {p.license}</div>}
             {node.shortfall > 0 && <div className="note-line warn-text">short by {fmt(node.shortfall)}/min</div>}
-            {belts && (belts.multiBelt || limited) && node.kind === 'produce' && (
+            {node.kind === 'produce' &&
+              Object.entries(p?.inputStacks ?? {}).map(([item, stack]) => (
+                <div key={item} className="note-line">
+                  {itemsByKey.get(item)?.name ?? item} comes from its Bank Portals in stacks of {stack}: a belt carries{' '}
+                  {fmt(stack * mods.beltSpeed)}/min of it, not {fmt(COIN_STACK * mods.beltSpeed)}
+                </div>
+              ))}
+            {belts && (belts.multiBelt || limited || belts.inputs.some((f) => f.stack)) && node.kind === 'produce' && (
               <div className="note-line">
                 belts per machine:{' '}
                 {belts.inputs.map((f) => (
@@ -1543,6 +1577,7 @@ function blankRow(id: string, children: TreeNode[] = []): TreeNode {
     mine: false,
     defaultCatalysts: [],
     defaultHeight: 0,
+    defaultStack: DEFAULT_BANK_STACK,
     reuse: true,
     reuseChosen: false,
     children,

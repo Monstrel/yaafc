@@ -55,6 +55,7 @@ import {
   setRoundUp,
   setRowCatalysts,
   setRowHeight,
+  setRowStack,
 } from './choices'
 import { sanitizePlans } from './sanitize'
 import { dropUnits, setUnits, unitChoices, unitScales, wholePerCopy } from './units'
@@ -938,14 +939,144 @@ describe('coins on belts', () => {
     expect(coins.belts).toBe(Math.ceil(coins.perMachine / 50 / 60 - 1e-9))
   })
 
-  it('follow a smaller Bank Portal stack size', () => {
-    const mods = modifiers({}, 10)
-    const catalog = buildCatalog({ saved: [], machines: {}, mods, fertilizer: null })
-    const p = [...catalog.byId.values()].find((x) => x.kind === 'recipe' && x.inputs.some((s) => s.item === 'CopperCoin'))!
-    const coins = checkProcess(p, mods, 1)!.inputs.find((f) => f.item === 'CopperCoin')!
-    expect(coins.slots).toBeCloseTo(coins.perMachine / 10)
-    expect(modifiers({}, 0).coinStack).toBe(1)
-    expect(modifiers({}, 99).coinStack).toBe(50)
+})
+
+describe('Bank Portal (one coin → another)', () => {
+  const mods = modifiers({})
+  const catalog = buildCatalog({ saved: [], machines: {}, mods, fertilizer: null })
+  const silverToGold = 'bank:SilverCoin:GoldCoin'
+  const goldToCopper = 'bank:GoldCoin:CopperCoin'
+  const gold = (rate: number) =>
+    chooseProducer(plan({ targets: [{ item: 'GoldCoin', rate }] }), catalog, {
+      item: 'GoldCoin',
+      producer: silverToGold,
+      row: '0/GoldCoin',
+    })
+
+  it('converts value losslessly, a stack of the output coin per belt entry', () => {
+    const p = catalog.byId.get(silverToGold)!
+    expect(p.inputs).toEqual([{ item: 'SilverCoin', count: 5000 }])
+    expect(p.outputs).toEqual([{ item: 'GoldCoin', count: 50 }])
+    expect(p.stack).toBe(50)
+    // No craft time, heat or Factory Efficiency: one entry per belt slot.
+    expect(craftsPerMachine(p, modifiers({ FactorySpeed: 3 }))).toBeCloseTo(60)
+    expect(p.inputs.some((s) => s.item === HEAT)).toBe(false)
+    expect(catalog.byId.has('bank:GoldCoin:GoldCoin')).toBe(false)
+  })
+
+  it('is offered for coins, but never picked for them', () => {
+    expect(catalog.byProduct.get('GoldCoin')?.map((p) => p.id)).toEqual(expect.arrayContaining([silverToGold, 'bank:CopperCoin:GoldCoin']))
+    expect(defaultProducer(catalog, 'GoldCoin')).toBe('import')
+    expect(defaultProducer(catalog, 'GoldCoin', true)).not.toMatch(/^bank:/)
+  })
+
+  it('takes the coins it converts off the bus, and is held back by its input belt', () => {
+    const r = solvePlan(gold(6), catalog, mods)
+    expectBalanced(r)
+    const [row] = r.tree
+    expect(row.run?.process.id).toBe(silverToGold)
+    expect(row.children[0]).toMatchObject({ item: 'SilverCoin', rate: 600 })
+    // A belt of full silver stacks brings 3,000 silver (30 gold) a minute: 1% of what the output belt carries.
+    expect(checkProcess(row.run!.process, mods)!.utilization).toBeCloseTo(0.01, 4)
+  })
+
+  it('is held back by its output belt when it breaks coins down', () => {
+    const p = catalog.variant(catalog.byId.get(goldToCopper)!, { stack: 10 })
+    expect(p.inputs).toEqual([{ item: 'GoldCoin', count: 10 / 100_000 }])
+    expect(checkProcess(p, mods)!.utilization).toBe(1)
+    expect(craftsPerMachine(p, mods) * p.outputs[0].count).toBeCloseTo(600)
+  })
+
+  describe('conversion amount per row', () => {
+    const two = chooseProducer(
+      plan({ targets: [{ item: 'GoldCoin', rate: 6 }, { item: 'GoldCoin', rate: 6 }] }),
+      catalog,
+      { item: 'GoldCoin', producer: silverToGold, everywhere: true },
+    )
+
+    it('sets each row its own stack', () => {
+      const r = solvePlan(setRowStack(two, '1/GoldCoin', 5), catalog, mods)
+      expectBalanced(r)
+      expect(r.tree.map((n) => n.run?.process.stack)).toEqual([50, 5])
+      expect(r.runs.filter((x) => x.process.id === silverToGold)).toHaveLength(2)
+      expect(r.tree.map((n) => n.children[0].rate)).toEqual([600, 600])
+    })
+
+    it('keeps only stacks that differ from what the row has anyway, within 1–50', () => {
+      const set = setRowStack(two, '1/GoldCoin', 5)
+      expect(set.rowStacks).toEqual({ '1/GoldCoin': 5 })
+      expect(setRowStack(set, '1/GoldCoin', 50).rowStacks).toBeUndefined()
+      expect(catalog.variant(catalog.byId.get(silverToGold)!, { stack: 0 }).stack).toBe(1)
+      expect(catalog.variant(catalog.byId.get(silverToGold)!, { stack: 99 }).stack).toBe(50)
+    })
+
+    it('is dropped when the row no longer converts coins, and moves with its target', () => {
+      const set = setRowStack(two, '1/GoldCoin', 5)
+      expect(pruneChoices(set, catalog)).toBeNull()
+      const minted = chooseProducer(set, catalog, { item: 'GoldCoin', producer: 'import', row: '1/GoldCoin' })
+      expect(pruneChoices(minted, catalog)?.rowStacks).toBeUndefined()
+      expect(moveTarget(set, 1, 0).rowStacks).toEqual({ '0/GoldCoin': 5 })
+    })
+
+    it('feeds the row above in its stacks: smaller ones fill more of its input belts', () => {
+      const ingots = chooseProducer(
+        chooseProducer(plan({ targets: [{ item: 'CopperIngot', rate: 10 }] }), catalog, {
+          item: 'CopperIngot',
+          producer: 'recipe:CopperIngot_Alt',
+          row: '0/CopperIngot',
+        }),
+        catalog,
+        { item: 'CopperCoin', producer: goldToCopper, row: '0/CopperIngot/CopperCoin' },
+      )
+      const full = solvePlan(ingots, catalog, mods)
+      expect(full.tree[0].run?.process.inputStacks).toBeUndefined()
+      const small = solvePlan(setRowStack(ingots, '0/CopperIngot/CopperCoin', 10), catalog, mods)
+      expectBalanced(small)
+      const p = small.tree[0].run!.process
+      expect(p.inputStacks).toEqual({ CopperCoin: 10 })
+      const coins = (r: PlanResult) => checkProcess(r.tree[0].run!.process, mods)!.inputs.find((f) => f.item === 'CopperCoin')!
+      expect(coins(small)).toMatchObject({ stack: 10 })
+      expect(coins(small).slots).toBeCloseTo(coins(full).slots * 5)
+      expect(small.tree[0].run!.key).not.toBe(full.tree[0].run!.key)
+      // Same ingots, same coins: only the belts change.
+      expect(small.tree[0].machines).toBeCloseTo(full.tree[0].machines)
+      expect(small.tree[0].children[0].rate).toBeCloseTo(full.tree[0].children[0].rate)
+    })
+
+    it('slows a Paradox Crucible it feeds: each entry is worth less', () => {
+      const essence = chooseProducer(
+        chooseProducer(plan({ targets: [{ item: 'Mors', rate: 1 }] }), catalog, {
+          item: 'Mors',
+          producer: 'paradox:CopperCoin',
+          row: '0/Mors',
+        }),
+        catalog,
+        { item: 'CopperCoin', producer: goldToCopper, row: '0/Mors/CopperCoin' },
+      )
+      const small = solvePlan(setRowStack(essence, '0/Mors/CopperCoin', 10), catalog, mods)
+      expectBalanced(small)
+      const p = small.tree[0].run!.process
+      expect(p.seconds).toBeCloseTo(paradoxSeconds('CopperCoin', 10))
+      expect(p.seconds).toBeCloseTo(paradoxSeconds('CopperCoin') * 5)
+      expect(p.inputs.find((s) => s.item === 'CopperCoin')!.count).toBe(10)
+      expect(small.tree[0].children[0].rate).toBeCloseTo(10)
+    })
+
+    it('is saved with my defaults, and kept by the plan when un-saved', () => {
+      const one = setRowStack(gold(6), '0/GoldCoin', 5)
+      const before = solvePlan(one, catalog, mods)
+      const saved = rememberSetup(one, catalog, before.tree, before.tree[0])
+      expect(saved.mine.GoldCoin).toEqual({ producer: silverToGold, stack: 5 })
+      expect(saved.plan.rowStacks).toEqual({})
+
+      const withMine = buildCatalog({ saved: [], machines: {}, mods, fertilizer: null, mine: saved.mine })
+      const after = solvePlan(saved.plan, withMine, mods)
+      expect(after.tree[0]).toMatchObject({ mine: true, defaultStack: 5 })
+      expect(after.tree[0].run?.process.stack).toBe(5)
+
+      const kept = keepDefaultInPlan(saved.plan, after.tree, 'GoldCoin', saved.mine.GoldCoin)
+      expect(kept.rowStacks).toEqual({ '0/GoldCoin': 5 })
+    })
   })
 })
 
@@ -1720,14 +1851,14 @@ describe('Paradox Crucible (any item → Oblivion Essence)', () => {
   const catalog = buildCatalog({ saved: [], machines: {}, mods, fertilizer: 'BasicFertilizer' })
 
   it('takes 1500 / value seconds per essence, clamped to 0.5–1500 s', () => {
-    expect(paradoxSeconds('SageSeed', mods)).toBeCloseTo(1500 / 360)
-    expect(paradoxSeconds('WoodBoard', mods)).toBe(1500) // value 1
-    expect(paradoxSeconds('PhilosopherStone', mods)).toBe(0.5)
+    expect(paradoxSeconds('SageSeed')).toBeCloseTo(1500 / 360)
+    expect(paradoxSeconds('WoodBoard')).toBe(1500) // value 1
+    expect(paradoxSeconds('PhilosopherStone')).toBe(0.5)
   })
 
   it('refines a whole coin stack at once', () => {
     const copper = itemsByKey.get('CopperCoin')!.baseCost
-    expect(paradoxSeconds('CopperCoin', modifiers({}, 50))).toBeCloseTo(1500 / (50 * copper))
+    expect(paradoxSeconds('CopperCoin')).toBeCloseTo(1500 / (50 * copper))
     const p = catalog.byId.get('paradox:CopperCoin')!
     expect(p.inputs.find((s) => s.item === 'CopperCoin')!.count).toBe(50)
     expect(p.outputs).toEqual([{ item: 'Mors', count: 1 }])

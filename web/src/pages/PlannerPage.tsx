@@ -47,6 +47,7 @@ import {
   setRoundUp,
   setRowCatalysts,
   setRowHeight,
+  setRowStack,
   type ProducerPick,
 } from '../lib/choices'
 import type { OverflowUse, PlanResult, ResolvedTarget } from '../lib/solver'
@@ -58,7 +59,7 @@ import { IMPORT, planProducer } from '../lib/unfold'
 import { dropUnits, setUnits, unitScales } from '../lib/units'
 import type { TreeNode } from '../lib/tree'
 import type { MyDefaults, Plan, PlanTarget, Progress, Separation } from '../lib/types'
-import { MAX_COIN_STACK, PLANNER_UPGRADES, maxLevel, upgradeLevel, type Modifiers } from '../lib/upgrades'
+import { PLANNER_UPGRADES, maxLevel, upgradeLevel, type Modifiers } from '../lib/upgrades'
 
 /** What each planner upgrade series currently does, shown under its name. */
 const UPGRADE_EFFECTS: Record<string, (m: Modifiers) => string> = {
@@ -129,9 +130,6 @@ export function PlannerPage({
   const fuels = useMemo(() => carriers(plan, catalog, 'heat'), [plan, catalog])
   const fertilizers = useMemo(() => carriers(plan, catalog, 'fertilizer'), [plan, catalog])
   const logistics = useMemo(() => checkLogistics(result.runs, mods), [result, mods])
-  const usesCoins = result.runs.some(
-    (r) => r.process.machine && [...r.inputs, ...r.outputs].some((x) => itemsByKey.get(x.item)?.tags.includes('Currency')),
-  )
   const beltLimited = [...logistics.values()].filter((c) => c.utilization < 1 && c.machines > 0)
   const beyond = useMemo(() => beyondTier(result.tree, catalog.tier), [result.tree, catalog.tier])
   // Copies of each row built in units; units picked for a different machine count are dropped.
@@ -165,6 +163,8 @@ export function PlannerPage({
     onUpdatePlan((p) => setRowCatalysts(p, row, catalysts, inherited))
   const setHeight = (row: string, height: number, inherited: number) =>
     onUpdatePlan((p) => setRowHeight(p, row, height, inherited))
+  const setStack = (row: string, stack: number, inherited: number) =>
+    onUpdatePlan((p) => setRowStack(p, row, stack, inherited))
   const remember = (row: TreeNode) => {
     const next = rememberSetup(plan, catalog, result.tree, row)
     onMyDefaults(next.mine)
@@ -388,23 +388,6 @@ export function PlannerPage({
                 />
               </label>
             ))}
-            {usesCoins && (
-              <label className="upgrade-row" title="Machines and containers emit full stacks of 50; a Bank Portal can be set to 1–50">
-                <span>Coin stack size (Bank Portal)</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={MAX_COIN_STACK}
-                  value={plan.coinStack ?? MAX_COIN_STACK}
-                  onChange={(e) =>
-                    onUpdatePlan((p) => ({
-                      ...p,
-                      coinStack: Math.min(MAX_COIN_STACK, Math.max(1, Math.round(Number(e.target.value) || 1))),
-                    }))
-                  }
-                />
-              </label>
-            )}
           </section>
           <MyDefaultsPanel defaults={myDefaults} catalog={catalog} onForget={forget} />
         </aside>
@@ -573,6 +556,7 @@ export function PlannerPage({
                   onForget={unsave}
                   onCatalysts={setCatalysts}
                   onHeight={setHeight}
+                  onStack={setStack}
                   onSeparate={setSeparate}
                   onSeparateShared={canSeparate ? () => onUpdatePlan((p) => separateShared(p, catalog)) : undefined}
                   onMergeSingles={canMerge ? () => onUpdatePlan((p) => mergeSingleUses(p, catalog)) : undefined}
@@ -1587,7 +1571,10 @@ function MyDefaultsPanel({
                   ? 'bought'
                   : !p
                     ? 'recipe no longer available'
-                    : [p.kind === 'cauldron' ? processTitle(p) : (machine ?? p.label), p.alternate ? 'alt' : '']
+                    : [
+                        p.kind === 'cauldron' ? processTitle(p) : p.kind === 'bank' ? `${machine} from ${itemName(p.inputs[0].item)}` : (machine ?? p.label),
+                        p.alternate ? 'alt' : '',
+                      ]
                         .filter(Boolean)
                         .join(' · ')
               return (
@@ -1597,6 +1584,7 @@ function MyDefaultsPanel({
                     {how}
                     {d.catalysts?.length ? ` + ${d.catalysts.map(itemName).join(', ')}` : ''}
                     {d.height ? ` · height ${d.height}` : ''}
+                    {d.stack ? ` · stacks of ${d.stack}` : ''}
                   </span>
                   <button className="icon-button" title={`Forget how you make ${itemName(item)}`} onClick={() => onForget(item)}>
                     ×

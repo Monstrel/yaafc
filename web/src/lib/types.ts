@@ -77,8 +77,11 @@ export interface Plan {
   feedbackItems?: string[]
   /** Plans saved before feedback was per item: per use (moved to `feedbackItems` on load). */
   feedback?: { fuel?: boolean; fertilizer?: boolean }
-  /** Coins per stack on belts (Bank Portal setting, 1–50); machines and containers emit 50. */
-  coinStack?: number
+  /**
+   * Coins a row's Bank Portals output per belt entry (the in-game "Conversion Amount", 1–50), per
+   * tree row id. Absent = the saved default's, else 50.
+   */
+  rowStacks?: Record<string, number>
   /** Catalyst item keys loaded into a row's Advanced Athanors, per tree row id. */
   rowCatalysts?: Record<string, string[]>
   /** Plans saved before catalysts were per row: per process id (moved to `rowCatalysts` on load). */
@@ -140,6 +143,8 @@ export interface MyDefault {
   catalysts?: string[]
   /** Height its machines are built at, when that sets their output (Thermal Extractor). */
   height?: number
+  /** Coins per output belt entry, when it converts coins (Bank Portal). */
+  stack?: number
 }
 
 /** The player's saved defaults, per item. */

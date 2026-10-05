@@ -2215,7 +2215,8 @@ tr.kind-separate .item-label .name {
   color: var(--muted);
 }
 
-.build-height {
+.build-height,
+.bank-stack {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -2225,7 +2226,8 @@ tr.kind-separate .item-label .name {
   color: var(--muted);
 }
 
-.build-height input {
+.build-height input,
+.bank-stack input {
   width: 64px;
 }
 

@@ -54,13 +54,9 @@ export interface Modifiers {
   alembic: number
   /** Items per minute one conveyor belt carries (Logistics Efficiency). */
   beltSpeed: number
-  /** Coins per belt slot: 50 from machines/containers, or a Bank Portal's 1–50 setting. */
-  coinStack: number
 }
 
-export const MAX_COIN_STACK = 50
-
-export function modifiers(levels: UpgradeLevels, coinStack = MAX_COIN_STACK): Modifiers {
+export function modifiers(levels: UpgradeLevels): Modifiers {
   const pct = (a: string) => 1 + attributeBonus(levels, a) / 100
   return {
     factorySpeed: pct('FactorySpeed'),
@@ -69,6 +65,5 @@ export function modifiers(levels: UpgradeLevels, coinStack = MAX_COIN_STACK): Mo
     extractor: pct('ExtractorSkill'),
     alembic: pct('AlembicSkill'),
     beltSpeed: (attributeBase.ConveyerSpeed ?? 60) + attributeBonus(levels, 'ConveyerSpeed'),
-    coinStack: Math.min(MAX_COIN_STACK, Math.max(1, Math.round(coinStack))),
   }
 }

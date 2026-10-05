@@ -1,5 +1,5 @@
 import { HEAT, NUTRIENTS, realItem } from './gameData'
-import { defaultMachine, defaultProducer, type ProcessCatalog } from './processes'
+import { DEFAULT_BANK_STACK, defaultMachine, defaultProducer, type ProcessCatalog } from './processes'
 import { separationKey, separationsOf } from './separate'
 import type { TreeNode } from './tree'
 import type { MyDefault, MyDefaults, Plan } from './types'
@@ -101,6 +101,17 @@ export function setRowHeight(plan: Plan, row: string, height: number, inherited 
   const rest = without(plan.rowHeights, (id) => id === row) ?? {}
   const rowHeights = height === inherited ? rest : { ...rest, [row]: height }
   return { ...plan, rowHeights: Object.keys(rowHeights).length ? rowHeights : undefined }
+}
+
+/**
+ * Sets the coins one row's Bank Portals output per belt entry (the in-game "Conversion Amount"). The
+ * row keeps its own stack only when it differs from the one it has anyway (`inherited`: a saved
+ * default's, else 50).
+ */
+export function setRowStack(plan: Plan, row: string, stack: number, inherited = DEFAULT_BANK_STACK): Plan {
+  const rest = without(plan.rowStacks, (id) => id === row) ?? {}
+  const rowStacks = stack === inherited ? rest : { ...rest, [row]: stack }
+  return { ...plan, rowStacks: Object.keys(rowStacks).length ? rowStacks : undefined }
 }
 
 /**
@@ -216,7 +227,7 @@ export const convertOverflowTarget = (plan: Plan, index: number, rate: number): 
 
 /**
  * Puts the targets in a new order (`order` lists old indexes; leaving one out removes it). Tree
- * row ids start with their target's place, so per-row picks, catalysts, heights and build-separately rows
+ * row ids start with their target's place, so per-row picks, catalysts, heights, coin stacks and build-separately rows
  * move with their target, and a removed target's go with it.
  */
 export function reorderTargets(plan: Plan, order: number[]): Plan {
@@ -242,7 +253,7 @@ export function reorderTargets(plan: Plan, order: number[]): Plan {
 }
 
 /**
- * Moves per-row picks, catalysts, heights, build-separately rows, rounding, units and built marks to
+ * Moves per-row picks, catalysts, heights, coin stacks, build-separately rows, rounding, units and built marks to
  * the rows' new ids. `remap` gives null for a row that's gone (dropping its settings), or several ids for a
  * row copied to several places. Where rows land on the same id, the one with the lowest `rank` wins.
  */
@@ -271,6 +282,7 @@ export function moveRows(
     branches: rows(plan.branches),
     rowCatalysts: rows(plan.rowCatalysts),
     rowHeights: rows(plan.rowHeights),
+    rowStacks: rows(plan.rowStacks),
     separate,
     roundUp: roundUp?.length ? roundUp : undefined,
     units: rows(plan.units),
@@ -292,7 +304,7 @@ export const removeTarget = (plan: Plan, index: number) =>
 
 /**
  * "Use as my default": remembers how a row and everything below it is made (recipe, machine,
- * catalysts and height per item, the topmost row winning when an item appears more than once), following
+ * catalysts, height and coin stack per item, the topmost row winning when an item appears more than once), following
  * separate builds to the rows that make them. An item made the built-in way drops any saved
  * default instead. The plan's own picks in that part of the tree that now match the saved
  * defaults are dropped, so those rows follow the defaults.
@@ -329,25 +341,37 @@ export function rememberSetup(
       plan.rowHeights,
       (id) => underRow(id) && plan.rowHeights![id] === (setups.get(rowItem(id))?.setup.height ?? 0),
     ),
+    rowStacks: without(
+      plan.rowStacks,
+      (id) => underRow(id) && plan.rowStacks![id] === (setups.get(rowItem(id))?.setup.stack ?? DEFAULT_BANK_STACK),
+    ),
   }
   return { mine, plan: next }
 }
 
 /**
  * Un-saving a default from a row of the plan: the rows following it keep being made that way, as
- * the plan's own picks (recipe, machine, catalysts, height), so only other plans lose it.
+ * the plan's own picks (recipe, machine, catalysts, height, coin stack), so only other plans lose it.
  */
 export function keepDefaultInPlan(plan: Plan, tree: TreeNode[], item: string, saved: MyDefault): Plan {
   const branches = { ...plan.branches }
   const rowCatalysts = { ...plan.rowCatalysts }
   const rowHeights = { ...plan.rowHeights }
+  const rowStacks = { ...plan.rowStacks }
   for (const n of rowsById(tree).values()) {
     if (n.item !== item || !n.mine) continue
     branches[n.id] = { ...branches[n.id], producer: saved.producer, ...(saved.machine && { machine: saved.machine }) }
     if (saved.catalysts?.length && !rowCatalysts[n.id]) rowCatalysts[n.id] = [...saved.catalysts]
     if (saved.height && rowHeights[n.id] === undefined) rowHeights[n.id] = saved.height
+    if (saved.stack && rowStacks[n.id] === undefined) rowStacks[n.id] = saved.stack
   }
-  return { ...plan, branches, rowCatalysts, rowHeights: Object.keys(rowHeights).length ? rowHeights : undefined }
+  return {
+    ...plan,
+    branches,
+    rowCatalysts,
+    rowHeights: Object.keys(rowHeights).length ? rowHeights : undefined,
+    rowStacks: Object.keys(rowStacks).length ? rowStacks : undefined,
+  }
 }
 
 /**
@@ -402,6 +426,7 @@ function setupsBelow(rows: Map<string, TreeNode>, row: TreeNode) {
           ...(p && p.machineOptions.length > 1 && p.machine && { machine: p.machine.key }),
           ...(p?.catalysts.length && { catalysts: [...p.catalysts] }),
           ...(p?.acceptsHeight && p.height && { height: p.height }),
+          ...(p?.stack !== undefined && p.stack !== DEFAULT_BANK_STACK && { stack: p.stack }),
         },
       })
     queue.push(...n.children)
@@ -421,7 +446,8 @@ function isBuiltIn(catalog: ProcessCatalog, item: string, s: MyDefault): boolean
     s.producer === defaultProducer(catalog, item) &&
     (!p || machineOfSetup(catalog, s) === defaultMachine(p, catalog.tier)) &&
     !s.catalysts &&
-    !s.height
+    !s.height &&
+    !s.stack
   )
 }
 
@@ -429,7 +455,8 @@ const sameSetup = (catalog: ProcessCatalog, a: MyDefault, b: MyDefault) =>
   a.producer === b.producer &&
   machineOfSetup(catalog, a) === machineOfSetup(catalog, b) &&
   sameSet(a.catalysts ?? [], b.catalysts ?? []) &&
-  (a.height ?? 0) === (b.height ?? 0)
+  (a.height ?? 0) === (b.height ?? 0) &&
+  (a.stack ?? DEFAULT_BANK_STACK) === (b.stack ?? DEFAULT_BANK_STACK)
 
 /** Drops a row's own pick, so it follows the rows above it (or the plan) again. */
 export function clearBranchChoice(plan: Plan, row: string): Plan {
@@ -437,7 +464,7 @@ export function clearBranchChoice(plan: Plan, row: string): Plan {
 }
 
 /**
- * Drops producer, machine, catalyst, height, branch and build-separately choices (and built marks) for
+ * Drops producer, machine, catalyst, height, coin stack, branch and build-separately choices (and built marks) for
  * items, processes and rows no longer in the plan, so an item that's removed and added back starts from its default
  * recipe instead of whatever was last picked for it. A build-separately choice that gathers
  * nothing (its anchor no longer sits above the item, say) goes too. Fuel and fertilizer choices
@@ -465,6 +492,9 @@ export function pruneChoices(plan: Plan, catalog: ProcessCatalog): Plan | null {
   // Heights stay with a row only while its machines' output depends on it.
   const raised = new Set(nodes.flatMap((n) => (n.process?.acceptsHeight ? [n.id] : [])))
   const h = keep(plan.rowHeights, (id) => raised.has(id))
+  // Coin stacks stay with a row only while it converts coins.
+  const converting = new Set(nodes.flatMap((n) => (n.process?.stack !== undefined ? [n.id] : [])))
+  const k = keep(plan.rowStacks, (id) => converting.has(id))
   const b = keep(plan.branches, (id) => rows.has(id))
   const separate = plan.separate && separationsOf(plan.separate).filter((s) => gathering.has(separationKey(s)))
   const s = separate?.length !== plan.separate?.length
@@ -482,14 +512,15 @@ export function pruneChoices(plan: Plan, catalog: ProcessCatalog): Plan | null {
   // Only machines get built: marks stay with rows that run some.
   const built = plan.built?.filter((id) => running.has(id))
   const d = built?.length !== plan.built?.length
-  if (!p.dropped && !m.dropped && !c.dropped && !h.dropped && !b.dropped && !s && !r && !f && !u && !units.dropped && !d)
-    return null
+  const dropped = [p, m, c, h, k, b, units].some((x) => x.dropped) || s || r || f || u || d
+  if (!dropped) return null
   return {
     ...plan,
     producers: p.record!,
     machines: m.record!,
     rowCatalysts: c.record,
     rowHeights: h.record && Object.keys(h.record).length ? h.record : undefined,
+    rowStacks: k.record && Object.keys(k.record).length ? k.record : undefined,
     branches: b.record,
     separate,
     noReuse: noReuse?.length ? noReuse : undefined,

@@ -87,7 +87,7 @@ describe('reading a backup file', () => {
           machines: { 'recipe:Coke': 'AdvancedAthanor' },
           branches: { '0/Salt': { producer: 'import', machine: 'M', reuse: true } },
           feedbackItems: ['Coal'],
-          coinStack: 20,
+          rowStacks: { '0/Salt': 20 },
           rowCatalysts: { '0/Coke': ['Catalyst2'] },
           separate: [{ item: 'Salt', anchor: 'Coke', at: '0/Coke' }],
           noReuse: ['Salt'],

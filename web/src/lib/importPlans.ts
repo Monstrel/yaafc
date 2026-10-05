@@ -1,7 +1,7 @@
 import { recipeSignature } from './cauldron'
 import { HEAT, NUTRIENTS } from './gameData'
 import { planFertilizer } from './planModel'
-import { buildCatalog } from './processes'
+import { DEFAULT_BANK_STACK, buildCatalog } from './processes'
 import type { Backup } from './store'
 import type { MyDefaults, Plan, Progress, SavedRecipe } from './types'
 import { planChoice, unfold } from './unfold'
@@ -83,7 +83,7 @@ function withDefaults(plan: Plan, defaults: MyDefaults, saved: SavedRecipe[], pr
     const catalog = buildCatalog({
       saved,
       machines: plan.machines,
-      mods: modifiers(progress?.upgrades ?? {}, plan.coinStack),
+      mods: modifiers(progress?.upgrades ?? {}),
       fertilizer: planFertilizer(plan),
       tier: progress?.tier,
       mine: defaults,
@@ -91,12 +91,15 @@ function withDefaults(plan: Plan, defaults: MyDefaults, saved: SavedRecipe[], pr
     const branches = { ...plan.branches }
     const rowCatalysts = { ...plan.rowCatalysts }
     const rowHeights = { ...plan.rowHeights }
+    const rowStacks = { ...plan.rowStacks }
     for (const n of unfold(plan, catalog).nodes) {
       const d = n.mine ? defaults[n.item] : undefined
       if (!d) continue
       branches[n.id] = { ...branches[n.id], producer: d.producer, ...(d.machine && { machine: d.machine }) }
       if (n.defaultCatalysts.length && !rowCatalysts[n.id]) rowCatalysts[n.id] = [...n.defaultCatalysts]
       if (n.defaultHeight && rowHeights[n.id] === undefined) rowHeights[n.id] = n.defaultHeight
+      if (n.process?.stack !== undefined && n.defaultStack !== DEFAULT_BANK_STACK && rowStacks[n.id] === undefined)
+        rowStacks[n.id] = n.defaultStack
     }
     // Heat and nutrients come off the bus rather than from rows: the plan-wide pick says what feeds them.
     const producers = { ...plan.producers }
@@ -110,6 +113,7 @@ function withDefaults(plan: Plan, defaults: MyDefaults, saved: SavedRecipe[], pr
       branches,
       rowCatalysts,
       rowHeights: Object.keys(rowHeights).length ? rowHeights : undefined,
+      rowStacks: Object.keys(rowStacks).length ? rowStacks : undefined,
     }
   } catch {
     // A plan the catalog can't lay out still imports, just without its defaults.

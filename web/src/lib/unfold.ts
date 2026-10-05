@@ -1,5 +1,6 @@
 import { HEAT, NUTRIENTS, buyTier, itemsByKey, realItem } from './gameData'
-import { defaultProducer, sameRecipe, type Process, type ProcessCatalog } from './processes'
+import { COIN_STACK } from './machineRate'
+import { DEFAULT_BANK_STACK, defaultProducer, sameRecipe, type Process, type ProcessCatalog } from './processes'
 import { separationsOf } from './separate'
 import type { MyDefault, Plan, PlanTarget, Separation } from './types'
 
@@ -36,6 +37,8 @@ export interface PlanNode {
   defaultCatalysts: string[]
   /** Height the row's machines are built at unless it sets its own (a saved default's, else 0). */
   defaultHeight: number
+  /** Coins its Bank Portals output per entry unless it sets its own (a saved default's, else 50). */
+  defaultStack: number
   /** The row takes other rows' by-products of its item first (else it makes all of it). */
   reuse: boolean
   /**
@@ -76,6 +79,8 @@ export interface ResolvedChoice {
   defaultCatalysts: string[]
   /** Height the row's machines are built at unless it sets its own. */
   defaultHeight: number
+  /** Coins its Bank Portals output per entry unless it sets its own. */
+  defaultStack: number
 }
 
 const picked = (c: ResolvedChoice) => ({
@@ -83,6 +88,7 @@ const picked = (c: ResolvedChoice) => ({
   mine: c.mine,
   defaultCatalysts: c.defaultCatalysts,
   defaultHeight: c.defaultHeight,
+  defaultStack: c.defaultStack,
 })
 
 /** The row above a row (null for a root). */
@@ -120,8 +126,8 @@ export const rowItem = (id: string) => {
 const makes = (p: Process | undefined, item: string) =>
   !!p && (p.product === item || p.secondary.includes(item) || p.outputs.some((o) => o.item === item))
 
-/** What a row loads and how high it's built when it follows no saved default. */
-const NO_SETUP = { defaultCatalysts: [] as string[], defaultHeight: 0 }
+/** What a row loads, how high it's built and the coins it outputs per entry when it follows no saved default. */
+const NO_SETUP = { defaultCatalysts: [] as string[], defaultHeight: 0, defaultStack: DEFAULT_BANK_STACK }
 
 const knownMachine = (p: Process, machine: string | undefined) =>
   machine && p.machineOptions.some((m) => m.key === machine) ? machine : undefined
@@ -140,13 +146,14 @@ export function myDefault(catalog: ProcessCatalog, item: string): MyDefault | un
     machine: knownMachine(p!, mine.machine),
     catalysts: mine.catalysts ?? [],
     height: mine.height ?? 0,
+    stack: mine.stack,
   })
   return catalog.reach(run) <= catalog.tier ? mine : undefined
 }
 
 /**
  * The plan-wide producer of an item: the plan's pick if it still makes the item, else the player's
- * saved default (with its machine, catalysts and height), else the built-in default (for a target's row when
+ * saved default (with its machine, catalysts, height and coin stack), else the built-in default (for a target's row when
  * `asTarget`: coins are minted there, and taken in everywhere else).
  */
 export function planChoice(plan: Plan, catalog: ProcessCatalog, item: string, asTarget = false): MyDefault & { mine: boolean } {
@@ -180,16 +187,37 @@ export function resolveChoice(
   const choice = planChoice(plan, catalog, item, isTargetRow(id))
   const p = catalog.byId.get(choice.producer)
   if (!p) return { producer: IMPORT, own: false, mine: choice.mine, ...NO_SETUP }
-  const defaults = choice.mine ? { defaultCatalysts: choice.catalysts ?? [], defaultHeight: choice.height ?? 0 } : NO_SETUP
+  const defaults = choice.mine
+    ? {
+        defaultCatalysts: choice.catalysts ?? [],
+        defaultHeight: choice.height ?? 0,
+        defaultStack: choice.stack ?? DEFAULT_BANK_STACK,
+      }
+    : NO_SETUP
   return onRow(p, choice.machine, false, choice.mine, defaults)
 
-  /** The process on the picked machine, with the row's own catalysts and height (else the default's). */
+  /** The process on the picked machine, with the row's own catalysts, height and stack (else the default's). */
   function onRow(p: Process, machine: string | undefined, own: boolean, mine = false, defaults = NO_SETUP): ResolvedChoice {
     const catalysts = plan.rowCatalysts?.[id] ?? defaults.defaultCatalysts
     const height = plan.rowHeights?.[id] ?? defaults.defaultHeight
-    const process = catalog.variant(p, { machine: knownMachine(p, machine), catalysts, height })
+    const stack = plan.rowStacks?.[id] ?? defaults.defaultStack
+    const process = catalog.variant(p, { machine: knownMachine(p, machine), catalysts, height, stack })
     return { producer: p.id, process, own, mine, ...defaults }
   }
+}
+
+/**
+ * Coins per belt entry a row's ingredients arrive in, where a Bank Portal row below it (or the
+ * separate build or loop it points to) outputs smaller stacks than 50; null when none does.
+ */
+function fedStacks(ingredients: PlanNode[]): Record<string, number> | null {
+  const stacks: Record<string, number> = {}
+  for (const c of ingredients) {
+    const source = c.kind === 'make' ? c : c.kind === 'separate' || c.kind === 'loop' ? c.ref : undefined
+    const stack = source?.process?.stack
+    if (stack !== undefined && stack < COIN_STACK && source!.process!.product === c.item) stacks[c.item] = stack
+  }
+  return Object.keys(stacks).length ? stacks : null
 }
 
 /** Separated uses gathered under one anchor row. */
@@ -299,6 +327,8 @@ export function unfold(plan: Plan, catalog: ProcessCatalog): PlanShape {
     const frame = groups.size ? { node: n, groups } : null
     if (frame) frames.push(frame)
     for (const s of n.process!.inputs) if (s.item !== HEAT && s.item !== NUTRIENTS) n.children.push(child(s.item, n))
+    const fed = fedStacks(n.children)
+    if (fed) n.process = catalog.variant(n.process!, { inputStacks: fed })
     if (!frame) return
     // A gathered row's own ingredients can be gathered here too, adding rows as they go.
     for (;;) {

@@ -9,12 +9,15 @@ export function onBelt(item: string): boolean {
   return !!it && !it.liquid
 }
 
+/** Coins in a belt entry from machines and containers (and the bus): a full stack. */
+export const COIN_STACK = 50
+
 /**
- * How many of an item one belt slot holds. Coins travel in stacks (machines and containers emit
- * full stacks of 50; a Bank Portal can be set to 1–50); everything else is one per slot.
+ * How many of an item one belt slot holds. Coins travel in stacks: full stacks of 50 from machines
+ * and containers, or `coinStack` (1–50) from a Bank Portal; everything else is one per slot.
  */
-export function itemsPerSlot(item: string, mods: Modifiers): number {
-  return itemsByKey.get(item)?.tags.includes('Currency') ? mods.coinStack : 1
+export function itemsPerSlot(item: string, coinStack = COIN_STACK): number {
+  return itemsByKey.get(item)?.tags.includes('Currency') ? coinStack : 1
 }
 
 /** Speed multiplier a process's machine gets from upgrades. */
@@ -33,7 +36,7 @@ export function outputCap(p: Process, mods: Modifiers): number {
   const crafts = (60 * speedFactor(p, mods)) / p.seconds
   const solidOut = p.outputs
     .filter((s) => onBelt(s.item))
-    .reduce((sum, s) => sum + (s.count * crafts) / itemsPerSlot(s.item, mods), 0)
+    .reduce((sum, s) => sum + (s.count * crafts) / itemsPerSlot(s.item, p.stack), 0)
   return solidOut > 0 ? Math.min(1, (beltOut * mods.beltSpeed) / solidOut) : 1
 }
 

@@ -33,6 +33,7 @@ function branchSettings(plan: Plan, row: string): string {
     pick(plan.branches),
     pick(plan.rowCatalysts),
     pick(plan.rowHeights),
+    pick(plan.rowStacks),
     pick(plan.units),
     (plan.roundUp ?? []).flatMap((id) => under(id, row) ?? []).sort(),
     separationsOf(plan.separate).flatMap((s) => (s.at && under(s.at, row) !== null ? [[s.item, s.anchor, under(s.at, row)]] : [])),

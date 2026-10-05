@@ -67,7 +67,7 @@ export interface PlanModel {
  * result: the newest one back from the solver, or null until the first one for this plan is.
  */
 export function usePlanModel(plan: Plan, progress: Progress, saved: SavedRecipe[], mine: MyDefaults): PlanModel {
-  const mods = useMemo(() => modifiers(progress.upgrades, plan.coinStack), [progress.upgrades, plan.coinStack])
+  const mods = useMemo(() => modifiers(progress.upgrades), [progress.upgrades])
   const fertilizer = planFertilizer(plan)
   const context = useMemo<ProcessContext>(
     () => ({ saved, machines: plan.machines, mods, fertilizer, tier: progress.tier, mine }),

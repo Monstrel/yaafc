@@ -235,7 +235,7 @@ const CRAFT_TYPE_BUILDINGS: Record<string, string[]> = {
 export const heightMultiplier = (height: number) => 1 + Math.min(Math.max(height / 128, 0), 2)
 
 /** Machines unaffected by Factory Efficiency. */
-const NO_FACTORY_SPEED = new Set(['SeedPlot'])
+const NO_FACTORY_SPEED = new Set(['SeedPlot', 'Portal_Bank'])
 
 function toMachine(b: Building): Machine {
   const speedComponent = b.components.find((c) => typeof c.GrindingSpeed === 'number')

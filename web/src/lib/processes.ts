@@ -12,6 +12,7 @@ import {
   MINI_WORLD_TREE,
   WORLD_TREE_NURSERY,
   buyTier,
+  COINS,
   coinValue,
   gameRecipes,
   itemName,
@@ -25,15 +26,16 @@ import {
   recipeTier,
   seeds,
   type GameRecipe,
+  type Item,
   type Machine,
   type Stack,
 } from './gameData'
-import { noun } from './plural'
-import { itemsPerSlot } from './machineRate'
+import { itemNameFor, noun } from './plural'
+import { COIN_STACK, itemsPerSlot } from './machineRate'
 import type { MyDefaults, SavedRecipe } from './types'
 import type { Modifiers } from './upgrades'
 
-export type ProcessKind = 'recipe' | 'cauldron' | 'nursery' | 'paradox' | 'fuel' | 'fertilizer'
+export type ProcessKind = 'recipe' | 'cauldron' | 'nursery' | 'paradox' | 'bank' | 'fuel' | 'fertilizer'
 
 /**
  * One way of turning inputs into outputs, normalised to a single craft.
@@ -67,6 +69,13 @@ export interface Process {
   height: number
   /** Whether its current machine's output depends on the height it's built at (Thermal Extractor). */
   acceptsHeight: boolean
+  /** Coins per output belt entry, when the row sets it (Bank Portal: the "Conversion Amount"). */
+  stack?: number
+  /**
+   * Coins per input belt entry, per ingredient, where a Bank Portal row below feeds smaller stacks
+   * than the full 50 (which the row's input belts then carry fewer of).
+   */
+  inputStacks?: Record<string, number>
   /** Research tier its recipe and machine need (seeds too, for nurseries). */
   tier: number
   /** License the recipe needs, if any (alternate ingots). */
@@ -329,44 +338,89 @@ export const paradoxInputs = items.filter(
   (i) => !i.hidden && !i.liquid && i.baseCost > 0 && i.key !== OBLIVION && i.key !== VITALITY,
 )
 
-/** Seconds per Oblivion Essence from one belt entry of `item`, at Factory Efficiency level 0. */
-export function paradoxSeconds(item: string, mods: Modifiers): number {
-  const value = (itemsByKey.get(item)?.baseCost ?? 0) * itemsPerSlot(item, mods)
+/**
+ * Seconds per Oblivion Essence from one belt entry of `item`, at Factory Efficiency level 0. Coins
+ * come `coinStack` to an entry: full stacks, unless a Bank Portal feeds smaller ones.
+ */
+export function paradoxSeconds(item: string, coinStack?: number): number {
+  const value = (itemsByKey.get(item)?.baseCost ?? 0) * itemsPerSlot(item, coinStack)
   if (value <= 0) return PARADOX_MAX_SECONDS
   return Math.min(PARADOX_MAX_SECONDS, Math.max(PARADOX_MIN_SECONDS, PARADOX_VALUE_SECONDS / value))
 }
 
-function paradoxProcesses(mods: Modifiers): Process[] {
+function paradoxProcess(i: Item, coinStack?: number): Process {
   const machine = machinesByKey.get(PARADOX_CRUCIBLE) ?? null
-  return paradoxInputs.map((i) => {
-    const stack = itemsPerSlot(i.key, mods)
-    const seconds = paradoxSeconds(i.key, mods)
-    const notes = [`1 belt entry (${stack} × ${i.name}) → 1 Oblivion Essence`]
-    if (seconds === PARADOX_MIN_SECONDS) notes.push('At the 0.5 s minimum: cheaper inputs give the same speed')
-    return {
-      id: paradoxId(i.key),
-      kind: 'paradox' as const,
-      label: `Oblivion Essence ← ${i.name}`,
-      product: OBLIVION,
-      secondary: [],
-      machine,
-      machineOptions: machine ? [machine] : [],
-      seconds,
-      inputs: [
-        { item: i.key, count: stack },
-        { item: HEAT, count: (machine?.heatCost ?? 0) * seconds },
-      ],
-      outputs: [{ item: OBLIVION, count: 1 }],
-      alternate: false,
-      notes,
-      catalysts: [],
-      acceptsCatalysts: false,
-      height: 0,
-      acceptsHeight: false,
-      tier: machine ? machineTier(machine.key) : 1,
-    }
-  })
+  const stack = itemsPerSlot(i.key, coinStack)
+  const seconds = paradoxSeconds(i.key, coinStack)
+  const notes = [`1 belt entry (${stack} × ${i.name}) → 1 Oblivion Essence`]
+  if (seconds === PARADOX_MIN_SECONDS) notes.push('At the 0.5 s minimum: cheaper inputs give the same speed')
+  return {
+    id: paradoxId(i.key),
+    kind: 'paradox',
+    label: `Oblivion Essence ← ${i.name}`,
+    product: OBLIVION,
+    secondary: [],
+    machine,
+    machineOptions: machine ? [machine] : [],
+    seconds,
+    inputs: [
+      { item: i.key, count: stack },
+      { item: HEAT, count: (machine?.heatCost ?? 0) * seconds },
+    ],
+    outputs: [{ item: OBLIVION, count: 1 }],
+    alternate: false,
+    notes,
+    catalysts: [],
+    acceptsCatalysts: false,
+    height: 0,
+    acceptsHeight: false,
+    tier: machine ? machineTier(machine.key) : 1,
+  }
 }
+
+// ---- Bank Portal: one coin → another ----
+// Native code (UBankFacilityComponent, build 25321648), not in the data tables. Each belt entry of
+// coins (any denomination) adds its value to a buffer; whenever the buffer holds CoinStack coins'
+// worth of the output coin, the portal emits one entry of CoinStack coins and keeps the remainder,
+// so nothing is lost. No craft time, heat or Factory Efficiency: it moves an entry per belt slot,
+// so its belts are its only limit. The "Conversion Amount" (CoinStack) is 1–50, 1 in a new portal.
+export const BANK_PORTAL = 'Portal_Bank'
+/** Coins per output entry when a row doesn't set its own: the most a portal converts at once. */
+export const DEFAULT_BANK_STACK = 50
+export const MAX_BANK_STACK = 50
+
+export const bankId = (input: string, output: string) => `bank:${input}:${output}`
+export const clampBankStack = (stack: number) => Math.min(MAX_BANK_STACK, Math.max(1, Math.round(stack) || 1))
+
+type Coin = (typeof COINS)[number]
+
+function bankProcess(input: Coin, output: Coin, stack: number, mods: Modifiers): Process {
+  const machine = machinesByKey.get(BANK_PORTAL) ?? null
+  return {
+    id: bankId(input.coin, output.coin),
+    kind: 'bank',
+    label: `${itemName(output.coin)} ← ${itemName(input.coin)}`,
+    product: output.coin,
+    secondary: [],
+    machine,
+    machineOptions: machine ? [machine] : [],
+    // One output entry per belt slot.
+    seconds: 60 / mods.beltSpeed,
+    inputs: [{ item: input.coin, count: (stack * output.copper) / input.copper }],
+    outputs: [{ item: output.coin, count: stack }],
+    alternate: false,
+    notes: [`Outputs ${stack} ${itemNameFor(output.coin, stack)} per belt entry, from coins in full stacks of ${COIN_STACK}`],
+    catalysts: [],
+    acceptsCatalysts: false,
+    height: 0,
+    acceptsHeight: false,
+    stack,
+    tier: machine ? machineTier(machine.key) : 1,
+  }
+}
+
+/** Conversions between different coins (re-stacking one coin would feed its own row). */
+const bankPairs = COINS.flatMap((input) => COINS.filter((output) => output !== input).map((output) => ({ input, output })))
 
 /**
  * Steam has a heat value, but it isn't a fuel: boilers make it from the heat of a burned fuel and
@@ -429,11 +483,17 @@ export const defaultMachine = (p: Process, tier: number) =>
 /** Items a building makes natively, outside the recipe tables. */
 const BUILDING_MADE: Record<string, string> = { Steam: 'SteamBoiler' }
 
-/** How one row runs a process: its machine, catalysts and the height its machines are built at. */
+/**
+ * How one row runs a process: its machine, catalysts, the height its machines are built at and the
+ * coins its Bank Portals output per entry.
+ */
 export interface RunChange {
   machine?: string
   catalysts?: string[]
   height?: number
+  stack?: number
+  /** Coins per input belt entry, per ingredient fed smaller stacks than 50 (empty: none). */
+  inputStacks?: Record<string, number>
 }
 
 export interface ProcessCatalog {
@@ -442,7 +502,7 @@ export interface ProcessCatalog {
   byProduct: Map<string, Process[]>
   /**
    * The process as it runs on another of its machines (for previewing the choice), and with the
-   * catalysts loaded and height built at in one row of the plan.
+   * catalysts loaded, height built at, coin stack output and coin stacks fed in one row of the plan.
    */
   variant: (p: Process, change: RunChange) => Process
   /** Research tier the plan has reached. */
@@ -455,9 +515,20 @@ export interface ProcessCatalog {
   mine: MyDefaults
 }
 
+const sameStacks = (a: Record<string, number>, b: Record<string, number>) =>
+  Object.keys(a).length === Object.keys(b).length && Object.entries(a).every(([k, n]) => b[k] === n)
+
 export function buildCatalog(ctx: ProcessContext): ProcessCatalog {
   const recipes = new Map(gameRecipes.map((r) => [`recipe:${r.key}`, r]))
-  const variant = (p: Process, { machine = p.machine?.key, catalysts = p.catalysts, height = p.height }: RunChange) => {
+  const banks = new Map(bankPairs.map((b) => [bankId(b.input.coin, b.output.coin), b]))
+  const paradox = new Map(paradoxInputs.map((i) => [paradoxId(i.key), i]))
+  const rerun = (p: Process, change: RunChange) => {
+    const bank = banks.get(p.id)
+    if (bank) {
+      const stack = clampBankStack(change.stack ?? p.stack ?? DEFAULT_BANK_STACK)
+      return stack === p.stack ? p : bankProcess(bank.input, bank.output, stack, ctx.mods)
+    }
+    const { machine = p.machine?.key, catalysts = p.catalysts, height = p.height } = change
     const r = recipes.get(p.id)
     const same = (a: string[], b: string[]) => a.length === b.length && a.every((k) => b.includes(k))
     if (!r || (p.machine?.key === machine && same(p.catalysts, catalysts) && p.height === height)) return p
@@ -468,11 +539,27 @@ export function buildCatalog(ctx: ProcessContext): ProcessCatalog {
       heights: { ...ctx.heights, [p.id]: height },
     })
   }
+  /** The process taking smaller coin stacks than 50 where `stacks` says (the crucible refines an entry at a time). */
+  const fedStacks = (p: Process, stacks: Record<string, number>) => {
+    const fed = Object.fromEntries(
+      Object.entries(stacks).filter(([item, n]) => n < COIN_STACK && p.inputs.some((s) => s.item === item)),
+    )
+    if (sameStacks(p.inputStacks ?? {}, fed)) return p
+    const crucible = paradox.get(p.id)
+    const base = crucible ? paradoxProcess(crucible, fed[crucible.key]) : p
+    return Object.keys(fed).length ? { ...base, inputStacks: fed } : { ...base, inputStacks: undefined }
+  }
+  const variant = (p: Process, change: RunChange) => {
+    const stacks = change.inputStacks ?? p.inputStacks
+    const run = rerun(p, change)
+    return stacks || run.inputStacks ? fedStacks(run, stacks ?? {}) : run
+  }
   const all: Process[] = [
     ...gameRecipes.filter((r) => !r.hidden && !manualCraftTypes.has(r.craftType)).map((r) => recipeProcess(r, ctx)),
     ...nurseryProcesses(ctx),
     ...ctx.saved.map(savedRecipeProcess).filter((p): p is Process => !!p),
-    ...paradoxProcesses(ctx.mods),
+    ...paradoxInputs.map((i) => paradoxProcess(i)),
+    ...bankPairs.map(({ input, output }) => bankProcess(input, output, DEFAULT_BANK_STACK, ctx.mods)),
     ...fuelProcesses(ctx.mods),
     ...fertilizerProcesses(ctx.mods),
   ]
@@ -557,14 +644,19 @@ export function defaultProducer(catalog: ProcessCatalog, item: string, asTarget 
 }
 
 /**
- * Identifies a process on its machine with its catalysts and height: branches can run one recipe
- * on different machines, load different catalysts, or build them at different heights.
+ * Identifies a process on its machine with its catalysts, height and coin stack: branches can run one
+ * recipe on different machines, load different catalysts, build them at different heights, or set
+ * their Bank Portals to output different stacks (or be fed smaller stacks by one).
  */
 export const runKey = (p: Process) =>
   [
     p.machine && p.machineOptions.length > 1 ? `${p.id}@${p.machine.key}` : p.id,
     ...[...p.catalysts].sort(),
     ...(p.acceptsHeight ? [`h${p.height}`] : []),
+    ...(p.stack !== undefined ? [`s${p.stack}`] : []),
+    ...Object.entries(p.inputStacks ?? {})
+      .sort()
+      .map(([item, n]) => `${item}@${n}`),
   ].join('+')
 
 /** The same recipe on the same machine (catalysts and height aside): what a row loops back to. */

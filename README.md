@@ -88,6 +88,17 @@ dotnet run -- export     # writes web/src/data/game-data.json and web/public/ico
   (`USteamBoilerComponent::SetBoilingPower`): Low 30 Steam / 6 s, Medium 100 / 4 s, High 300 / 2 s,
   so 100 / 500 / 3000 P/s, scaled by Factory Efficiency. The planner shows how many boilers on
   each setting would carry the plan's heat.
+- Bank Portal (`UBankFacilityComponent`, native code): it converts any coin into another. Each belt
+  entry adds its coins' value to a buffer. Whenever the buffer holds a stack's worth of the output
+  coin, it puts one stack on its belt and keeps the remainder, so no value is lost. The stack size is
+  the panel's "Conversion Amount", set per tree row: 1–50, 1 in a new portal, 50 in the planner. It
+  has no craft time, heat or Factory Efficiency, so only its belts limit it. Its output belt carries
+  one stack per slot, and its input belt carries full stacks of 50. Changing coins up (silver → gold)
+  is held back by the input belt, and breaking them down by the output belt. It's offered as a way
+  to make coins, but never picked by default: coins come off the bus. A row fed by Bank Portals set
+  below 50 takes their smaller stacks. Its input belts carry fewer coins, and a Paradox Crucible gets
+  less value per entry, so it runs slower. The row says so. Same-coin conversion isn't offered: it
+  would only throttle the belt.
 
 ### Money, fuel and fertilizer
 
@@ -103,8 +114,8 @@ Ore costs 1,200 copper and smelts into 100 ingots.
 Belt speed is `ConveyerSpeed` (60/min base) plus the Logistics Efficiency upgrade. Machine ports
 come from each building's `InOutList`. Belts connect per side, so the Arcane Processor's single
 three-sided cell is three inputs. Pipe cells carry liquids, which are left out of the belt check.
-Coins ride belts in stacks: machines and containers emit full stacks of 50, which is the default. A
-Bank Portal can be set to 1–50 coins per stack, and the plan's "Coin stack size" setting follows it.
+Coins ride belts in stacks: machines and containers (and the bus) emit full stacks of 50. A Bank
+Portal's stacks are its row's "Conversion amount" (1–50).
 
 - **Outputs:** machines throttle to what their output belts carry. This was observed in game: a
   Redcurrant nursery on Fertile Catalyst reports exactly 75/min at Logistics 1 and 90/min at

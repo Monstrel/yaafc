@@ -65,7 +65,9 @@ function branch(v: unknown): BranchChoice | undefined {
   if (!isObj(v)) return undefined
   const producer = str(v.producer)
   if (producer === undefined) return undefined
-  return defined({ producer, machine: str(v.machine), reuse: bool(v.reuse) })
+  return defined({
+    producer,
+    machine: str(v.machine), reuse: bool(v.reuse) })
 }
 
 function separation(v: unknown): Separation | undefined {
@@ -101,10 +103,10 @@ function plan(v: unknown, newId: () => string): Plan | undefined {
     tier: num(v.tier),
     feedbackItems: strings(v.feedbackItems),
     feedback,
-    coinStack: num(v.coinStack),
     rowCatalysts: record(v.rowCatalysts, strings),
     catalysts: record(v.catalysts, strings),
     rowHeights: record(v.rowHeights, num),
+    rowStacks: record(v.rowStacks, num),
     separate: list(v.separate, separation),
     noReuse: strings(v.noReuse),
     roundUp: strings(v.roundUp),
@@ -151,7 +153,13 @@ function myDefault(v: unknown): MyDefault | undefined {
   if (!isObj(v)) return undefined
   const producer = str(v.producer)
   if (producer === undefined) return undefined
-  return defined({ producer, machine: str(v.machine), catalysts: strings(v.catalysts), height: num(v.height) })
+  return defined({
+    producer,
+    machine: str(v.machine),
+    catalysts: strings(v.catalysts),
+    height: num(v.height),
+    stack: num(v.stack),
+  })
 }
 
 export const sanitizeMyDefaults = (v: unknown): MyDefaults | undefined => record(v, myDefault)

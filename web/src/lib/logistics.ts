@@ -9,8 +9,10 @@ export interface BeltFlow {
   item: string
   /** Items per minute one machine consumes. */
   perMachine: number
-  /** Belt slots per minute that takes (coins travel 50 to a slot). */
+  /** Belt slots per minute that takes (coins travel 50 to a slot, or fewer from a Bank Portal). */
   slots: number
+  /** Coins per belt entry, when a Bank Portal feeds smaller stacks than 50. */
+  stack?: number
   /** Belts (input ports) needed for that rate. */
   belts: number
 }
@@ -71,8 +73,9 @@ export function checkProcess(p: Process, mods: Modifiers, machines = 0): Logisti
           .filter((s) => onBelt(s.item) && s.count > 0)
           .map((s) => {
             const perMachine = s.count * crafts
-            const slots = perMachine / itemsPerSlot(s.item, mods)
-            return { item: s.item, perMachine, slots, belts: beltsFor(slots, speed) }
+            const stack = p.inputStacks?.[s.item]
+            const slots = perMachine / itemsPerSlot(s.item, stack)
+            return { item: s.item, perMachine, slots, belts: beltsFor(slots, speed), ...(stack && { stack }) }
           })
       : []
   const utilization = inputs.length ? inputUtilization(inputs.map((f) => f.slots), beltIn, speed) : 1
