@@ -109,6 +109,7 @@ function plan(v: unknown, newId: () => string): Plan | undefined {
     noReuse: strings(v.noReuse),
     roundUp: strings(v.roundUp),
     units: record(v.units, unitizing),
+    built: strings(v.built),
   })
 }
 

@@ -1366,6 +1366,62 @@ tr.idle {
   width: 22px;
 }
 
+/* Build checklist: a row ticked off as built in the player's game. */
+.built-check {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-right: 2px;
+  padding: 0;
+  border: 1.5px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--bg);
+}
+
+button.built-check:hover,
+button.built-check:focus-visible {
+  border-color: var(--green);
+}
+
+/* Built where it's made: shown, not set here. */
+.built-check.auto {
+  border-color: transparent;
+  color: var(--green);
+}
+
+.built-spacer {
+  flex: none;
+  width: 18px;
+}
+
+.built-check[aria-checked='true'] {
+  border-color: var(--green);
+  background: var(--green);
+}
+
+.built-check[aria-checked='mixed'] {
+  border-color: var(--green);
+}
+
+.built-mixed {
+  width: 8px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--green);
+}
+
+tr.built .tree-item .item-label .name {
+  color: var(--muted);
+}
+
+.built-progress {
+  color: var(--green);
+}
+
 .production.tree tr.depth-0 td,
 .production.tree tr.target td {
   font-weight: 600;

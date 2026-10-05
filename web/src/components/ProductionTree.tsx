@@ -51,6 +51,9 @@ interface Props {
   units: UnitScales
   /** Builds a row in units, or as one line (null). */
   onUnits: (row: string, unit: Unitizing | null) => void
+  /** Rows marked built in the player's game (a checklist: it changes nothing the plan makes). */
+  built: string[]
+  onBuilt: (rows: string[], on: boolean) => void
   /** Per item, the share of its overflow the plan feeds back into its own heat or fertilizer. */
   fed: Map<string, FedOverflow>
   /** The plan's targets in order: each is set in its own row at the top of the tree. */
@@ -108,6 +111,8 @@ export function ProductionTree({
   onRoundUp,
   units,
   onUnits,
+  built,
+  onBuilt,
   fed,
   targets: slots,
   onAddTarget,
@@ -238,6 +243,81 @@ export function ProductionTree({
     const of = wholePerCopy(node, copiesAbove(node.id), utilization)
     onUnits(node.id, count && of ? { count, of } : null)
   }
+
+  // Build checklist: only rows with machines are built; marking one marks the rows with machines
+  // in its branch, and unmarking one with marked rows below it asks whether they go too. Rows
+  // pointing to machines elsewhere show as built once those are.
+  const builtRows = useMemo(() => new Set(built), [built])
+  const checklist = useMemo(() => {
+    const isBuilt = (n: TreeNode) => hasMachines(n) && builtRows.has(n.id)
+    const builtId = (id: string | undefined) => {
+      const n = id === undefined ? undefined : byId.get(id)?.node
+      return !!n && isBuilt(n)
+    }
+    /** Per row: rows with machines below it, and how many of them are marked built. */
+    const below = new Map<string, { rows: number; built: number }>()
+    /** Rows pointing to machines elsewhere that are built. */
+    const auto = new Set<string>()
+    let rows = 0
+    let done = 0
+    const visit = (n: TreeNode): { rows: number; built: number } => {
+      const sum = { rows: 0, built: 0 }
+      for (const c of n.children) {
+        const s = visit(c)
+        sum.rows += s.rows + (hasMachines(c) ? 1 : 0)
+        sum.built += s.built + (isBuilt(c) ? 1 : 0)
+      }
+      below.set(n.id, sum)
+      if (hasMachines(n)) {
+        rows++
+        if (isBuilt(n)) done++
+      } else if (
+        (n.kind === 'separate' && builtId(n.groupId)) ||
+        // A loop is made by the nearest row of its item further up the branch.
+        (n.kind === 'loop' && builtId(byId.get(n.id)?.ancestors.findLast((a) => byId.get(a)?.node.item === n.item))) ||
+        (n.kind === 'byproduct' && n.byproductSources.length > 0 && n.byproductSources.every((s) => builtId(s.id)))
+      )
+        auto.add(n.id)
+      return sum
+    }
+    view.forEach(visit)
+    return { below, auto, rows, done }
+  }, [view, byId, builtRows])
+  /** The rows with machines in a branch. */
+  const branchOf = (n: TreeNode): string[] => [...(hasMachines(n) ? [n.id] : []), ...n.children.flatMap(branchOf)]
+  const checkState = (n: TreeNode): BuiltState =>
+    hasMachines(n)
+      ? builtRows.has(n.id) || (checklist.below.get(n.id)?.built ? 'mixed' : false)
+      : checklist.auto.has(n.id)
+        ? 'auto'
+        : null
+  const [unmarkMenu, setUnmarkMenu] = useState<{ node: TreeNode; x: number; y: number } | null>(null)
+  const unmarkRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (unmarkMenu) unmarkRef.current?.showPopover()
+  }, [unmarkMenu])
+  const checkRow = (node: TreeNode, box: HTMLElement) => {
+    if (!builtRows.has(node.id)) return onBuilt(branchOf(node), true)
+    if (!checklist.below.get(node.id)?.built) return onBuilt([node.id], false)
+    const rect = box.getBoundingClientRect()
+    setUnmarkMenu({ node, x: Math.max(8, Math.min(rect.left, window.innerWidth - 288)), y: rect.bottom + 4 })
+  }
+  const unmark = (branch: boolean) => {
+    unmarkRef.current?.hidePopover()
+    if (unmarkMenu) onBuilt(branch ? branchOf(unmarkMenu.node) : [unmarkMenu.node.id], false)
+  }
+  /** Folds every branch built all the way down, leaving what's still to build in view. */
+  const foldBuilt = () => {
+    const fold: string[] = []
+    const visit = (n: TreeNode) => {
+      const b = checklist.below.get(n.id)
+      if (n.children.length && builtRows.has(n.id) && b && b.built === b.rows) fold.push(n.id)
+      else n.children.forEach(visit)
+    }
+    view.forEach(visit)
+    setCollapsed((c) => new Set([...c, ...fold]))
+  }
+  const clearRef = useRef<HTMLDialogElement>(null)
 
   // A unit's ×N badge shows its branch's totals while hovered, or from a click until the next one.
   const [hovered, setHovered] = useState<string | null>(null)
@@ -399,6 +479,24 @@ export function ProductionTree({
             },
           ]}
         />
+        {checklist.done > 0 && (
+          <ToolbarMenu
+            label={`${checklist.done} of ${checklist.rows} built`}
+            className="built-progress"
+            items={[
+              {
+                label: 'Fold built branches',
+                hint: 'fold every branch built all the way down, leaving what’s still to build',
+                onClick: foldBuilt,
+              },
+              {
+                label: 'Clear all marks',
+                hint: 'mark every row of this plan as not built yet',
+                onClick: () => clearRef.current?.showModal(),
+              },
+            ]}
+          />
+        )}
       </div>
       <div className="tree-scroll">
         <table className="production tree">
@@ -467,6 +565,8 @@ export function ProductionTree({
                   mods={mods}
                   link={link}
                   target={slotByRow.get(line.node.id)}
+                  built={checkState(line.node)}
+                  onCheck={checkRow}
                 />
               ),
             )}
@@ -563,6 +663,46 @@ export function ProductionTree({
         )}
       </div>
 
+      <div
+        ref={unmarkRef}
+        popover="auto"
+        className="tree-menu"
+        role="menu"
+        style={unmarkMenu ? { left: unmarkMenu.x, top: unmarkMenu.y } : undefined}
+        onToggle={(e) => e.newState === 'closed' && setUnmarkMenu(null)}
+      >
+        {unmarkMenu && (
+          <UnmarkMenu
+            node={unmarkMenu.node}
+            below={checklist.below.get(unmarkMenu.node.id)?.built ?? 0}
+            onChoose={unmark}
+          />
+        )}
+      </div>
+
+      <dialog ref={clearRef} className="tree-dialog">
+        <h3>Clear all built marks?</h3>
+        <p>
+          The {checklist.done} {noun(checklist.done, 'row')} marked built in this plan will be marked as not built
+          yet. The plan itself stays as it is.
+        </p>
+        <div className="tree-dialog-actions">
+          <button
+            type="button"
+            className="primary"
+            onClick={() => {
+              clearRef.current?.close()
+              onBuilt(built, false)
+            }}
+          >
+            Clear marks
+          </button>
+          <button type="button" autoFocus onClick={() => clearRef.current?.close()}>
+            Cancel
+          </button>
+        </div>
+      </dialog>
+
       <dialog ref={dialogRef} className="tree-dialog" onClose={() => setConfirm(null)}>
         {confirm && (
           <AnchorChoice node={confirm.node} anchor={confirm.anchor} count={confirm.count} onDecide={decide} />
@@ -605,9 +745,13 @@ function TreeRow({
   topName,
   separateByproducts,
   target,
+  built,
+  onCheck,
 }: {
   /** The controls of the target the row meets, for a target's own row. */
   target?: TargetSlot
+  built: BuiltState
+  onCheck: (node: TreeNode, box: HTMLElement) => void
   /** What items built at the top of the plan are shown "with". */
   topName: string
   /** Per item, the rows making their own that have it as a by-product (shared only if picked). */
@@ -778,7 +922,7 @@ function TreeRow({
   return (
     <tr
       data-node-id={node.id}
-      className={`kind-${node.kind} depth-${Math.min(depth, 1)} ${node.rate === 0 ? 'idle' : ''} ${totals ? 'unit-totals' : ''} ${band} ${afterBranch ? 'after-branch' : ''}`}
+      className={`kind-${node.kind} depth-${Math.min(depth, 1)} ${node.rate === 0 ? 'idle' : ''} ${totals ? 'unit-totals' : ''} ${built === true ? 'built' : ''} ${band} ${afterBranch ? 'after-branch' : ''}`}
       style={target ? bandStyle(edgeX(depth)) : cardStyle(card)}
     >
       <td className="tree-item">
@@ -790,6 +934,31 @@ function TreeRow({
             </button>
           ) : (
             <span className="fold-spacer" />
+          )}
+          {built === null ? (
+            <span className="built-spacer" />
+          ) : built === 'auto' ? (
+            <span className="built-check auto" role="img" aria-label={`${name} built`} title={autoBuiltHint(node.kind)}>
+              <CheckIcon />
+            </span>
+          ) : (
+            <button
+              type="button"
+              role="checkbox"
+              className="built-check"
+              aria-checked={built}
+              aria-label={`Built ${name}`}
+              title={
+                built === true
+                  ? 'Built in your game. Click to mark it not built yet'
+                  : `Mark as built in your game${node.children.length ? ', with everything below it' : ''}${
+                      built === 'mixed' ? ' (some rows below it are)' : ''
+                    }`
+              }
+              onClick={(e) => onCheck(whole, e.currentTarget)}
+            >
+              {built === true ? <CheckIcon /> : built === 'mixed' ? <span className="built-mixed" aria-hidden /> : null}
+            </button>
           )}
           {target ? target.item : <ItemLabel item={node.item} />}
           {unit && (
@@ -1087,6 +1256,50 @@ export function BookmarkIcon({ filled = false }: { filled?: boolean }) {
   )
 }
 
+/** A tick: the row is built. */
+function CheckIcon() {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      width="12"
+      height="12"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.25"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="m3.5 8.5 3 3 6-7" />
+    </svg>
+  )
+}
+
+/** Unmarking a row with built rows below it: just the row, or its whole branch. */
+function UnmarkMenu({ node, below, onChoose }: { node: TreeNode; below: number; onChoose: (branch: boolean) => void }) {
+  return (
+    <>
+      <div className="tree-menu-title">Mark {itemsByKey.get(node.item)?.name ?? node.item} not built</div>
+      <button type="button" role="menuitem" onClick={() => onChoose(false)}>
+        <span>
+          Just this row
+          <span className="tree-menu-hint">
+            {below === 1 ? 'the row below it stays' : `the ${below} rows below it stay`} marked built
+          </span>
+        </span>
+      </button>
+      <button type="button" role="menuitem" onClick={() => onChoose(true)}>
+        <span>
+          This row and everything below
+          <span className="tree-menu-hint">
+            clears {below + 1} {noun(below + 1, 'mark')}
+          </span>
+        </span>
+      </button>
+    </>
+  )
+}
+
 /** A box with an arrow leaving it (build separately), or coming back in (merge back). */
 function BoxArrowIcon({ inward = false }: { inward?: boolean }) {
   return (
@@ -1116,7 +1329,7 @@ interface ToolbarMenuItem {
 }
 
 /** A toolbar button opening a menu of related actions below it. */
-function ToolbarMenu({ label, items }: { label: string; items: ToolbarMenuItem[] }) {
+function ToolbarMenu({ label, items, className }: { label: string; items: ToolbarMenuItem[]; className?: string }) {
   const id = useId()
   const ref = useRef<HTMLDivElement>(null)
   // The button toggles the menu itself (as its popover target); this lines it up below the button first.
@@ -1131,7 +1344,7 @@ function ToolbarMenu({ label, items }: { label: string; items: ToolbarMenuItem[]
     <>
       <button
         type="button"
-        className="compact-button"
+        className={`compact-button${className ? ` ${className}` : ''}`}
         aria-haspopup="menu"
         popoverTarget={id}
         onClick={(e) => place(e.currentTarget)}
@@ -1232,6 +1445,22 @@ type Line =
 const PLAN_ROOT = 'plan'
 /** The root of an item built at the top of the plan (not a row inside it). */
 const isTopGroupId = (id: string) => /^separate\/[^/]+$/.test(id)
+
+/** A row whose own machines get built in the game: only these can be marked built. */
+const hasMachines = (n: TreeNode) => n.kind === 'produce' && !!n.run?.process.machine
+
+/**
+ * A row's place on the build checklist: marked built or not ('mixed': only rows below it are),
+ * 'auto' for a row pointing to built machines elsewhere, null for a row with nothing to build.
+ */
+type BuiltState = boolean | 'mixed' | 'auto' | null
+
+/** Why a row pointing to machines elsewhere shows as built. */
+function autoBuiltHint(kind: TreeNode['kind']): string {
+  if (kind === 'separate') return 'Built: the machines that make it, where it’s built separately, are marked built'
+  if (kind === 'loop') return 'Built: the machines further up this branch that make it are marked built'
+  return 'Built: the machines whose by-product it is are marked built'
+}
 
 /** The row of a target that has none in the tree yet (no item, or not solved yet). */
 const pendingId = (index: number) => `target/${index}`

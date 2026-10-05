@@ -50,6 +50,12 @@ export function planFertilizer(plan: Plan): string {
   return choice?.startsWith('fert:') ? choice.slice(5) : 'BasicFertilizer'
 }
 
+/** Whether two plans hold the same values in every field (plans change by copying, so a changed field is a new value). */
+function sameFields(a: Plan, b: Plan): boolean {
+  const keys = Object.keys(a) as (keyof Plan)[]
+  return keys.length === Object.keys(b).length && keys.every((k) => a[k] === b[k])
+}
+
 export interface PlanModel {
   mods: Modifiers
   catalog: ProcessCatalog
@@ -69,13 +75,18 @@ export function usePlanModel(plan: Plan, progress: Progress, saved: SavedRecipe[
   )
   const catalog = useMemo(() => buildCatalog(context), [context])
 
+  // Built marks change nothing the plan makes: ticking them off doesn't solve the plan again.
+  const { built: _, ...solving } = plan
+  const [toSolve, setToSolve] = useState<Plan>(solving)
+  if (!sameFields(toSolve, solving)) setToSolve(solving)
+
   const [solved, setSolved] = useState<{ planId: string; result: PlanResult } | null>(null)
   useEffect(() => {
-    void solveInWorker({ plan, context }).then((result) => {
+    void solveInWorker({ plan: toSolve, context }).then((result) => {
       // Re-rendering a big tree takes a while: as a transition, React can interrupt it for input.
-      if (result) startTransition(() => setSolved({ planId: plan.id, result }))
+      if (result) startTransition(() => setSolved({ planId: toSolve.id, result }))
     })
-  }, [plan, context])
+  }, [toSolve, context])
   const result = solved?.planId === plan.id ? solved.result : null
   return { mods, catalog, result }
 }

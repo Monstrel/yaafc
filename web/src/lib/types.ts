@@ -96,6 +96,8 @@ export interface Plan {
   roundUp?: string[]
   /** Tree rows built as several identical copies of themselves and everything below them. */
   units?: Record<string, Unitizing>
+  /** Tree row ids the player has marked built in their game: a checklist, it changes nothing the plan makes. */
+  built?: string[]
 }
 
 /** A row built in units: `count` copies of a smaller line, each making its share. */

@@ -160,6 +160,16 @@ export function setRoundUp(plan: Plan, row: string, on: boolean): Plan {
   return { ...plan, roundUp: roundUp.length ? roundUp : undefined }
 }
 
+/** Marks rows built in the player's game, or not: a checklist, it changes nothing the plan makes. */
+export function setBuilt(plan: Plan, rows: string[], on: boolean): Plan {
+  const built = new Set(plan.built)
+  for (const id of rows) {
+    if (on) built.add(id)
+    else built.delete(id)
+  }
+  return { ...plan, built: built.size ? [...built] : undefined }
+}
+
 /**
  * Makes the plan provide its own heat or fertilizer: a target of `item` at 0 net per minute, fed
  * back, at the end of the list, so it covers whatever the sources ahead of it leave. It's an
@@ -232,8 +242,8 @@ export function reorderTargets(plan: Plan, order: number[]): Plan {
 }
 
 /**
- * Moves per-row picks, catalysts, heights, build-separately rows, rounding and units to the rows'
- * new ids. `remap` gives null for a row that's gone (dropping its settings), or several ids for a
+ * Moves per-row picks, catalysts, heights, build-separately rows, rounding, units and built marks to
+ * the rows' new ids. `remap` gives null for a row that's gone (dropping its settings), or several ids for a
  * row copied to several places. Where rows land on the same id, the one with the lowest `rank` wins.
  */
 export function moveRows(
@@ -255,6 +265,7 @@ export function moveRows(
       .flatMap((s) => (s.at ? to(s.at).map((at) => ({ ...s, at })) : [s]))
       .filter((s, i, all) => all.findIndex((o) => separationKey(o) === separationKey(s)) === i)
   const roundUp = plan.roundUp && [...new Set(plan.roundUp.flatMap(to))]
+  const built = plan.built && [...new Set(plan.built.flatMap(to))]
   return {
     ...plan,
     branches: rows(plan.branches),
@@ -263,6 +274,7 @@ export function moveRows(
     separate,
     roundUp: roundUp?.length ? roundUp : undefined,
     units: rows(plan.units),
+    built: built?.length ? built : undefined,
   }
 }
 
@@ -425,8 +437,8 @@ export function clearBranchChoice(plan: Plan, row: string): Plan {
 }
 
 /**
- * Drops producer, machine, catalyst, height, branch and build-separately choices for items, processes and
- * rows no longer in the plan, so an item that's removed and added back starts from its default
+ * Drops producer, machine, catalyst, height, branch and build-separately choices (and built marks) for
+ * items, processes and rows no longer in the plan, so an item that's removed and added back starts from its default
  * recipe instead of whatever was last picked for it. A build-separately choice that gathers
  * nothing (its anchor no longer sits above the item, say) goes too. Fuel and fertilizer choices
  * are plan-wide settings and always kept. Returns null when there's nothing to drop.
@@ -467,7 +479,11 @@ export function pruneChoices(plan: Plan, catalog: ProcessCatalog): Plan | null {
   const roundUp = plan.roundUp?.filter((id) => running.has(id))
   const u = roundUp?.length !== plan.roundUp?.length
   const units = keep(plan.units, (id) => running.has(id))
-  if (!p.dropped && !m.dropped && !c.dropped && !h.dropped && !b.dropped && !s && !r && !f && !u && !units.dropped) return null
+  // Only machines get built: marks stay with rows that run some.
+  const built = plan.built?.filter((id) => running.has(id))
+  const d = built?.length !== plan.built?.length
+  if (!p.dropped && !m.dropped && !c.dropped && !h.dropped && !b.dropped && !s && !r && !f && !u && !units.dropped && !d)
+    return null
   return {
     ...plan,
     producers: p.record!,
@@ -480,5 +496,6 @@ export function pruneChoices(plan: Plan, catalog: ProcessCatalog): Plan | null {
     feedbackItems: feedbackItems?.length ? feedbackItems : undefined,
     roundUp: roundUp?.length ? roundUp : undefined,
     units: units.record && Object.keys(units.record).length ? units.record : undefined,
+    built: built?.length ? built : undefined,
   }
 }

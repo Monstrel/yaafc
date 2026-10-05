@@ -51,6 +51,7 @@ import {
   rememberChanges,
   rememberSetup,
   rowsById,
+  setBuilt,
   setRoundUp,
   setRowCatalysts,
   setRowHeight,
@@ -792,6 +793,38 @@ describe('forgetting choices', () => {
 
   it('keeps picks still in use', () => {
     expect(pruneChoices(plan({ targets: [{ item: 'Coke', rate: 1 }], ...choices }), catalog)).toBeNull()
+  })
+
+  it('drops built marks on rows that left the plan or run no machines', () => {
+    const p = plan({ targets: [{ item: 'Coke', rate: 1 }], ...choices, built: ['0/Coke', '0/Gone'] })
+    expect(pruneChoices(p, catalog)!.built).toEqual(['0/Coke'])
+    const bought = plan({ targets: [{ item: 'Coke', rate: 1 }], ...choices, producers: { Coke: 'import' }, built: ['0/Coke'] })
+    expect(pruneChoices(bought, catalog)!.built).toBeUndefined()
+  })
+})
+
+describe('build checklist', () => {
+  const mods = modifiers({})
+  const catalog = buildCatalog({ saved: [], machines: {}, mods, fertilizer: null })
+
+  it('marks and unmarks rows, round-tripping to no marks', () => {
+    const p = plan({ targets: [{ item: 'WoodBoard', rate: 1 }] })
+    const marked = setBuilt(p, ['0/WoodBoard', '0/WoodBoard/Log'], true)
+    expect(marked.built).toEqual(['0/WoodBoard', '0/WoodBoard/Log'])
+    expect(setBuilt(marked, ['0/WoodBoard'], false).built).toEqual(['0/WoodBoard/Log'])
+    expect(setBuilt(marked, ['0/WoodBoard', '0/WoodBoard/Log'], false).built).toBeUndefined()
+  })
+
+  it('changes nothing the plan makes', () => {
+    const p = plan({ targets: [{ item: 'WoodBoard', rate: 10 }] })
+    const marked = setBuilt(p, ['0/WoodBoard'], true)
+    expect(solvePlan(marked, catalog, mods).tree).toEqual(solvePlan(p, catalog, mods).tree)
+  })
+
+  it('moves marks with their target', () => {
+    const p = setBuilt(plan({ targets: [{ item: 'WoodBoard', rate: 1 }, { item: 'Coke', rate: 1 }] }), ['1/Coke'], true)
+    expect(moveTarget(p, 1, 0).built).toEqual(['0/Coke'])
+    expect(removeTarget(p, 1).built).toBeUndefined()
   })
 })
 

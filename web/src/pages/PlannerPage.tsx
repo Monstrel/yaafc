@@ -43,6 +43,7 @@ import {
   setTargetFeedback,
   pruneChoices,
   rememberSetup,
+  setBuilt,
   setRoundUp,
   setRowCatalysts,
   setRowHeight,
@@ -582,6 +583,8 @@ export function PlannerPage({
                   onRoundUp={(row, on) => onUpdatePlan((p) => setRoundUp(p, row, on))}
                   units={units}
                   onUnits={(row, unit) => onUpdatePlan((p) => setUnits(p, row, unit))}
+                  built={plan.built ?? NO_ROWS}
+                  onBuilt={(rows, on) => onUpdatePlan((p) => setBuilt(p, rows, on))}
                   targets={plan.targets.map(targetSlot)}
                   onAddTarget={addTarget}
                   shownTarget={shownTarget}
