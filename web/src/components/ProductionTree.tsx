@@ -35,7 +35,11 @@ interface Props {
   onRemember: (row: TreeNode) => void
   /** Stop using an item's saved default; this plan keeps being made that way. */
   onForget: (item: string) => void
-  onSeparate: (s: Separation, on: boolean) => void
+  onSeparate: (s: Separation, on: boolean, from?: string) => void
+  /** Builds separately every item made in several rows (absent: there's none). */
+  onSeparateShared?: () => void
+  /** Merges back every item built separately for a single use (absent: there's none). */
+  onMergeSingles?: () => void
   logistics: Map<string, LogisticsCheck>
   /** Belt speed and coin stacks, for how many belts a row's items need. */
   mods: Modifiers
@@ -95,6 +99,8 @@ export function ProductionTree({
   onRemember,
   onForget,
   onSeparate,
+  onSeparateShared,
+  onMergeSingles,
   logistics,
   mods,
   roundUp,
@@ -232,14 +238,14 @@ export function ProductionTree({
     menuRef.current?.hidePopover()
     const count = all.filter((e) => e.node.kind === 'produce' && e.node.item === anchor.item).length
     if (count > 1) setConfirm({ node, anchor, count })
-    else onSeparate({ item: node.item, anchor: anchor.item }, true)
+    else onSeparate({ item: node.item, anchor: anchor.item }, true, node.id)
   }
   const decide = (choice: AnchorDecision) => {
     dialogRef.current?.close()
     if (!confirm || choice === 'cancel') return
     const { node, anchor } = confirm
-    if (choice === 'lift') onSeparate({ item: anchor.item }, true)
-    onSeparate({ item: node.item, anchor: anchor.item, ...(choice === 'one' && { at: anchor.id }) }, true)
+    if (choice === 'lift') onSeparate({ item: anchor.item }, true, anchor.id)
+    onSeparate({ item: node.item, anchor: anchor.item, ...(choice === 'one' && { at: anchor.id }) }, true, node.id)
   }
 
   const [jump, setJump] = useState<JumpState | null>(null)
@@ -340,6 +346,22 @@ export function ProductionTree({
         <button className="compact-button" onClick={() => setCollapsed(new Set(targets.flatMap((n) => branchIds(n.children))))}>
           Collapse to targets
         </button>
+        <button
+          className="compact-button"
+          onClick={onSeparateShared}
+          disabled={!onSeparateShared}
+          title="Build separately every item made in more than one row, gathered with the nearest item above all its uses (or at the top of the plan)"
+        >
+          Build shared separately
+        </button>
+        <button
+          className="compact-button"
+          onClick={onMergeSingles}
+          disabled={!onMergeSingles}
+          title="Merge back every item built separately that has only one use"
+        >
+          Merge single uses
+        </button>
       </div>
       <div className="tree-scroll">
         <table className="production tree">
@@ -432,7 +454,7 @@ export function ProductionTree({
               role="menuitem"
               onClick={() => {
                 menuRef.current?.hidePopover()
-                onSeparate({ item: menu.node.item }, true)
+                onSeparate({ item: menu.node.item }, true, menu.node.id)
               }}
             >
               <span className="tree-menu-top" aria-hidden>
@@ -543,7 +565,7 @@ function TreeRow({
   onForget: (item: string) => void
   /** Using it as my default would change something (else it's made the saved or built-in way). */
   savable: boolean
-  onSeparate: (s: Separation, on: boolean) => void
+  onSeparate: (s: Separation, on: boolean, from?: string) => void
   onSeparateMenu: (node: TreeNode, button: HTMLElement) => void
   /** The row runs on a whole number of machines, rounded up. */
   rounded: boolean

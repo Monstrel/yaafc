@@ -228,20 +228,35 @@ export function reorderTargets(plan: Plan, order: number[]): Plan {
     const to = moved.get(head)
     return to === undefined ? null : to + id.slice(head.length)
   }
-  const rows = <T>(record: Record<string, T> | undefined) =>
-    record &&
-    Object.fromEntries(Object.entries(record).flatMap(([id, v]) => (remap(id) === null ? [] : [[remap(id)!, v]])))
+  return { ...moveRows(plan, remap), targets }
+}
+
+/**
+ * Moves per-row picks, catalysts, heights, build-separately rows, rounding and units to the rows'
+ * new ids. `remap` gives null for a row that's gone (dropping its settings), or several ids for a
+ * row copied to several places. Where rows land on the same id, the one with the lowest `rank` wins.
+ */
+export function moveRows(
+  plan: Plan,
+  remap: (id: string) => string | string[] | null,
+  rank: (id: string) => number = () => 0,
+): Plan {
+  const to = (id: string) => [remap(id) ?? []].flat()
+  const rows = <T>(record: Record<string, T> | undefined) => {
+    if (!record) return record
+    const out = new Map<string, { v: T; rank: number }>()
+    for (const [id, v] of Object.entries(record))
+      for (const k of to(id)) if (!out.has(k) || rank(id) < out.get(k)!.rank) out.set(k, { v, rank: rank(id) })
+    return Object.fromEntries([...out].map(([k, x]) => [k, x.v]))
+  }
   const separate =
     plan.separate &&
-    separationsOf(plan.separate).flatMap((s) => {
-      if (!s.at) return [s]
-      const at = remap(s.at)
-      return at === null ? [] : [{ ...s, at }]
-    })
-  const roundUp = plan.roundUp?.flatMap((id) => remap(id) ?? [])
+    separationsOf(plan.separate)
+      .flatMap((s) => (s.at ? to(s.at).map((at) => ({ ...s, at })) : [s]))
+      .filter((s, i, all) => all.findIndex((o) => separationKey(o) === separationKey(s)) === i)
+  const roundUp = plan.roundUp && [...new Set(plan.roundUp.flatMap(to))]
   return {
     ...plan,
-    targets,
     branches: rows(plan.branches),
     rowCatalysts: rows(plan.rowCatalysts),
     rowHeights: rows(plan.rowHeights),

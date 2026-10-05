@@ -1297,6 +1297,7 @@ tr.idle {
 
 .tree-toolbar {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   margin-bottom: 8px;
 }

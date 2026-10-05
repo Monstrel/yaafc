@@ -49,7 +49,8 @@ import {
   type ProducerPick,
 } from '../lib/choices'
 import type { OverflowUse, PlanResult, ResolvedTarget } from '../lib/solver'
-import { separationsOf, withSeparation, withoutSeparation } from '../lib/separate'
+import { separationsOf } from '../lib/separate'
+import { canSeparateShared, mergeSingleUses, separateShared, setSeparation } from '../lib/separateAll'
 import { buildingNameFor, machineNameFor, noun } from '../lib/plural'
 import { boilerHeat, boilersFor } from '../lib/steamBoiler'
 import { IMPORT, planProducer } from '../lib/unfold'
@@ -175,11 +176,11 @@ export function PlannerPage({
     if (saved) onUpdatePlan((p) => keepDefaultInPlan(p, result.tree, item, saved))
     forget(item)
   }
-  const setSeparate = (s: Separation, on: boolean) =>
-    onUpdatePlan((p) => {
-      const list = separationsOf(p.separate)
-      return { ...p, separate: on ? withSeparation(list, s) : withoutSeparation(list, s) }
-    })
+  const setSeparate = (s: Separation, on: boolean, from?: string) =>
+    onUpdatePlan((p) => setSeparation(p, catalog, s, on, from))
+  // Whether the plan-wide build-separately buttons would change anything.
+  const canSeparate = useMemo(() => canSeparateShared(plan, catalog), [plan, catalog])
+  const canMerge = useMemo(() => mergeSingleUses(plan, catalog) !== plan, [plan, catalog])
   /** What a target's item could feed back into, if anything. */
   const feedsInto = (item: string) =>
     [fuels.has(item) && 'heat', fertilizers.has(item) && 'fertilizer', coinValue(item) !== null && 'money']
@@ -572,6 +573,8 @@ export function PlannerPage({
                   onCatalysts={setCatalysts}
                   onHeight={setHeight}
                   onSeparate={setSeparate}
+                  onSeparateShared={canSeparate ? () => onUpdatePlan((p) => separateShared(p, catalog)) : undefined}
+                  onMergeSingles={canMerge ? () => onUpdatePlan((p) => mergeSingleUses(p, catalog)) : undefined}
                   logistics={logistics}
                   mods={mods}
                   roundUp={plan.roundUp ?? NO_ROWS}

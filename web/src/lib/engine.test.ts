@@ -59,6 +59,7 @@ import { sanitizePlans } from './sanitize'
 import { dropUnits, setUnits, unitChoices, unitScales, wholePerCopy } from './units'
 import { resolveChoice } from './unfold'
 import { separationsOf, withSeparation } from './separate'
+import { canSeparateShared, mergeSingleUses, separateShared, setSeparation } from './separateAll'
 import { buildingNameFor, itemNameFor, noun } from './plural'
 import { BOILER_SETTINGS, boilerHeat, boilersFor } from './steamBoiler'
 import { legacyProgress, withoutLegacyProgress } from './store'
@@ -490,6 +491,106 @@ describe('production tree', () => {
       it('forgets a choice whose anchor sits above none of its uses', () => {
         expect(keptSeparations([{ item: 'Chamomile', anchor: 'WorldTreeLeaf' }])).toEqual([])
       })
+    })
+  })
+
+  describe('building every shared item separately', () => {
+    const sol = plan({ targets: [{ item: 'Sol', rate: 0.25 }] })
+    const madeIn = (p: Plan) => {
+      const counts = new Map<string, number>()
+      for (const n of solvePlan(p, catalog, mods).tree.flatMap(all))
+        if (n.run && !n.consolidated) counts.set(n.item, (counts.get(n.item) ?? 0) + 1)
+      return counts
+    }
+
+    it('gathers each item made in several rows into one, under the nearest row above them all', () => {
+      expect([...madeIn(sol).values()].some((c) => c > 1)).toBe(true)
+      const p = separateShared(sol, catalog)
+      const seps = separationsOf(p.separate)
+      expect(seps.length).toBeGreaterThan(0)
+      // Every row of Sol sits under its one target, so nothing goes to the top of the plan.
+      expect(seps.every((s) => s.anchor)).toBe(true)
+      expect([...madeIn(p).values()].every((c) => c <= 1)).toBe(true)
+      expect(pruneChoices(p, catalog)).toBeNull()
+      const r = solvePlan(p, catalog, mods)
+      expectBalanced(r)
+      expectMachinesOnce(r)
+      expect(canSeparateShared(sol, catalog)).toBe(true)
+      expect(canSeparateShared(p, catalog)).toBe(false)
+      expect(separateShared(p, catalog)).toBe(p)
+    })
+
+    it('gathers rows under different targets at the top of the plan', () => {
+      const p = plan({ targets: [{ item: 'WorldTreeLeaf', rate: 1 }, { item: 'Sol', rate: 0.25 }] })
+      expect(separationsOf(separateShared(p, catalog).separate)).toContainEqual({ item: 'WorldTreeLeaf' })
+    })
+
+    it("keeps the plan's own choices", () => {
+      const p = plan({ targets: sol.targets, separate: [{ item: 'FairyDust' }] })
+      expect(separationsOf(separateShared(p, catalog).separate)).toContainEqual({ item: 'FairyDust' })
+    })
+
+    it('merges back items built separately for a single use, and only those', () => {
+      const shared = separateShared(sol, catalog)
+      expect(mergeSingleUses(shared, catalog)).toBe(shared)
+      const single = { item: 'Sol' }
+      const p = { ...shared, separate: [...separationsOf(shared.separate), single] }
+      expect(mergeSingleUses(p, catalog).separate).toEqual(shared.separate)
+    })
+
+    it('keeps the settings of rows it merges back, even inside other rows it merges', () => {
+      const athanor = buildCatalog({ saved: [], machines: { 'recipe:Coke': 'AdvancedAthanor' }, mods, fertilizer: null })
+      const p = plan({
+        targets: [{ item: 'Brandy', rate: 10 }],
+        machines: { 'recipe:Coke': 'AdvancedAthanor' },
+        separate: [{ item: 'CokePowder' }, { item: 'Coke' }],
+        rowCatalysts: { 'separate/Coke': ['Catalyst2'] },
+      })
+      const merged = mergeSingleUses(p, athanor)
+      expect(merged.separate).toEqual([])
+      expect(merged.rowCatalysts).toEqual({ '0/Brandy/CokePowder/Coke': ['Catalyst2'] })
+      const machines = (x: Plan) => solvePlan(x, athanor, mods).runs.reduce((sum, r) => sum + r.machines, 0)
+      expect(machines(merged)).toBeCloseTo(machines(p))
+      // Gathering leaves copies set up differently apart, and carries the settings of alike ones.
+      const twice = plan({ ...merged, targets: [...merged.targets, { item: 'CokePowder', rate: 5 }] })
+      expect(separationsOf(separateShared(twice, athanor).separate)).not.toContainEqual({ item: 'CokePowder' })
+      const alike = { ...twice, rowCatalysts: { ...twice.rowCatalysts, '1/CokePowder/Coke': ['Catalyst2'] } }
+      const shared = separateShared(alike, athanor)
+      expect(separationsOf(shared.separate)).toContainEqual({ item: 'CokePowder' })
+      expect(shared.rowCatalysts).toEqual({ '1/CokePowder/Coke': ['Catalyst2'] })
+    })
+  })
+
+  describe('keeping row settings when building separately or merging back', () => {
+    const athanor = buildCatalog({ saved: [], machines: { 'recipe:Coke': 'AdvancedAthanor' }, mods, fertilizer: null })
+    const coke = (targets: Plan['targets'], rowCatalysts: Plan['rowCatalysts']) =>
+      plan({ targets, machines: { 'recipe:Coke': 'AdvancedAthanor' }, rowCatalysts })
+    const brandy = { item: 'Brandy', rate: 10 }
+
+    it('round-trips', () => {
+      const p = coke([brandy], { '0/Brandy/CokePowder/Coke': ['Catalyst2'] })
+      const apart = setSeparation(p, athanor, { item: 'CokePowder' }, true, '0/Brandy/CokePowder')
+      expect(apart.rowCatalysts).toEqual({ 'separate/CokePowder/Coke': ['Catalyst2'] })
+      const back = setSeparation(apart, athanor, { item: 'CokePowder' }, false)
+      expect(back.separate).toEqual([])
+      expect(back.rowCatalysts).toEqual(p.rowCatalysts)
+    })
+
+    it('gives a merged row’s settings to every use', () => {
+      const p = setSeparation(coke([brandy, { item: 'CokePowder', rate: 5 }], { '1/CokePowder/Coke': ['Catalyst2'] }), athanor, { item: 'CokePowder' }, true)
+      expect(p.rowCatalysts).toEqual({ '1/CokePowder/Coke': ['Catalyst2'] })
+      expect(setSeparation(p, athanor, { item: 'CokePowder' }, false).rowCatalysts).toEqual({
+        '1/CokePowder/Coke': ['Catalyst2'],
+        '0/Brandy/CokePowder/Coke': ['Catalyst2'],
+      })
+    })
+
+    it('gathers the settings of the row it was chosen on first', () => {
+      const p = coke([brandy, brandy], { '0/Brandy/CokePowder/Coke': ['Catalyst2'], '1/Brandy/CokePowder/Coke': ['Catalyst3'] })
+      for (const at of ['0', '1'])
+        expect(setSeparation(p, athanor, { item: 'CokePowder' }, true, `${at}/Brandy/CokePowder`).rowCatalysts).toEqual({
+          'separate/CokePowder/Coke': p.rowCatalysts![`${at}/Brandy/CokePowder/Coke`],
+        })
     })
   })
 
