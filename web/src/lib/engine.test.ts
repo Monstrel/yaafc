@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { altarYield, altarsFor } from './altar'
 import { cauldronStats, evaluateAdvanced, evaluateNormal, findRecipes } from './cauldron'
 import {
   HEAT,
@@ -1160,6 +1161,47 @@ describe('Advanced Athanor catalysts', () => {
   })
 })
 
+describe('Knowledge Altar', () => {
+  const mods = modifiers({})
+  const exp = (item: string, m = mods) => altarYield(item, m)
+
+  it('gives 0.0002 × BaseCost EXP per item over 0.1676 × BaseCost^0.518 s (UShrineFacilityComponent)', () => {
+    const cost = itemsByKey.get('IronIngot')!.baseCost
+    expect(exp('IronIngot')).toEqual({ exp: 0.0002 * cost, seconds: 0.1676 * cost ** 0.518, relic: false })
+  })
+
+  it('counts bundles in fractions: a Wood is 200 one-unit cycles', () => {
+    const y = exp('Wood')!
+    expect(y.exp).toBeCloseTo(200 * 0.0002 * 1)
+    expect(y.seconds).toBeCloseTo(200 * 0.1676)
+  })
+
+  it('takes relics a fifth of a planet per cycle, at fixed EXP and time', () => {
+    expect(exp('Jupiter')).toEqual({ exp: 10, seconds: 60, relic: true }) // 60 of 300 per 12 s cycle, 2 EXP each
+    expect(exp('Sol')).toEqual({ exp: 5 * 4887.8, seconds: 600, relic: true })
+  })
+
+  it('adds Relic Knowledge to relics only, and Factory Efficiency to every altar', () => {
+    const m = modifiers({ AltarEfficiency: 3, FactorySpeed: 4 })
+    expect(m.altar).toBeCloseTo(1.3)
+    expect(exp('Mars', m)!.exp).toBeCloseTo(5 * 25.2 * 1.3)
+    expect(exp('Mars', m)!.seconds).toBeCloseTo(120 / m.factorySpeed)
+    expect(exp('IronIngot', m)!.exp).toBe(exp('IronIngot')!.exp)
+  })
+
+  it('takes nothing off a pipe, and nothing worthless', () => {
+    expect(exp('Brandy')).toBeNull()
+    expect(exp('Steam')).toBeNull()
+  })
+
+  it('waits on its one belt when it breaks items down faster than a belt brings them', () => {
+    const sand = exp('Sand')!
+    expect(sand.seconds).toBeLessThan(60 / mods.beltSpeed)
+    expect(altarsFor(sand, 120, mods)).toBeCloseTo(120 / mods.beltSpeed)
+    expect(altarsFor(exp('Jupiter')!, 3, mods)).toBeCloseTo(3) // a minute per planet
+  })
+})
+
 describe('Thermal Extractor height', () => {
   const mods = modifiers({})
   const oil = 'recipe:LinseedOil'
@@ -1925,12 +1967,22 @@ describe('upgrade levels (DT_Improvements)', () => {
   })
 
   it('lists planner upgrades in the in-game skill-tree order', () => {
-    expect(PLANNER_UPGRADES.map((u) => u.key)).toEqual(['Conveyer', 'FactorySpeed', 'AlchemySkill', 'FuelEfficiency', 'FertilizeEfficiency'])
+    expect(PLANNER_UPGRADES.map((u) => u.key)).toEqual([
+      'Conveyer',
+      'FactorySpeed',
+      'AlchemySkill',
+      'FuelEfficiency',
+      'FertilizeEfficiency',
+      'AltarEfficiency',
+    ])
   })
 
   it('caps levels per series', () => {
     const caps = Object.fromEntries(PLANNER_UPGRADES.map((u) => [u.key, maxLevel(u)]))
-    expect(caps).toEqual({ FactorySpeed: 92, Conveyer: 92, FuelEfficiency: Infinity, FertilizeEfficiency: Infinity, AlchemySkill: Infinity })
+    expect(caps).toEqual({
+      FactorySpeed: 92, Conveyer: 92, FuelEfficiency: Infinity, FertilizeEfficiency: Infinity, AlchemySkill: Infinity,
+      AltarEfficiency: Infinity,
+    })
     expect(maxLevel(upgrades.find((u) => u.key === 'Bag')!)).toBe(6) // not repeatable
     for (const u of PLANNER_UPGRADES) {
       expect(upgradeLevel({ [u.key]: 1000 }, u)).toBe(Math.min(1000, maxLevel(u)))

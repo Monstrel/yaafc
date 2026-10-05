@@ -99,6 +99,14 @@ dotnet run -- export     # writes web/src/data/game-data.json and web/public/ico
   below 50 takes their smaller stacks. Its input belts carry fewer coins, and a Paradox Crucible gets
   less value per entry, so it runs slower. The row says so. Same-coin conversion isn't offered: it
   would only throttle the belt.
+- Knowledge Altar (`UShrineFacilityComponent`, native code): it breaks down whatever its one input
+  belt brings, for EXP. Any item gives 0.0002 × `BaseCost` EXP over 0.1676 × `BaseCost`^0.518 s, one
+  unit per cycle (a bundle item is that many units: a log is 200). The seven planets (relics) have
+  fixed cycles from a table in the game binary. Each cycle takes a fifth of a planet, e.g. 15 of
+  Mars's 75 units for 25.2 EXP in 24 s, and only relics get the Relic Knowledge upgrade (+10% per
+  level). Cycle times scale with Factory Efficiency. "Out to the bus" shows each output's EXP/min
+  and how many altars it would take (a belt each), once the plan's research tier has the altar (V).
+  Liquids can't reach it.
 
 ### Money, fuel and fertilizer
 

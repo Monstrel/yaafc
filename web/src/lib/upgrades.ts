@@ -3,8 +3,8 @@ import { attributeBase, upgrades, type UpgradeEffect, type UpgradeSeries } from 
 /** Player's level per improvement series key (e.g. FactorySpeed: 14). */
 export type UpgradeLevels = Record<string, number>
 
-/** Series shown in the planner, in the game's skill-tree order (Logistics, Factory, Alchemy, Fuel, Fertilizer). */
-export const PLANNER_UPGRADES = ['FactorySpeed', 'Conveyer', 'FuelEfficiency', 'FertilizeEfficiency', 'AlchemySkill']
+/** Series shown in the planner, in the game's skill-tree order (Logistics, Factory, Alchemy, Fuel, Fertilizer, Relic Knowledge). */
+export const PLANNER_UPGRADES = ['FactorySpeed', 'Conveyer', 'FuelEfficiency', 'FertilizeEfficiency', 'AlchemySkill', 'AltarEfficiency']
   .map((key) => upgrades.find((u) => u.key === key))
   .filter((u): u is UpgradeSeries => !!u)
   .sort((a, b) => (a.column ?? Infinity) - (b.column ?? Infinity))
@@ -54,6 +54,8 @@ export interface Modifiers {
   alembic: number
   /** Items per minute one conveyor belt carries (Logistics Efficiency). */
   beltSpeed: number
+  /** EXP multiplier for relics at the Knowledge Altar (Relic Knowledge). */
+  altar: number
 }
 
 export function modifiers(levels: UpgradeLevels): Modifiers {
@@ -65,5 +67,6 @@ export function modifiers(levels: UpgradeLevels): Modifiers {
     extractor: pct('ExtractorSkill'),
     alembic: pct('AlembicSkill'),
     beltSpeed: (attributeBase.ConveyerSpeed ?? 60) + attributeBonus(levels, 'ConveyerSpeed'),
+    altar: pct('AltarEfficiency'),
   }
 }

@@ -2714,3 +2714,10 @@ tr.unit-totals td.num {
   border-top: 1px solid var(--border);
   font-size: 13px;
 }
+
+/* A second total under the first (EXP under sale value): one rule above both. */
+.bus-total-more {
+  margin-top: 4px;
+  padding-top: 0;
+  border-top: none;
+}

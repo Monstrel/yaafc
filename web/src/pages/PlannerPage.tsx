@@ -1,6 +1,7 @@
 import { startTransition, useEffect, useMemo, useOptimistic, useState, type ReactNode } from 'react'
 import { ItemIcon, ItemLabel } from '../components/ItemIcon'
 import { ItemPicker } from '../components/ItemPicker'
+import { Exp } from '../components/Exp'
 import { Money } from '../components/Money'
 import { ProducerSelect, TierTag } from '../components/ProducerSelect'
 import { BookmarkIcon, ProductionTree, type TargetSlot } from '../components/ProductionTree'
@@ -22,7 +23,8 @@ import {
   tierIcon,
   tierName,
 } from '../lib/gameData'
-import { fmt, fmtMachines, wholeMachines } from '../lib/format'
+import { altarsFor, altarYield, type AltarYield } from '../lib/altar'
+import { fmt, fmtMachines, fmtSeconds, wholeMachines } from '../lib/format'
 import { buildingCounts, checkLogistics, resourceUsers, type LogisticsCheck, type ResourceUser } from '../lib/logistics'
 import { fedOverflow, moneyLedger, type BusUse, type MoneyLedger, type OutputRow } from '../lib/money'
 import { processTitle, type ProcessCatalog } from '../lib/processes'
@@ -68,6 +70,7 @@ const UPGRADE_EFFECTS: Record<string, (m: Modifiers) => string> = {
   AlchemySkill: (m) => `×${fmt(m.extractor)} Extractor & Alembic output`,
   FuelEfficiency: (m) => `×${fmt(m.fuel)} heat per fuel`,
   FertilizeEfficiency: (m) => `×${fmt(m.fertilizer)} nutrients per fertilizer`,
+  AltarEfficiency: (m) => `×${fmt(m.altar)} EXP from relics`,
 }
 
 interface Props {
@@ -539,6 +542,7 @@ export function PlannerPage({
                 }}
                 onShowTarget={showTarget}
                 onShowRow={showRow}
+                altar={machineTier(KNOWLEDGE_ALTAR) <= catalog.tier ? mods : null}
               >
                 {machineTier(STEAM_BOILER) <= catalog.tier && <BoilerRoom ledger={ledger.find((l) => l.resource === 'heat')!} mods={mods} />}
               </BusPanel>
@@ -614,6 +618,13 @@ const RESOURCE = {
 } as const
 
 const STEAM_BOILER = 'SteamBoiler'
+const KNOWLEDGE_ALTAR = 'KnowledgeAltar'
+
+/** Knowledge Altars breaking down an item, as built: "3 Knowledge Altars (2.4)". */
+function altarCount(y: AltarYield, perMinute: number, mods: Modifiers): string {
+  const n = altarsFor(y, perMinute, mods)
+  return `${fmtMachines(n)} ${buildingNameFor(KNOWLEDGE_ALTAR, wholeMachines(n))}`
+}
 
 /** What feeding an output back does, as a verb: burn it, spread it, spend it (or use it, for several). */
 const FEED_VERB: Record<BusUse, string> = { heat: 'burns', fertilizer: 'spreads', money: 'spends' }
@@ -640,6 +651,7 @@ function BusPanel({
   onUseOverflow,
   onShowTarget,
   onShowRow,
+  altar,
   children,
 }: {
   ledgers: ResourceLedger[]
@@ -659,9 +671,19 @@ function BusPanel({
   onShowTarget: (index: number) => void
   /** Shows the next of these rows in the production tree. */
   onShowRow: (ids: string[]) => void
+  /** The plan's upgrades when its research tier has the Knowledge Altar (outputs show their EXP), else null. */
+  altar: Modifiers | null
   children?: ReactNode
 }) {
   const margin = money.value - money.cost
+  const exp = new Map(money.outputs.map((o) => [o.item, altar && altarYield(o.item, altar)]))
+  const totalExp = money.outputs.reduce((t, o) => t + o.toBus * (exp.get(o.item)?.exp ?? 0), 0)
+  const totalAltars = altar
+    ? money.outputs.reduce((t, o) => {
+        const y = exp.get(o.item)
+        return t + (y && o.toBus > 0 ? wholeMachines(altarsFor(y, o.toBus, altar)) : 0)
+      }, 0)
+    : 0
   const resources = [...ledgers].reverse().filter((l) => l.need > 0 || l.made > 0) // heat first
   return (
     <section className="panel ledger">
@@ -694,6 +716,8 @@ function BusPanel({
                   onUseOverflow={onUseOverflow}
                   onShowTarget={onShowTarget}
                   onShowRow={onShowRow}
+                  exp={exp.get(o.item) ?? null}
+                  mods={altar}
                 />
               ))}
             </ul>
@@ -705,6 +729,15 @@ function BusPanel({
               <span className={`rate ${margin >= 0 ? 'positive' : 'negative'}`}>
                 {margin >= 0 ? '+' : '−'}
                 <Money copper={Math.abs(margin)} suffix="/min" />
+              </span>
+            </p>
+          )}
+          {totalExp > 0 && (
+            <p className={`bus-total${money.value > 0 ? ' bus-total-more' : ''}`}>
+              Knowledge <Exp exp={totalExp} suffix="/min" />
+              <span className="hint-inline">
+                {' '}
+                if it all goes to {totalAltars} {buildingNameFor(KNOWLEDGE_ALTAR, totalAltars)} instead of the shop
               </span>
             </p>
           )}
@@ -858,6 +891,8 @@ function OutputLine({
   onUseOverflow,
   onShowTarget,
   onShowRow,
+  exp,
+  mods,
 }: {
   row: OutputRow
   overflowFrom: Map<string, OverflowSource[]>
@@ -867,6 +902,9 @@ function OutputLine({
   onShowTarget: (index: number) => void
   /** Shows the next of these rows in the production tree. */
   onShowRow: (ids: string[]) => void
+  /** What one is worth at a Knowledge Altar, when the plan has it and it gives EXP. */
+  exp: AltarYield | null
+  mods: Modifiers | null
 }) {
   const uses = (Object.entries(row.used) as [BusUse, number][]).filter(([, n]) => n > 0)
   // Rows overflowing it, when the plan overflows it.
@@ -903,6 +941,16 @@ function OutputLine({
             ) : (
               <span className="hint-inline">not sold in shops</span>
             ))}
+          {row.toBus > 0 && exp && mods && (
+            <span
+              title={
+                `${fmt(exp.exp)} EXP each at a Knowledge Altar${exp.relic ? ' (a relic: Relic Knowledge adds to it)' : ''}, ` +
+                `${fmtSeconds(exp.seconds)} to break one down: ${altarCount(exp, row.toBus, mods)} to take it all`
+              }
+            >
+              <Exp exp={row.toBus * exp.exp} suffix="/min" />
+            </span>
+          )}
         </span>
       </div>
       {uses.length > 0 && (
