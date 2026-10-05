@@ -1656,6 +1656,16 @@ tr.kind-separate .item-label .name {
   --band: color-mix(in srgb, var(--accent) 6%, transparent);
 }
 
+/* A "with" card's top-level items: a deeper tint from their own edge, over the card's. */
+.production.tree tr.with-top {
+  --top-band: color-mix(in srgb, var(--accent) 9%, transparent);
+  --top-y: 7px;
+}
+
+.production.tree tr.with-top.after-branch {
+  --top-y: 19px;
+}
+
 /* In step with `.edge.top` and `.edge.bottom`. */
 .production.tree tr.band-start {
   --band-top: 7px;
@@ -1678,6 +1688,26 @@ tr.kind-separate .item-label .name {
 .production.tree tr.band.tree-with td {
   background-position: var(--band-x, 0px) var(--band-top);
   background-size: calc(100% - var(--band-x, 0px)) calc(100% - var(--band-top) - var(--band-bottom));
+}
+
+.production.tree tr.band.with-top td {
+  background:
+    linear-gradient(var(--top-band), var(--top-band)) 0 var(--top-y) / 100%
+      calc(100% - var(--top-y) - var(--band-bottom)) no-repeat,
+    linear-gradient(var(--band), var(--band)) 0 0 / 100% calc(100% - var(--band-bottom)) no-repeat;
+}
+
+.production.tree tr.band.with-top td.tree-item {
+  background-position:
+    var(--top-x, 0px) var(--top-y),
+    var(--band-x, 0px) 0;
+  background-size:
+    calc(100% - var(--top-x, 0px)) calc(100% - var(--top-y) - var(--band-bottom)),
+    calc(100% - var(--band-x, 0px)) calc(100% - var(--band-bottom));
+}
+
+.production.tree tr.band.with-top td {
+  padding-top: calc(var(--top-y) + 6px);
 }
 
 /* The usual cell padding, counted from where the tint starts and ends rather than the cell's edges. */

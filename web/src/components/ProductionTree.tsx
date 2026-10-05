@@ -933,11 +933,12 @@ function TreeRow({
     </span>
   ))
 
-  // A target's own row is tinted from its edge; rows of a "with" card share the card's tint.
+  // A target's own row is tinted from its edge; rows of a "with" card share the card's tint, its
+  // top-level items a deeper one from their own edge so they stand apart like targets.
   const band = target
     ? 'target band band-start'
     : card !== undefined
-      ? `in-with band ${endsCard(edges, card) ? 'band-end' : ''}`
+      ? `in-with ${depth === card ? 'with-top' : ''} band ${endsCard(edges, card) ? 'band-end' : ''}`
       : ''
 
   const separateAction = node.separation ? (
@@ -971,7 +972,13 @@ function TreeRow({
     <tr
       data-node-id={node.id}
       className={`kind-${node.kind} depth-${Math.min(depth, 1)} ${node.rate === 0 ? 'idle' : ''} ${totals ? 'unit-totals' : ''} ${built === true ? 'built' : ''} ${band} ${afterBranch ? 'after-branch' : ''}`}
-      style={target ? bandStyle(edgeX(depth)) : cardStyle(card)}
+      style={
+        target
+          ? bandStyle(edgeX(depth))
+          : depth === card
+            ? ({ ...cardStyle(card), '--top-x': `${edgeX(depth)}px` } as CSSProperties)
+            : cardStyle(card)
+      }
     >
       <td className="tree-item">
         <Edges edges={edges} />
