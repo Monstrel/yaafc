@@ -35,7 +35,8 @@ interface Props {
   onRemember: (row: TreeNode) => void
   /** Stop using an item's saved default; this plan keeps being made that way. */
   onForget: (item: string) => void
-  onSeparate: (s: Separation, on: boolean, from?: string) => void
+  /** Builds an item separately or merges it back; `replacing`: where it's gathered now, when moving it. */
+  onSeparate: (s: Separation, on: boolean, from?: string, replacing?: Separation) => void
   /** Builds separately every item made in several rows (absent: there's none). */
   onSeparateShared?: () => void
   /** Merges back every item built separately for a single use (absent: there's none). */
@@ -169,8 +170,14 @@ export function ProductionTree({
     return counts
   }, [all])
 
-  // "Build separately" menu: where to gather this row's item.
-  const [menu, setMenu] = useState<{ node: TreeNode; anchors: TreeNode[]; x: number; y: number } | null>(null)
+  // "Build separately" menu: where to gather this row's item (or move it to, when it's gathered already).
+  const [menu, setMenu] = useState<{
+    node: TreeNode
+    anchors: TreeNode[]
+    moving?: Separation
+    x: number
+    y: number
+  } | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (menu) menuRef.current?.showPopover()
@@ -178,16 +185,33 @@ export function ProductionTree({
   const openMenu = (node: TreeNode, button: HTMLElement) => {
     const rect = button.getBoundingClientRect()
     // Top-of-plan groups only sit under the target on screen: their own tree starts at the group.
-    const ancestors = byId.get(node.id)?.ancestors ?? []
-    const group = ancestors.findIndex(isTopGroupId)
-    const anchors = ancestors
-      .slice(Math.max(group, 0))
+    const above = (id: string) => {
+      const ancestors = byId.get(id)?.ancestors ?? []
+      return ancestors.slice(Math.max(ancestors.findIndex(isTopGroupId), 0))
+    }
+    // A gathered row can move to any row above all its uses, but a target's own row stays put.
+    const moving = node.separation
+    const targetRow = !!moving && !moving.anchor && !isTopGroupId(node.id)
+    const uses = !moving
+      ? [node.id]
+      : targetRow
+        ? []
+        : all.filter((e) => e.node.kind === 'separate' && e.node.groupId === node.id).map((e) => e.node.id)
+    const common = uses.length ? above(uses[0]).filter((id) => uses.every((u) => above(u).includes(id))) : []
+    const here = (a: TreeNode) => !!moving?.anchor && a.item === moving.anchor && (!moving.at || a.id === moving.at)
+    const anchors = common
       .filter((id) => id !== PLAN_ROOT)
       .map((id) => byId.get(id)!.node)
-      .filter((a) => a.kind === 'produce' && a.item !== node.item)
+      .filter((a) => a.kind === 'produce' && a.item !== node.item && !here(a))
       .reverse()
     // The button sits at the right end of its row: line the 280px menu up with its right edge.
-    setMenu({ node, anchors, x: Math.max(8, Math.min(rect.right - 280, window.innerWidth - 288)), y: rect.bottom + 4 })
+    setMenu({
+      node,
+      anchors,
+      moving,
+      x: Math.max(8, Math.min(rect.right - 280, window.innerWidth - 288)),
+      y: rect.bottom + 4,
+    })
   }
 
   // Machines menu: run a row on just what it needs, or round it up to whole machines.
@@ -229,23 +253,28 @@ export function ProductionTree({
   }
 
   // Picking an anchor built in several places asks whether to gather under all of them.
-  const [confirm, setConfirm] = useState<{ node: TreeNode; anchor: TreeNode; count: number } | null>(null)
+  const [confirm, setConfirm] = useState<{
+    node: TreeNode
+    anchor: TreeNode
+    count: number
+    moving?: Separation
+  } | null>(null)
   const dialogRef = useRef<HTMLDialogElement>(null)
   useEffect(() => {
     if (confirm) dialogRef.current?.showModal()
   }, [confirm])
-  const chooseAnchor = (node: TreeNode, anchor: TreeNode) => {
+  const chooseAnchor = (node: TreeNode, anchor: TreeNode, moving?: Separation) => {
     menuRef.current?.hidePopover()
     const count = all.filter((e) => e.node.kind === 'produce' && e.node.item === anchor.item).length
-    if (count > 1) setConfirm({ node, anchor, count })
-    else onSeparate({ item: node.item, anchor: anchor.item }, true, node.id)
+    if (count > 1) setConfirm({ node, anchor, count, moving })
+    else onSeparate({ item: node.item, anchor: anchor.item }, true, node.id, moving)
   }
   const decide = (choice: AnchorDecision) => {
     dialogRef.current?.close()
     if (!confirm || choice === 'cancel') return
-    const { node, anchor } = confirm
+    const { node, anchor, moving } = confirm
     if (choice === 'lift') onSeparate({ item: anchor.item }, true, anchor.id)
-    onSeparate({ item: node.item, anchor: anchor.item, ...(choice === 'one' && { at: anchor.id }) }, true, node.id)
+    onSeparate({ item: node.item, anchor: anchor.item, ...(choice === 'one' && { at: anchor.id }) }, true, node.id, moving)
   }
 
   const [jump, setJump] = useState<JumpState | null>(null)
@@ -416,7 +445,6 @@ export function ProductionTree({
                   onRemember={onRemember}
                   onForget={onForget}
                   savable={savable.has(line.node.id)}
-                  onSeparate={onSeparate}
                   onSeparateMenu={openMenu}
                   rounded={rounded.has(line.node.id)}
                   copies={shownCopies(line.node.id)}
@@ -448,29 +476,60 @@ export function ProductionTree({
       >
         {menu && (
           <>
-            <div className="tree-menu-title">Build {itemsByKey.get(menu.node.item)?.name} separately</div>
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                menuRef.current?.hidePopover()
-                onSeparate({ item: menu.node.item }, true, menu.node.id)
-              }}
-            >
-              <span className="tree-menu-top" aria-hidden>
-                <BoxArrowIcon />
-              </span>
-              <span>
-                Top of the plan
-                <span className="tree-menu-hint">every use, gathered with {topName}</span>
-              </span>
-            </button>
-            {menu.anchors.length > 0 && <div className="tree-menu-title">or with</div>}
+            <div className="tree-menu-title">
+              {menu.moving
+                ? `Move ${itemsByKey.get(menu.node.item)?.name} to`
+                : `Build ${itemsByKey.get(menu.node.item)?.name} separately`}
+            </div>
+            {(!menu.moving || menu.moving.anchor) && (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  menuRef.current?.hidePopover()
+                  onSeparate({ item: menu.node.item }, true, menu.node.id, menu.moving)
+                }}
+              >
+                <span className="tree-menu-top" aria-hidden>
+                  <BoxArrowIcon />
+                </span>
+                <span>
+                  Top of the plan
+                  <span className="tree-menu-hint">every use, gathered with {topName}</span>
+                </span>
+              </button>
+            )}
+            {menu.anchors.length > 0 && (
+              <div className="tree-menu-title">{menu.moving && !menu.moving.anchor ? 'with' : 'or with'}</div>
+            )}
             {menu.anchors.map((a) => (
-              <button type="button" role="menuitem" key={a.id} onClick={() => chooseAnchor(menu.node, a)}>
+              <button type="button" role="menuitem" key={a.id} onClick={() => chooseAnchor(menu.node, a, menu.moving)}>
                 <ItemLabel item={a.item} size={18} />
               </button>
             ))}
+            {menu.moving && (
+              <>
+                {(menu.moving.anchor || menu.anchors.length > 0) && <div className="tree-menu-title">or</div>}
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    menuRef.current?.hidePopover()
+                    onSeparate(menu.moving!, false)
+                  }}
+                >
+                  <span className="tree-menu-top" aria-hidden>
+                    <BoxArrowIcon inward />
+                  </span>
+                  <span>
+                    Merge back
+                    <span className="tree-menu-hint">
+                      {mergeHint(menu.moving, itemsByKey.get(menu.node.item)?.name ?? menu.node.item)}
+                    </span>
+                  </span>
+                </button>
+              </>
+            )}
           </>
         )}
       </div>
@@ -519,7 +578,6 @@ function TreeRow({
   onRemember,
   onForget,
   savable,
-  onSeparate,
   onSeparateMenu,
   rounded,
   copies,
@@ -565,7 +623,6 @@ function TreeRow({
   onForget: (item: string) => void
   /** Using it as my default would change something (else it's made the saved or built-in way). */
   savable: boolean
-  onSeparate: (s: Separation, on: boolean, from?: string) => void
   onSeparateMenu: (node: TreeNode, button: HTMLElement) => void
   /** The row runs on a whole number of machines, rounded up. */
   rounded: boolean
@@ -687,9 +744,10 @@ function TreeRow({
     <button
       type="button"
       className="tree-action"
-      title={`Merge back: ${mergeHint(node.separation, name)}`}
-      aria-label={`Merge ${name} back into the tree`}
-      onClick={() => onSeparate(node.separation!, false)}
+      title={`Move ${name} elsewhere in the plan, or merge it back (${mergeHint(node.separation, name)})`}
+      aria-label={`Move or merge back ${name}`}
+      aria-haspopup="menu"
+      onClick={(e) => onSeparateMenu(whole, e.currentTarget)}
     >
       <BoxArrowIcon inward />
     </button>

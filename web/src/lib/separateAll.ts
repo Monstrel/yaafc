@@ -160,12 +160,23 @@ export function mergeSingleUses(plan: Plan, catalog: ProcessCatalog): Plan {
  * Builds an item separately (`on`) or merges it back, keeping what's set on the rows that move.
  * Gathered rows take their settings from the row the choice was made on (`from`), then the
  * gathering row's own, then the other rows'. Merged-back rows give theirs to every use. Choices
- * the new one replaces are merged back first.
+ * the new one replaces, and `replacing` (when moving an item gathered elsewhere), are merged back
+ * first.
  */
-export function setSeparation(plan: Plan, catalog: ProcessCatalog, s: Separation, on: boolean, from?: string): Plan {
+export function setSeparation(
+  plan: Plan,
+  catalog: ProcessCatalog,
+  s: Separation,
+  on: boolean,
+  from?: string,
+  replacing?: Separation,
+): Plan {
   if (!on) return mergeBack(plan, catalog, [s])
   const list = separationsOf(plan.separate)
-  const next = withSeparation(list, s)
+  const next = withSeparation(
+    list.filter((o) => !replacing || separationKey(o) !== separationKey(replacing)),
+    s,
+  )
   const replaced = list.filter((o) => !next.some((n) => separationKey(n) === separationKey(o)))
   return gatherInto(replaced.length ? mergeBack(plan, catalog, replaced) : plan, catalog, s, from)
 }

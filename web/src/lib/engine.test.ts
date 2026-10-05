@@ -585,6 +585,28 @@ describe('production tree', () => {
       })
     })
 
+    it('moves an item built separately to another place, with its settings', () => {
+      const top = { item: 'CokePowder' }
+      const p = setSeparation(coke([brandy], { '0/Brandy/CokePowder/Coke': ['Catalyst2'] }), athanor, top, true)
+      const withBrandy = { item: 'CokePowder', anchor: 'Brandy' }
+      const moved = setSeparation(p, athanor, withBrandy, true, 'separate/CokePowder', top)
+      expect(moved.separate).toEqual([withBrandy])
+      expect(moved.rowCatalysts).toEqual({ '0/Brandy/with:CokePowder/Coke': ['Catalyst2'] })
+      // And back to the top.
+      const back = setSeparation(moved, athanor, top, true, '0/Brandy/with:CokePowder', withBrandy)
+      expect(back.separate).toEqual([top])
+      expect(back.rowCatalysts).toEqual(p.rowCatalysts)
+    })
+
+    it('replaces the anchor it moves from, even one on another item', () => {
+      const sol = plan({ targets: [{ item: 'Sol', rate: 0.25 }], separate: [{ item: 'Chamomile', anchor: 'Sol' }] })
+      const every = { item: 'Chamomile', anchor: 'FairyDust' }
+      expect(setSeparation(sol, catalog, every, true).separate).toHaveLength(2)
+      const moved = setSeparation(sol, catalog, every, true, undefined, { item: 'Chamomile', anchor: 'Sol' })
+      expect(moved.separate).toEqual([every])
+      expectBalanced(solvePlan(moved, catalog, mods))
+    })
+
     it('gathers the settings of the row it was chosen on first', () => {
       const p = coke([brandy, brandy], { '0/Brandy/CokePowder/Coke': ['Catalyst2'], '1/Brandy/CokePowder/Coke': ['Catalyst3'] })
       for (const at of ['0', '1'])

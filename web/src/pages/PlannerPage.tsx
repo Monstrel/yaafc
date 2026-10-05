@@ -176,8 +176,8 @@ export function PlannerPage({
     if (saved) onUpdatePlan((p) => keepDefaultInPlan(p, result.tree, item, saved))
     forget(item)
   }
-  const setSeparate = (s: Separation, on: boolean, from?: string) =>
-    onUpdatePlan((p) => setSeparation(p, catalog, s, on, from))
+  const setSeparate = (s: Separation, on: boolean, from?: string, replacing?: Separation) =>
+    onUpdatePlan((p) => setSeparation(p, catalog, s, on, from, replacing))
   // Whether the plan-wide build-separately buttons would change anything.
   const canSeparate = useMemo(() => canSeparateShared(plan, catalog), [plan, catalog])
   const canMerge = useMemo(() => mergeSingleUses(plan, catalog) !== plan, [plan, catalog])
