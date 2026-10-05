@@ -319,8 +319,10 @@ const outputOf = (p: Process, item: string) => p.outputs.find((s) => s.item === 
  *   (row's output) + (by-products it takes) + import + deficit − surplus = (what the rows above it use)
  * A loop row adds its use to the row it loops back to, a separate build to the row gathering it.
  * By-products are the one exception: each row's side outputs can feed any row of their item,
- * the nearest first, and what's left over is surplus. Heat and nutrients are plan-wide: fuel and
- * fertilizer come off the bus for every machine, unless a net-surplus target covers them (`absorbing`).
+ * the nearest first, and what's left over is surplus. They're only what rows make for their own use:
+ * no row runs harder to make more of them for a row that can make its item itself. Heat and
+ * nutrients are plan-wide: fuel and fertilizer come off the bus for every machine, unless a
+ * net-surplus target covers them (`absorbing`).
  * A row with a floor runs at least that many crafts per minute; what nothing uses overflows.
  * An overflow target takes all of its item's overflow (the first such target in order that uses the
  * item does), its rows of the item drawing from it, and its rate is what that makes. The overflow
@@ -449,6 +451,52 @@ function solveRound(
     if (s.kind !== 'bus' && s.reuse) consumers.set(s.item, [...(consumers.get(s.item) ?? []), s])
   const flows: { name: string; from: PlanNode; to: PlanNode }[] = []
 
+  // Rows held to their crafts: rounded up, or as they are without the plan's overflow targets.
+  const fixedOf = (n: PlanNode) => (!inTaker.has(n) && isTargetRow(rootOf(n).id) ? held?.get(n.id) : undefined)
+  const heldToCrafts = (n: PlanNode) => floors.has(n.id) || fixedOf(n) !== undefined
+  const sameRun = (n: PlanNode, c: PlanNode) => c.kind === 'make' && c.process!.id === n.process!.id
+  // Rows whose by-products can go to rows running something else (see `e:` below).
+  const sharing = new Set(
+    shape.nodes.filter(
+      (n) =>
+        n.kind === 'make' &&
+        !heldToCrafts(n) &&
+        n.process!.outputs.some(
+          (o) => o.item !== n.item && (consumers.get(o.item) ?? []).some((c) => (n.reuse || c.reuseChosen) && !sameRun(n, c)),
+        ),
+    ),
+  )
+  // What each of those rows makes beyond what it's used for (`ex:`): its own overflow, plus what the
+  // extra crafts of the rows above it take (else a row above could run harder to soak up its
+  // overflow). Loops back up are left out, so it stays a chain down the tree.
+  const usesOf = new Map<PlanNode, PlanNode[]>()
+  for (const n of shape.nodes)
+    if (n.parent && n.kind !== 'loop') usesOf.set(supplierOf(n), [...(usesOf.get(supplierOf(n)) ?? []), n.parent])
+  const chain = new Set<PlanNode>()
+  const todo = [...sharing]
+  while (todo.length) {
+    const n = todo.pop()!
+    if (chain.has(n) || n.kind !== 'make' || heldToCrafts(n)) continue
+    chain.add(n)
+    todo.push(...(usesOf.get(n) ?? []))
+  }
+  for (const n of chain) {
+    const k = index.get(n)!
+    equalities[`xd:${k}`] = 0
+    columns[`ex:${k}`] = { [`xd:${k}`]: 1, cost: 0 }
+    if (columns[`s:${k}`]) columns[`s:${k}`][`xd:${k}`] = -1
+  }
+  for (const n of chain) {
+    const ex = columns[`ex:${index.get(n)}`]
+    const made = outputOf(n.process!, n.item)
+    if (made <= 0) continue
+    ingredients(n.process!).forEach((s, j) => {
+      const c = n.children[j]
+      const below = c && c.kind !== 'loop' ? index.get(supplierOf(c)) : undefined
+      if (below !== undefined && columns[`ex:${below}`]) add(ex, `xd:${below}`, -s.count / made)
+    })
+  }
+
   for (const n of shape.nodes) {
     if (n.kind !== 'make') continue
     const p = n.process!
@@ -457,7 +505,7 @@ function solveRound(
       cost: CRAFT_COST * Math.max(p.seconds, 1) * (p.product === n.item ? 1 : SIDE_RUN_FACTOR),
     }
     columns[`x:${k}`] = col
-    const fixed = !inTaker.has(n) && isTargetRow(rootOf(n).id) ? held?.get(n.id) : undefined
+    const fixed = fixedOf(n)
     if (fixed !== undefined) {
       equalities[`h:${k}`] = fixed
       col[`h:${k}`] = 1
@@ -480,11 +528,25 @@ function solveRound(
       equalities[pool] = 0
       add(col, pool, o.count)
       columns[`ps:${k}:${o.item}`] = { [pool]: -1, ...(takerOf.has(o.item) && { [`o:${o.item}`]: 1 }), cost: SURPLUS_COST }
+      // By-products are what a row makes running for what it's used for: those of crafts beyond that
+      // only go to rows running the same process, which would make them the same way (Gentian Nectar
+      // from the Gentian row's nurseries). Rows with a producer of their own make the rest
+      // themselves, rather than a row in another branch running harder and overflowing. Rows held
+      // to their crafts are exempt: their extra machines are built anyway.
+      const extra = `e:${k}:${o.item}`
+      const made = outputOf(p, n.item)
+      if (sharing.has(n) && made > 0) {
+        equalities[extra] = 0
+        columns[`ex:${k}`][extra] = o.count / made
+        columns[`ps:${k}:${o.item}`][extra] = -1
+        columns[`es:${k}:${o.item}`] = { [extra]: 1, cost: 0 }
+      }
       // A row making its own keeps to itself: its by-products only go where reuse was picked.
       for (const c of consumers.get(o.item) ?? []) {
         if (!n.reuse && !c.reuseChosen) continue
         const name = `f:${k}>${index.get(c)}`
         columns[name] = { [pool]: -1, [`b:${index.get(c)}`]: 1, cost: FLOW_COST * (1 + distance(n, c)) }
+        if (extra in equalities && sameRun(n, c)) columns[name][extra] = -1
         flows.push({ name, from: n, to: c })
       }
     }

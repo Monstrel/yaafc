@@ -342,6 +342,25 @@ describe('production tree', () => {
     expect(chooseProducer(all, catalog, { item: 'CopperPowder', producer: '', everywhere: true, reuse: true }).noReuse).toBeUndefined()
   })
 
+  it('reuses only the by-products there are, never running their source harder for more', () => {
+    // Mars: the Copper Bearings' Athanors fail into less Impure Copper Powder than the Bronze Rivets
+    // need. A costly cauldron recipe makes the rest; growing the Athanors would be cheaper, but would
+    // overflow Copper Powder.
+    const saved: SavedRecipe = { id: 'imp', mode: 'normal', inputs: ['Charcoal', 'Jupiter', 'VitalityPotion'], output: 'CopperPowder', createdAt: 0 }
+    const c = buildCatalog({ saved: [saved], machines: {}, mods, fertilizer: null })
+    const r = solvePlan(plan({ targets: [{ item: 'Mars', rate: 1 }], producers: { CopperPowder: 'cauldron:imp' } }), c, mods)
+    expectBalanced(r)
+    const rows = rowsById(r.tree)
+    const powder = rows.get('0/Mars/CopperBearing/CopperIngot/CopperPowder2')!
+    const failed = powder.byproducts.find((b) => b.item === 'CopperPowder')!
+    expect(powder.overflow).toBe(0)
+    expect(failed.overflow).toBe(0)
+    const impure = rows.get('0/Mars/BronzeRivet/BronzeIngot/CopperPowder')!
+    expect(impure.kind).toBe('produce')
+    expect(impure.fromByproduct).toBeCloseTo(failed.count)
+    expect(impure.run!.outputs[0].count).toBeCloseTo(impure.rate - failed.count)
+  })
+
   it('feeds a by-product to the row that uses it nearest its source', () => {
     // Steel fails into Iron Ingots, which go straight back into the Steel's own Iron Ingot supply.
     const [steel] = solvePlan(plan({ targets: [{ item: 'SteelIngot', rate: 10 }] }), catalog, mods).tree
@@ -1301,6 +1320,24 @@ describe('overflow targets', () => {
     expect(surplus(r, 'CopperIngot')).toBe(0)
     const machines = (x: PlanResult) => rows(x).filter((n) => n.id.startsWith('0/')).map((n) => [n.id, round1(n.machines)])
     expect(machines(r)).toEqual(machines(before))
+  })
+
+  it("doesn't gather other uses of its item when that's built separately", () => {
+    // Mars's Bronze Rivets built separately: they gather in a row of their own, which reuses the
+    // Copper Bearings' failed crafts and buys the rest, rather than in the overflow target's row
+    // (which only takes overflow, so it would fall short).
+    const mars = plan({ targets: [{ item: 'Mars', rate: 1 }], separate: [{ item: 'BronzeRivet' }] })
+    const r = solvePlan(addOverflowTarget(mars, 'BronzeRivet', 'CopperPowder'), catalog, mods)
+    expectBalanced(r)
+    const byId = rowsById(r.tree)
+    expect(byId.get('0/Mars/BronzeRivet')!.kind).toBe('separate')
+    const gathered = byId.get('separate/BronzeRivet')!
+    expect(gathered.consolidated).toBe(true)
+    expect(byId.get('1/BronzeRivet')!.consolidated).toBeFalsy()
+    expect(rows(r).every((n) => n.shortfall === 0)).toBe(true)
+    // The rivets' Impure Copper Powder takes every failed craft, so none overflows for the target.
+    expect(gathered.children[0].children[0].fromByproduct).toBeGreaterThan(0)
+    expect(r.targets[1]).toMatchObject({ rate: 0, overflow: { uses: true, taken: 0 } })
   })
 
   it("makes none, saying why, when its recipes don't use the item", () => {

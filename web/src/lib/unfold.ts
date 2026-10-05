@@ -319,7 +319,10 @@ export function unfold(plan: Plan, catalog: ProcessCatalog): PlanShape {
   plan.targets
     .filter((t) => t.item)
     .forEach((t, i) => {
-      const sep = top.get(t.item)
+      const from = consumedBy(t)
+      // An overflow target makes only what its overflow comes to, so it never gathers other uses
+      // of its item: those go to a row of their own.
+      const sep = from ? undefined : top.get(t.item)
       const shared = sep && topRows.get(t.item)
       if (shared) {
         targetRows.push(shared)
@@ -336,7 +339,6 @@ export function unfold(plan: Plan, catalog: ProcessCatalog): PlanShape {
           })
         : create(t.item, id, 0, undefined, { ...picked(choice) })
       if (sep) topRows.set(t.item, n.kind === 'make' ? n : null)
-      const from = consumedBy(t)
       if (from) consumes.set(n, from)
       roots.push(n)
       targetRows.push(n)
