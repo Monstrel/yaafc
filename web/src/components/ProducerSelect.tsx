@@ -10,7 +10,7 @@ import {
   type Process,
   type ProcessCatalog,
 } from '../lib/processes'
-import { ItemIcon } from './ItemIcon'
+import { ItemIcon, SeedNote } from './ItemIcon'
 import { ItemPicker } from './ItemPicker'
 import { Money } from './Money'
 
@@ -255,7 +255,10 @@ export function ProducerSelect({
         }}
       >
         <ChoiceIcon choice={selected} size={link ? 18 : compact ? 20 : 24} />
-        <span className="recipe-title">{choiceTitle(selected)}</span>
+        <span className="recipe-title">
+          {choiceTitle(selected)}
+          {selected.process && <SeedNote seed={selected.process.seed} plant={selected.process.product} size={link ? 14 : 16} />}
+        </span>
         <ChoiceTags choice={selected} item={item} />
         {reuse?.on && !reuse.covered && reuse.sources && (
           <span className="tag reuse-tag" title={`Takes by-products from ${reuse.sources} first; this makes the rest`}>
@@ -366,7 +369,10 @@ export function ProducerSelect({
                     <ChoiceIcon choice={c} size={32} />
                     <span className="recipe-body">
                       <span className="recipe-head">
-                        <span className="recipe-title">{choiceTitle(c)}</span>
+                        <span className="recipe-title">
+                          {choiceTitle(c)}
+                          {c.process && <SeedNote seed={c.process.seed} plant={c.process.product} size={16} />}
+                        </span>
                         <ChoiceTags choice={c} item={item} machine />
                         <ChoiceMeta choice={c} />
                       </span>

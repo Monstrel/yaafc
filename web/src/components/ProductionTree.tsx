@@ -14,7 +14,7 @@ import { parentId, rowItem } from '../lib/unfold'
 import type { Separation, Unitizing } from '../lib/types'
 import { unitChoices, wholePerCopy, type UnitScales } from '../lib/units'
 import type { Modifiers } from '../lib/upgrades'
-import { ItemIcon, ItemLabel } from './ItemIcon'
+import { ItemIcon, ItemLabel, SeedNote } from './ItemIcon'
 import { Money } from './Money'
 import { ProducerSelect, type ReuseOption } from './ProducerSelect'
 
@@ -1014,6 +1014,7 @@ function TreeRow({
             )}
             <div className="machine-meta">
               {buildingNameFor(p.machine.key, wholeMachines(node.machines))}
+              <SeedNote seed={p.seed} plant={p.product} />
               {copies > 1 && ' per copy'}
             </div>
           </>

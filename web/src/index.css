@@ -1140,6 +1140,10 @@ td.under {
   white-space: nowrap;
 }
 
+.nursery-seed .item-icon {
+  margin-right: 2px;
+}
+
 .rate-cell .machine-meta {
   font-weight: normal;
 }

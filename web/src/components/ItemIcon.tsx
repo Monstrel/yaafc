@@ -20,6 +20,18 @@ export function ItemIcon({ item, size = 24 }: { item: string; size?: number }) {
   )
 }
 
+/** What a Nursery grows, after its name: " (🌰 Redcurrant)", the seed's icon and the plant. */
+export function SeedNote({ seed, plant, size = 14 }: { seed?: string; plant: string; size?: number }) {
+  if (!seed) return null
+  return (
+    <span className="nursery-seed" title={`Plant ${itemName(seed)}`}>
+      {' '}
+      (<ItemIcon item={seed} size={size} />
+      {itemName(plant)})
+    </span>
+  )
+}
+
 /** Icon + name, optionally with a count in front ("12 Iron Ingots", "12 Coal"). */
 export function ItemLabel({ item, count, size = 20 }: { item: string; count?: number; size?: number }) {
   return (

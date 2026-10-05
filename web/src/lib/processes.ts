@@ -70,6 +70,8 @@ export interface Process {
   tier: number
   /** License the recipe needs, if any (alternate ingots). */
   license?: string
+  /** Seed planted in its Nursery (not set for World Trees, which have no choice of seed). */
+  seed?: string
 }
 
 export interface ProcessContext {
@@ -292,6 +294,7 @@ function nurseryProcesses(ctx: ProcessContext): Process[] {
       acceptsHeight: false,
       // Nurseries grow from bought seeds.
       tier: Math.max(machine ? machineTier(machine.key) : 1, buyTier(worldTree ? 'WorldTreeSeed' : s.seed)),
+      ...(!worldTree && { seed: s.seed }),
       notes: [
         !worldTree
           ? `Growth speed from ${fert?.name ?? 'fertilizer'} (${speed} nutrients/s)`
