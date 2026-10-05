@@ -16,6 +16,7 @@ import { unitChoices, wholePerCopy, type UnitScales } from '../lib/units'
 import type { Modifiers } from '../lib/upgrades'
 import { ItemIcon, ItemLabel, SeedNote } from './ItemIcon'
 import { Money } from './Money'
+import { OverflowTargetForm } from './OverflowTargetForm'
 import { ProducerSelect, type ReuseOption } from './ProducerSelect'
 
 interface Props {
@@ -58,6 +59,8 @@ interface Props {
   onBuilt: (rows: string[], on: boolean) => void
   /** Per item, the share of its overflow the plan feeds back into its own heat or fertilizer. */
   fed: Map<string, FedOverflow>
+  /** Adds a target making `item` from the plan's overflow of `consumes`. */
+  onUseOverflow: (item: string, consumes: string) => void
   /** The plan's targets in order: each is set in its own row at the top of the tree. */
   targets: TargetSlot[]
   onAddTarget: () => void
@@ -117,6 +120,7 @@ export function ProductionTree({
   built,
   onBuilt,
   fed,
+  onUseOverflow,
   targets: slots,
   onAddTarget,
   shownTarget,
@@ -562,6 +566,7 @@ export function ProductionTree({
                   pinned={pinned === line.node.id}
                   onReveal={reveal}
                   fed={fed}
+                  onUseOverflow={onUseOverflow}
                   onMachinesMenu={openMachinesMenu}
                   logistics={logistics}
                   mods={mods}
@@ -783,6 +788,7 @@ function TreeRow({
   onReveal,
   onMachinesMenu,
   fed,
+  onUseOverflow,
   logistics,
   mods,
   link,
@@ -840,6 +846,7 @@ function TreeRow({
   onReveal: (id: string, how: 'enter' | 'leave' | 'pin') => void
   onMachinesMenu: (node: TreeNode, button: HTMLElement) => void
   fed: Map<string, FedOverflow>
+  onUseOverflow: (item: string, consumes: string) => void
   logistics: Map<string, LogisticsCheck>
   mods: Modifiers
   link: LinkFn
@@ -849,6 +856,12 @@ function TreeRow({
   afterBranch?: boolean
 }) {
   const node = copies === 1 ? whole : shareOf(whole, copies)
+  // The overflowing item a target is being picked to use, from this row's overflow note.
+  const [using, setUsing] = useState<string | null>(null)
+  const picking = (item: string) => ({
+    using: using === item,
+    onUse: () => setUsing((u) => (u === item ? null : item)),
+  })
   if (node.id === PLAN_ROOT)
     return (
       <tr data-node-id={node.id} className="kind-plan depth-0 band band-start" style={bandStyle(edgeX(0))}>
@@ -1178,7 +1191,9 @@ function TreeRow({
             {node.kind === 'produce' && node.purchased > 0 && (
               <div className="note-line">{fmt(node.purchased)}/min bought</div>
             )}
-            {node.overflow > 0 && node.kind === 'produce' && <OverflowNote item={node.item} amount={node.overflow} fed={fed} />}
+            {node.overflow > 0 && node.kind === 'produce' && (
+              <OverflowNote item={node.item} amount={node.overflow} fed={fed} {...picking(node.item)} />
+            )}
             {node.byproducts.map((b) => (
               <div key={b.item} className="note-line">
                 also makes <ItemLabel item={b.item} count={b.count} size={16} /> →{' '}
@@ -1197,11 +1212,28 @@ function TreeRow({
                 {b.overflow > 0 && (
                   <>
                     {b.to.length > 0 && ', '}
-                    <OverflowNote item={b.item} amount={b.overflow} fed={fed} inline counted={b.to.length > 0} />
+                    <OverflowNote
+                      item={b.item}
+                      amount={b.overflow}
+                      fed={fed}
+                      inline
+                      counted={b.to.length > 0}
+                      {...picking(b.item)}
+                    />
                   </>
                 )}
               </div>
             ))}
+            {using && (
+              <OverflowTargetForm
+                item={using}
+                onAdd={(item) => {
+                  onUseOverflow(item, using)
+                  setUsing(null)
+                }}
+                onCancel={() => setUsing(null)}
+              />
+            )}
             {p?.license && node.kind === 'produce' && <div className="note-line">needs the {p.license}</div>}
             {node.shortfall > 0 && <div className="note-line warn-text">short by {fmt(node.shortfall)}/min</div>}
             {node.kind === 'produce' &&
@@ -1840,10 +1872,16 @@ function OverflowNote({
   fed,
   inline,
   counted,
+  using,
+  onUse,
 }: {
   item: string
   amount: number
   fed: Map<string, FedOverflow>
+  /** Picking a target to use the overflow is open. */
+  using: boolean
+  /** Opens or closes picking a target to use the overflow. */
+  onUse: () => void
   /** Part of a by-product line rather than a line of its own. */
   inline?: boolean
   /** Show the amount even inline (the by-product also goes elsewhere). */
@@ -1866,9 +1904,15 @@ function OverflowNote({
   }
   if (left > 1e-9 * amount)
     parts.push(
-      <span key="left" className="warn-text" title="Made by this row's machines but used nowhere in the plan">
+      <button
+        key="left"
+        className="tree-link warn-text"
+        title="Made by this row's machines but used nowhere in the plan: click to add a target that uses it"
+        aria-expanded={using}
+        onClick={onUse}
+      >
         {inline ? `${counted || used > 0 ? `${fmt(left)} ` : ''}overflow` : `+${fmt(left)}/min overflow`}
-      </span>,
+      </button>,
     )
   const joined = parts.flatMap((p, i) => (i ? [', ', p] : [p]))
   return inline ? <>{joined}</> : <div className="note-line">{joined}</div>

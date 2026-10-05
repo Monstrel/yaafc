@@ -3,6 +3,7 @@ import { ItemIcon, ItemLabel } from '../components/ItemIcon'
 import { ItemPicker } from '../components/ItemPicker'
 import { Exp } from '../components/Exp'
 import { Money } from '../components/Money'
+import { OverflowTargetForm } from '../components/OverflowTargetForm'
 import { ProducerSelect, TierTag } from '../components/ProducerSelect'
 import { BookmarkIcon, ProductionTree, type TargetSlot } from '../components/ProductionTree'
 import { carriers, ledgers, targetFedBack, type Resource, type ResourceLedger } from '../lib/ledger'
@@ -15,11 +16,11 @@ import {
   coinValue,
   iconUrl,
   itemName,
-  items,
   itemsByKey,
   machineTier,
   machinesByKey,
   realItem,
+  targetItems,
   tierIcon,
   tierName,
 } from '../lib/gameData'
@@ -89,14 +90,6 @@ interface Props {
   onDuplicatePlan: () => void
   onDeletePlan: () => void
 }
-
-/**
- * Items a plan can't aim for: the Automatic Cashier is only bought from the shop in person, and
- * Steam is heat on its way from boilers (counted from the fuel line, see BoilerRoom).
- */
-const NOT_TARGETS = new Set(['CashRegister', 'Steam'])
-
-const targetItems = items.filter((i) => !i.hidden && !NOT_TARGETS.has(i.key))
 
 const NO_ROWS: string[] = []
 
@@ -568,6 +561,10 @@ export function PlannerPage({
                   mods={mods}
                   roundUp={plan.roundUp ?? NO_ROWS}
                   fed={fed}
+                  onUseOverflow={(item, consumes) => {
+                    onUpdatePlan((p) => addOverflowTarget(p, item, consumes))
+                    showTarget(plan.targets.length)
+                  }}
                   onRoundUp={(row, on) => onUpdatePlan((p) => setRoundUp(p, row, on))}
                   units={units}
                   onUnits={(row, unit) => onUpdatePlan((p) => setUnits(p, row, unit))}
@@ -1022,40 +1019,6 @@ function OutputLine({
         />
       )}
     </li>
-  )
-}
-
-/**
- * Adds a target that uses an item's overflow: the planner makes as many of what the player picks as
- * that overflow comes to. Any item can be picked; a cauldron recipe can take almost anything.
- */
-function OverflowTargetForm({
-  item,
-  onAdd,
-  onCancel,
-}: {
-  item: string
-  onAdd: (item: string) => void
-  onCancel: () => void
-}) {
-  const [picked, setPicked] = useState<string | null>(null)
-  return (
-    <div className="provider-form">
-      <label className="stacked">
-        Make from the overflow
-        <ItemPicker value={picked} options={targetItems} onChange={setPicked} defaultOpen compact />
-      </label>
-      <p className="hint">
-        Adds a target sized to use the {itemName(item)} nothing else uses. If its recipes don&apos;t take {itemName(item)},
-        pick ones that do in its rows.
-      </p>
-      <div className="provider-actions">
-        <button className="primary" disabled={!picked} onClick={() => picked && onAdd(picked)}>
-          Add {picked ? itemName(picked) : ''} target
-        </button>
-        <button onClick={onCancel}>Cancel</button>
-      </div>
-    </div>
   )
 }
 

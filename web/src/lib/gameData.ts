@@ -126,6 +126,16 @@ const data = raw as unknown as GameData
 
 export const gameVersion = data.gameVersion
 export const items = data.items
+
+/**
+ * Items a plan can't aim for: the Automatic Cashier is only bought from the shop in person, and
+ * Steam is heat on its way from boilers (counted from the fuel line, see BoilerRoom).
+ */
+const NOT_TARGETS = new Set(['CashRegister', 'Steam'])
+
+/** Items a target can make. */
+export const targetItems = items.filter((i) => !i.hidden && !NOT_TARGETS.has(i.key))
+
 export const itemsByKey = new Map(items.map((i) => [i.key, i]))
 export const gameRecipes = data.recipes
 export const buildings = data.buildings
