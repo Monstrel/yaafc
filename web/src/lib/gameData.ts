@@ -253,7 +253,13 @@ function toMachine(b: Building): Machine {
 
 export const machinesByKey = new Map(buildings.map((b) => [b.key, toMachine(b)]))
 
-/** Buildings able to run a craft type, mirrored "_Sym" variants removed. */
+/** A building belts or pipes can feed or empty: one with none (the Seed Plot) is worked by hand. */
+const automated = (m: Machine) => m.ports.beltIn + m.ports.beltOut + m.ports.pipeIn + m.ports.pipeOut > 0
+
+/** Craft types only buildings worked by hand can run: their recipes aren't offered. */
+export const manualCraftTypes = new Set<string>()
+
+/** Buildings able to run a craft type, mirrored "_Sym" variants and hand-worked ones removed. */
 export const machinesForCraftType: Map<string, Machine[]> = (() => {
   const map = new Map<string, Machine[]>()
   const add = (type: string, key: string) => {
@@ -265,6 +271,14 @@ export const machinesForCraftType: Map<string, Machine[]> = (() => {
   }
   for (const b of buildings) if (b.craftType) add(b.craftType, b.key)
   for (const [type, keys] of Object.entries(CRAFT_TYPE_BUILDINGS)) for (const k of keys) add(type, k)
+  for (const [type, list] of map) {
+    const usable = list.filter(automated)
+    if (usable.length) map.set(type, usable)
+    else {
+      map.delete(type)
+      manualCraftTypes.add(type)
+    }
+  }
   return map
 })()
 

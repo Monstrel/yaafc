@@ -21,6 +21,7 @@ import {
   machinesByKey,
   machineTier,
   machinesForCraftType,
+  manualCraftTypes,
   recipeTier,
   seeds,
   type GameRecipe,
@@ -468,7 +469,7 @@ export function buildCatalog(ctx: ProcessContext): ProcessCatalog {
     })
   }
   const all: Process[] = [
-    ...gameRecipes.filter((r) => !r.hidden).map((r) => recipeProcess(r, ctx)),
+    ...gameRecipes.filter((r) => !r.hidden && !manualCraftTypes.has(r.craftType)).map((r) => recipeProcess(r, ctx)),
     ...nurseryProcesses(ctx),
     ...ctx.saved.map(savedRecipeProcess).filter((p): p is Process => !!p),
     ...paradoxProcesses(ctx.mods),
@@ -537,7 +538,7 @@ export function defaultProducer(catalog: ProcessCatalog, item: string, asTarget 
   const rank = (all: Process[]) => {
     const options = all.filter((p) => p.product === item)
     return (
-      options.find((p) => p.kind === 'recipe' && !p.alternate && p.machine?.key !== 'SeedPlot') ??
+      options.find((p) => p.kind === 'recipe' && !p.alternate) ??
       // The Miniature World Tree is a player's pick, never the default.
       options.find((p) => p.kind === 'nursery' && p.machine?.key !== MINI_WORLD_TREE) ??
       options.find((p) => p.kind === 'nursery') ??
@@ -547,9 +548,8 @@ export function defaultProducer(catalog: ProcessCatalog, item: string, asTarget 
       options.find((p) => p.kind === 'cauldron') ??
       // Only made as a side product (e.g. Gentian Nectar from the Gentian nursery). Items only made
       // by failed crafts aren't run for: they're reused, else brought in.
-      all.find(
-        (p) => p.secondary.includes(item) && (p.kind === 'nursery' || (p.kind === 'recipe' && p.machine?.key !== 'SeedPlot')),
-      ) ?? all.find((p) => p.secondary.includes(item))
+      all.find((p) => p.secondary.includes(item) && (p.kind === 'nursery' || p.kind === 'recipe')) ??
+      all.find((p) => p.secondary.includes(item))
     )
   }
   const all = catalog.byProduct.get(item) ?? []

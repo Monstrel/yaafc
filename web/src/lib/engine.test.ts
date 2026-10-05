@@ -808,6 +808,12 @@ describe('multi-output machines', () => {
   const [root] = result.tree
   const all = (n: TreeNode): TreeNode[] => [n, ...n.children.flatMap(all)]
 
+  it('offers no machine without belts or pipes (the Seed Plot is worked by hand)', () => {
+    const all = [...catalog.byId.values()]
+    expect(all.some((p) => p.machine?.key === 'SeedPlot' || p.machineOptions.some((m) => m.key === 'SeedPlot'))).toBe(false)
+    expect(catalog.byProduct.get('Gentian')!.map((p) => p.id)).toContain('nursery:GentianSeed')
+  })
+
   it('offers the nursery as the producer of its side product', () => {
     expect(catalog.byProduct.get('GentianNectar')!.some((p) => p.id === 'nursery:GentianSeed')).toBe(true)
     expectBalanced(result)
@@ -1904,7 +1910,8 @@ describe('research tiers', () => {
   })
 
   it('defaults to what the tier unlocks', () => {
-    expect(defaultProducer(at(3), 'Flax')).toBe('recipe:Flax') // seed plot until nurseries
+    // Never the hand-worked seed plot: the nursery, flagged until it's unlocked.
+    expect(defaultProducer(at(3), 'Flax')).toBe('nursery:FlaxSeed')
     expect(defaultProducer(at(4), 'Flax')).toBe('nursery:FlaxSeed')
     expect(defaultProducer(at(1), HEAT)).toBe('fuel:WoodBoard')
     expect(defaultProducer(at(5), HEAT)).toBe('fuel:CokePowder') // Steam isn't a fuel, even with boilers
