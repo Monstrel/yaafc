@@ -81,14 +81,14 @@ export interface TargetSlot {
   remove: ReactNode
 }
 
-/** Where a link points: every row it matches, largest share first. */
+/** Where a link points: every row it matches, in tree order. */
 type Jump = (n: TreeNode) => boolean
 /** Renders a link from a row to the rows `match` picks out (see `ProductionTree`). */
-type LinkFn = (from: TreeNode, key: string, match: Jump, label: ReactNode, title: string) => ReactNode
-/** The link last followed, and which of its rows is showing. */
-interface JumpState {
-  link: string
-  index: number
+type LinkFn = (from: TreeNode, match: Jump, label: ReactNode, title: string) => ReactNode
+/** A row, with the ids of the branches above it. */
+interface Placed {
+  node: TreeNode
+  ancestors: string[]
 }
 
 /** Foldable tree-table: one root per target, each ingredient a child branch with its share of machines. */
@@ -357,26 +357,28 @@ export function ProductionTree({
     onSeparate({ item: node.item, anchor: anchor.item, ...(choice === 'one' && { at: anchor.id }) }, true, node.id, moving)
   }
 
-  const [jump, setJump] = useState<JumpState | null>(null)
   // Bumped on every jump so following the same row twice pulses it again.
   const [pulse, setPulse] = useState<{ id: string; n: number } | null>(null)
   const tbody = useRef<HTMLTableSectionElement>(null)
 
-  /** Rows a link would go to, biggest share first. */
-  const targetsOf = (match: Jump, from: string) =>
-    all
-      .filter(({ node }) => node.id !== from && match(node))
-      .sort((a, b) => b.node.machines - a.node.machines || b.node.rate - a.node.rate)
+  /** Rows a link would go to, in tree order. */
+  const targetsOf = (match: Jump, from: string) => all.filter(({ node }) => node.id !== from && match(node))
 
-  /** Follows a link: the next of its rows (cycling), unfolded, scrolled to and pulsed. */
-  const follow = (link: string, match: Jump, from: string) => {
-    const targets = targetsOf(match, from)
-    if (!targets.length) return
-    const index = jump?.link === link ? (jump.index + 1) % targets.length : 0
-    const { node, ancestors } = targets[index]
-    setJump({ link, index })
+  /** Goes to a row: unfolded, scrolled to and pulsed. */
+  const goTo = ({ node, ancestors }: Placed) => {
     setCollapsed((c) => (ancestors.some((a) => c.has(a)) ? new Set([...c].filter((id) => !ancestors.includes(id))) : c))
     setPulse((p) => ({ id: node.id, n: (p?.n ?? 0) + 1 }))
+  }
+
+  // A link to several rows lists them to choose from.
+  const [places, setPlaces] = useState<{ title: string; rows: Placed[]; x: number; y: number } | null>(null)
+  const placesRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (places) placesRef.current?.showPopover()
+  }, [places])
+  const openPlaces = (title: string, rows: Placed[], button: HTMLElement) => {
+    const rect = button.getBoundingClientRect()
+    setPlaces({ title, rows, x: Math.max(8, Math.min(rect.left, window.innerWidth - 288)), y: rect.bottom + 4 })
   }
 
   useEffect(() => {
@@ -419,24 +421,20 @@ export function ProductionTree({
   }
 
   /** A link from `from` to the rows `match` picks out; plain text when there are none. */
-  const link: LinkFn = (from, key, match, label, title) => {
-    const id = `${from.id}|${key}`
-    const count = targetsOf(match, from.id).length
-    if (!count) return label
-    const active = jump?.link === id
+  const link: LinkFn = (from, match, label, title) => {
+    const rows = targetsOf(match, from.id)
+    if (!rows.length) return label
+    const several = rows.length > 1
     return (
       <button
         type="button"
         className="tree-link"
-        title={count > 1 ? `${title} (${count} places, click again for the next)` : title}
-        onClick={() => follow(id, match, from.id)}
+        title={several ? `${title} (${rows.length} places: choose one)` : title}
+        aria-haspopup={several ? 'menu' : undefined}
+        onClick={(e) => (several ? openPlaces(title, rows, e.currentTarget) : goTo(rows[0]))}
       >
         {label}
-        {active && count > 1 && (
-          <span className="tree-link-count">
-            {jump.index + 1}/{count}
-          </span>
-        )}
+        {several && <span className="tree-link-count">({rows.length})</span>}
       </button>
     )
   }
@@ -638,6 +636,50 @@ export function ProductionTree({
                 </button>
               </>
             )}
+          </>
+        )}
+      </div>
+
+      <div
+        ref={placesRef}
+        popover="auto"
+        className="tree-menu"
+        role="menu"
+        aria-label={places?.title}
+        style={places ? { left: places.x, top: places.y } : undefined}
+        onToggle={(e) => e.newState === 'closed' && setPlaces(null)}
+      >
+        {places && (
+          <>
+            <div className="tree-menu-title">{places.title}</div>
+            {places.rows.map((row) => {
+              const up = parentId(row.node.id)
+              // The branches above the row it feeds, from its target (or where it's gathered) down.
+              const trail = row.ancestors
+                .filter((id) => id !== PLAN_ROOT && id !== up)
+                .map((id) => itemsByKey.get(byId.get(id)?.node.item ?? '')?.name)
+                .filter(Boolean)
+                .join(' › ')
+              return (
+                <button
+                  type="button"
+                  role="menuitem"
+                  key={row.node.id}
+                  onClick={() => {
+                    placesRef.current?.hidePopover()
+                    goTo(row)
+                  }}
+                >
+                  <span>
+                    {up ? <ItemLabel item={rowItem(up)} size={18} /> : destinationName(row.node.id, topName)}
+                    <span className="tree-menu-hint">
+                      {trail ? `in ${trail} · ` : ''}
+                      {fmt(row.node.rate)}/min
+                    </span>
+                  </span>
+                </button>
+              )
+            })}
           </>
         )}
       </div>
@@ -877,7 +919,6 @@ function TreeRow({
       {i > 0 && ', '}
       {link(
         node,
-        `from:${s.id}`,
         (n) => n.id === s.id,
         s.label,
         `Show the ${s.label} machines`,
@@ -996,7 +1037,6 @@ function TreeRow({
             ⇲{' '}
             {link(
               node,
-              'separate',
               (n) => n.id === node.groupId,
               `with ${node.groupAnchor ? itemsByKey.get(node.groupAnchor)?.name : topName}`,
               `Show where ${name} is built`,
@@ -1033,7 +1073,6 @@ function TreeRow({
                 ⇱{' '}
                 {link(
                   node,
-                  'uses',
                   (n) => n.kind === 'separate' && n.groupId === node.id,
                   node.separation?.anchor ? `uses below ${anchorName}` : 'all uses across the plan',
                   `Show the branches that use ${name}`,
@@ -1115,7 +1154,6 @@ function TreeRow({
                     {(b.to.length > 1 || b.overflow > 0) && `${fmt(t.amount)} `}
                     {link(
                       node,
-                      `to:${t.id}`,
                       (n) => n.id === t.id,
                       destinationName(t.id, topName),
                       `Show the ${itemsByKey.get(b.item)?.name ?? b.item} row it feeds`,
