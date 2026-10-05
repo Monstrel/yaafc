@@ -86,7 +86,7 @@ function unitizing(v: unknown): Unitizing | undefined {
   if (!isObj(v)) return undefined
   const count = wholeNumber(v.count)
   const of = wholeNumber(v.of)
-  return count && of && count > 1 && of % count === 0 ? { count, of } : undefined
+  return count && of && count > 1 && count <= of ? { count, of } : undefined
 }
 
 function plan(v: unknown, newId: () => string): Plan | undefined {

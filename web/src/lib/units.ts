@@ -23,12 +23,33 @@ export function wholePerCopy(n: TreeNode, copies: number, utilization: Utilizati
   return Math.ceil(n.machines / copies / u - 1e-9)
 }
 
-/** The units a row on `whole` machines splits into evenly: every divisor above 1, fewest first. */
-export function unitChoices(whole: number | null): number[] {
-  const out: number[] = []
-  if (whole === null || !Number.isFinite(whole)) return out
-  for (let d = 2; d <= whole; d++) if (whole % d === 0) out.push(d)
-  return out
+/**
+ * The units a row splits into: every count above 1 that splits its whole machines, or those of any
+ * row it takes with it, evenly (in each of `above` copies of the line it sits in), up to its own
+ * whole machines, fewest first. A split even only below rounds the row up in each copy: a row on 47
+ * machines fed by one on 8 splits in 8, 6 machines each, 48 in all.
+ */
+export function unitChoices(tree: TreeNode[], n: TreeNode, above: number, utilization: Utilization): number[] {
+  const whole = wholePerCopy(n, above, utilization)
+  if (whole === null || !Number.isFinite(whole)) return []
+  const even = new Set<number>()
+  const visit = (r: TreeNode) => {
+    const w = wholePerCopy(r, above, utilization)
+    if (w !== null) for (let d = 2; d <= Math.min(w, whole); d++) if (w % d === 0) even.add(d)
+    takenWith(tree, r).forEach(visit)
+  }
+  visit(n)
+  return [...even].sort((a, b) => a - b)
+}
+
+/**
+ * The rows a row's copies take with them, following the tree as shown: its children, and with a
+ * single target, the items built at the top of the plan, which sit under it.
+ */
+function takenWith(tree: TreeNode[], n: TreeNode): TreeNode[] {
+  const targets = tree.filter((t) => !t.id.startsWith('separate/'))
+  if (targets.length !== 1 || n !== targets[0]) return n.children
+  return [...n.children, ...tree.filter((t) => t.id.startsWith('separate/'))]
 }
 
 export interface UnitScales {
@@ -53,18 +74,16 @@ export function unitScales(tree: TreeNode[], units: Plan['units'], utilization: 
     let k = above
     const u = units[n.id]
     if (u) {
-      if (wholePerCopy(n, above, utilization) === u.of && u.of % u.count === 0) {
+      if (wholePerCopy(n, above, utilization) === u.of && u.count <= u.of) {
         k *= u.count
         own.set(n.id, u.count)
       } else stale.push(n.id)
     }
     if (k !== 1) copies.set(n.id, k)
-    n.children.forEach((c) => visit(c, k))
-    if (groups && n === targets[0]) groups.forEach((g) => visit(g, k))
+    takenWith(tree, n).forEach((c) => visit(c, k))
   }
   const targets = tree.filter((n) => !n.id.startsWith('separate/'))
-  const groups = targets.length === 1 ? tree.filter((n) => n.id.startsWith('separate/')) : null
-  for (const n of groups ? targets : tree) visit(n, 1)
+  for (const n of targets.length === 1 ? targets : tree) visit(n, 1)
   return { copies, own, stale }
 }
 

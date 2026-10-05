@@ -2321,12 +2321,22 @@ describe('building rows in units', () => {
   const top = rowOf(solved, '0/Bandage')
   const below = top.children.find((c) => c.kind === 'produce' && c.machines > 0)!
 
-  it("offers the even splits of a row's whole machines", () => {
-    expect(unitChoices(8)).toEqual([2, 4, 8])
-    expect(unitChoices(9)).toEqual([3, 9])
-    expect(unitChoices(7)).toEqual([7])
-    expect(unitChoices(1)).toEqual([])
-    expect(unitChoices(null)).toEqual([])
+  it("offers the even splits of a row's whole machines, or a row's below it", () => {
+    const row = (id: string, machines: number, children: TreeNode[] = []) =>
+      ({ ...top, id, machines, children, run: { ...top.run!, key: id } }) as TreeNode
+    const solo = (n: TreeNode) => unitChoices([n], n, 1, () => 1)
+    expect(solo(row('0/A', 8))).toEqual([2, 4, 8])
+    expect(solo(row('0/A', 9))).toEqual([3, 9])
+    expect(solo(row('0/A', 7))).toEqual([7])
+    expect(solo(row('0/A', 1))).toEqual([])
+    // 47 Extractors fed by 8 Nurseries: eight copies of 6 Extractors (48 in all) and a Nursery.
+    const wine = row('0/A', 46.9, [row('0/A/B', 7.82)])
+    expect(solo(wine)).toEqual([2, 4, 8, 47])
+    expect(wholePerCopy(wine, 8, () => 1)).toBe(6)
+    // Never more copies than the row's own machines.
+    expect(solo(row('0/A', 3, [row('0/A/B', 12)]))).toEqual([2, 3])
+    // Within each copy of the line above.
+    expect(unitChoices([wine], wine.children[0], 2, () => 1)).toEqual([2, 4])
     expect(wholePerCopy(top, 1, full)).toBe(4)
   })
 
@@ -2339,7 +2349,7 @@ describe('building rows in units', () => {
     expect(s.stale).toEqual([])
     // A row below splits again within each copy, offered splits of its share.
     const of = wholePerCopy(below, 2, full)!
-    const choice = unitChoices(of)[0]
+    const choice = unitChoices(solved.tree, below, 2, full)[0]
     if (choice) {
       const nested = setUnits(two, below.id, { count: choice, of })
       expect(unitScales(solved.tree, nested.units, full).copies.get(below.id)).toBe(2 * choice)
@@ -2387,7 +2397,7 @@ describe('building rows in units', () => {
     expect(moveTarget(two, 1, 0).units).toEqual({ '0/Bandage': { count: 2, of: 4 } })
     const gone = { ...bandages, units: { '0/Bandage': { count: 2, of: 4 }, '0/Gone': { count: 2, of: 2 } } }
     expect(pruneChoices(gone, catalog)!.units).toEqual({ '0/Bandage': { count: 2, of: 4 } })
-    const odd = { ...bandages, units: { a: { count: 2, of: 4 }, b: { count: 3, of: 4 }, c: { count: 1, of: 1 }, d: { count: 2.5, of: 5 } } }
-    expect(sanitizePlans([odd], () => 'n')![0].units).toEqual({ a: { count: 2, of: 4 } })
+    const odd = { ...bandages, units: { a: { count: 2, of: 4 }, b: { count: 3, of: 4 }, c: { count: 1, of: 1 }, d: { count: 2.5, of: 5 }, e: { count: 5, of: 4 } } }
+    expect(sanitizePlans([odd], () => 'n')![0].units).toEqual({ a: { count: 2, of: 4 }, b: { count: 3, of: 4 } })
   })
 })

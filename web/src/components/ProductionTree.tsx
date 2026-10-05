@@ -709,6 +709,7 @@ export function ProductionTree({
             onChoose={chooseRounding}
             copiesAbove={copiesAbove(machinesMenu.node.id)}
             unit={units.own.get(machinesMenu.node.id)}
+            choices={unitChoices(tree, machinesMenu.node, copiesAbove(machinesMenu.node.id), utilization)}
             onUnits={chooseUnits}
           />
         )}
@@ -1747,6 +1748,7 @@ function MachinesMenu({
   onChoose,
   copiesAbove,
   unit,
+  choices,
   onUnits,
 }: {
   node: TreeNode
@@ -1757,6 +1759,8 @@ function MachinesMenu({
   copiesAbove: number
   /** The units the row is built in, if it is. */
   unit?: number
+  /** The units it can be built in. */
+  choices: number[]
   onUnits: (count: number | null) => void
 }) {
   const machine = node.run?.process.machine
@@ -1768,9 +1772,9 @@ function MachinesMenu({
   const names = (n: number) => (machine ? buildingNameFor(machine.key, n) : noun(n, 'machine'))
   const extra = built > 0 ? (node.rate / copies) * (whole / built - 1) : 0
   const perCopy = copies > 1 ? ' per copy' : ''
-  // Units split the row's whole machines (in each copy of the line above) evenly.
+  // Units split the row's whole machines (in each copy of the line above), or a row's below it, evenly.
   const splits = wholePerCopy(node, copiesAbove, () => utilization)
-  const choices = unitChoices(splits)
+  const each = (d: number) => wholePerCopy(node, copiesAbove * d, () => utilization)!
   const rate = node.rate / copiesAbove
   // A row running on overflow can't run faster than it comes: rounded up, its machines run underfed.
   const fed = onOverflow(node)
@@ -1825,7 +1829,7 @@ function MachinesMenu({
                 {unit === d ? '✓' : ''}
               </span>
               <span>
-                ×{d}: {splits! / d} {names(splits! / d)} each
+                ×{d}: {each(d)} {names(each(d))} each{each(d) * d !== splits && `, ${each(d) * d} in all`}
                 <span className="tree-menu-hint">
                   everything below built {d} times over, {fmt(rate / d)}/min per copy
                 </span>
