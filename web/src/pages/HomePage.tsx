@@ -1,5 +1,9 @@
 import { PageLink } from '../components/PageLink'
+import { releases } from '../lib/changelog'
 import type { Page } from '../lib/router'
+import { ReleaseNotes } from './ChangelogPage'
+
+const latestDate = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
 
 interface Props {
   onNavigate: (page: Page) => void
@@ -77,6 +81,17 @@ export function HomePage({ onNavigate }: Props) {
           it or move it to another browser.
         </p>
       </section>
+
+      {releases[0] && (
+        <section className="panel whats-new">
+          <h2>What&apos;s new</h2>
+          <p className="hint">Updated {latestDate.format(releases[0].date)}.</p>
+          <ReleaseNotes release={releases[0]} />
+          <PageLink page="changelog" onNavigate={onNavigate}>
+            Full changelog
+          </PageLink>
+        </section>
+      )}
     </div>
   )
 }

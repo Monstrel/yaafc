@@ -23,6 +23,7 @@ import { useUpdateAvailable } from './lib/updateCheck'
 import { PAGES, usePage, type Page } from './lib/router'
 import { PageLink } from './components/PageLink'
 import { CauldronPage } from './pages/CauldronPage'
+import { ChangelogPage } from './pages/ChangelogPage'
 import { HomePage } from './pages/HomePage'
 import { PlannerPage } from './pages/PlannerPage'
 import { SavedPage } from './pages/SavedPage'
@@ -179,6 +180,7 @@ export default function App() {
       )}
 
       {tab === 'home' && <HomePage onNavigate={setTab} />}
+      {tab === 'changelog' && <ChangelogPage />}
       {tab === 'cauldron' && <CauldronPage saved={saved} onToggleSave={toggleSave} planGroups={activePlanGroups} />}
       {tab === 'saved' && (
         <SavedPage
@@ -217,7 +219,10 @@ export default function App() {
       )}
 
       <footer className="app-footer">
-        Game data extracted from Alchemy Factory Steam build {gameVersion.steamBuildId ?? '?'} ({gameVersion.pakDate ?? '?'}).
+        Game data extracted from Alchemy Factory Steam build {gameVersion.steamBuildId ?? '?'} ({gameVersion.pakDate ?? '?'}).{' '}
+        <PageLink page="changelog" current={tab === 'changelog'} onNavigate={setTab}>
+          Changelog
+        </PageLink>
       </footer>
     </div>
   )

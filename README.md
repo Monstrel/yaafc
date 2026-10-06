@@ -34,6 +34,10 @@ npm test         # engine tests (cauldron math + solver)
 npm run build    # static site in web/dist
 ```
 
+Every push to `main` deploys to GitHub Pages. Before pushing, add a section for the update to
+[CHANGELOG.md](CHANGELOG.md), which the app shows on its Changelog page; `git log origin/main..HEAD`
+lists what's going out. Its format is at the top of the file, and `npm test` checks it.
+
 ## Refreshing game data after a game update
 
 Game data is read straight from your install by `tools/extractor` (C#, CUE4Parse):

@@ -2932,3 +2932,38 @@ tr.unit-totals td.num {
   padding-top: 0;
   border-top: none;
 }
+
+/* ---------- changelog ---------- */
+
+.changelog h2,
+.whats-new h2 {
+  margin: 0;
+}
+
+.changelog h3 {
+  margin: 0 0 8px;
+  font-size: 15px;
+  color: var(--accent);
+}
+
+.release + .release {
+  margin-top: 10px;
+}
+
+.release-time {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.release ul {
+  margin: 2px 0 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 760px;
+}
+
+.whats-new .release {
+  margin-bottom: 10px;
+}

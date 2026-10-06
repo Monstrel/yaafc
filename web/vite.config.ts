@@ -27,7 +27,7 @@ export default defineConfig({
       generateBundle(_, bundle) {
         const index = bundle['index.html']
         if (index?.type !== 'asset') return
-        for (const page of ['cauldron', 'saved', 'planner'])
+        for (const page of ['cauldron', 'saved', 'planner', 'changelog'])
           this.emitFile({ type: 'asset', fileName: `${page}.html`, source: index.source })
       },
     },
