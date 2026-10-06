@@ -42,8 +42,11 @@ const newSearch = (): CauldronSearch => ({
 
 export function CauldronPage({ saved, onToggleSave, planGroups }: Props) {
   // Kept across tab switches (and reloads), so coming back shows the same search.
-  const [search, setSearch] = usePersistentState<CauldronSearch>('cauldron-search', newSearch, (v) =>
-    sanitizeCauldronSearch(v, (k) => itemsByKey.has(k)),
+  const [search, setSearch] = usePersistentState<CauldronSearch>(
+    'cauldron-search',
+    newSearch,
+    (v) => sanitizeCauldronSearch(v, (k) => itemsByKey.has(k)),
+    { perTab: true },
   )
   const update = (patch: Partial<CauldronSearch>) => setSearch((s) => ({ ...s, ...patch }))
   const { mode, mix, target, mustInclude, sort } = search

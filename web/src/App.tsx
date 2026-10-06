@@ -29,12 +29,12 @@ import { SavedPage } from './pages/SavedPage'
 
 export default function App() {
   // The page visited last, which the bare site address opens on.
-  const [lastPage, setLastPage] = usePersistentState<Page>('tab', 'home', oneOf(...PAGES))
+  const [lastPage, setLastPage] = usePersistentState<Page>('tab', 'home', oneOf(...PAGES), { perTab: true })
   const [tab, setTab] = usePage(lastPage)
   useEffect(() => setLastPage(tab), [tab, setLastPage])
   const [saved, setSaved] = usePersistentState<SavedRecipe[]>('saved-recipes', [], (v) => sanitizeSavedRecipes(v, newId))
   const [plans, setPlans] = usePersistentState<Plan[]>('plans', () => [emptyPlan('My factory')], (v) => sanitizePlans(v, newId))
-  const [activePlanId, setActivePlanId] = usePersistentState<string>('active-plan', '', sanitizeString)
+  const [activePlanId, setActivePlanId] = usePersistentState<string>('active-plan', '', sanitizeString, { perTab: true })
   const [myDefaults, setMyDefaults] = usePersistentState<MyDefaults>('my-defaults', {}, sanitizeMyDefaults)
   // One game, so one set of upgrades for every plan. Plans saved before that each had their own:
   // start from the open plan's, then drop them from the plans.

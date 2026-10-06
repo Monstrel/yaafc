@@ -1,41 +1,99 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react'
 import { sanitizeMyDefaults, sanitizePlans, sanitizeProgress, sanitizeSavedRecipes } from './sanitize'
 import type { MyDefaults, Plan, Progress, SavedRecipe } from './types'
 
 const PREFIX = 'alchemy-calculator:'
 
-/** What a key holds, parsed but unchecked (undefined when missing or unreadable). */
-function readRaw(key: string): unknown {
+/** The text a key holds (null when missing or storage is blocked). */
+function readText(key: string): string | null {
   try {
-    const raw = localStorage.getItem(PREFIX + key)
-    return raw ? JSON.parse(raw) : undefined
+    return localStorage.getItem(PREFIX + key)
+  } catch {
+    return null
+  }
+}
+
+function parse(text: string | null): unknown {
+  try {
+    return text ? JSON.parse(text) : undefined
   } catch {
     return undefined
   }
 }
 
-function read<T>(key: string, fallback: T, sanitize: (v: unknown) => T | undefined): T {
-  const raw = readRaw(key)
-  return raw === undefined ? fallback : (sanitize(raw) ?? fallback)
+/** What a key holds, parsed but unchecked (undefined when missing or unreadable). */
+function readRaw(key: string): unknown {
+  return parse(readText(key))
 }
 
-function write(key: string, value: unknown) {
+/** Whether the text was stored (false when storage is full or blocked). */
+function writeText(key: string, text: string): boolean {
   try {
-    localStorage.setItem(PREFIX + key, JSON.stringify(value))
+    localStorage.setItem(PREFIX + key, text)
+    return true
   } catch {
     // Storage full or blocked: keep working in memory.
+    return false
   }
 }
 
 /**
  * useState that survives reloads via localStorage. `sanitize` checks what was stored (it may be
  * from an older version, or edited by hand) and returns undefined to start from `initial` instead.
+ *
+ * Other tabs of the app share the stored value: a change in one shows up in the rest, as it
+ * happens and again whenever a tab comes back into view. `perTab` values (what a tab is looking
+ * at, rather than the player's data) are only read when the tab opens, so each tab keeps its own
+ * while the last one changed is what a new tab starts from.
  */
-export function usePersistentState<T>(key: string, initial: T | (() => T), sanitize: (v: unknown) => T | undefined) {
-  const [value, setValue] = useState<T>(() =>
-    read(key, typeof initial === 'function' ? (initial as () => T)() : initial, sanitize),
-  )
-  useEffect(() => write(key, value), [key, value])
+export function usePersistentState<T>(
+  key: string,
+  initial: T | (() => T),
+  sanitize: (v: unknown) => T | undefined,
+  { perTab = false }: { perTab?: boolean } = {},
+) {
+  const fresh = () => (typeof initial === 'function' ? (initial as () => T)() : initial)
+  const fromText = (text: string | null) => {
+    const raw = parse(text)
+    return raw === undefined ? fresh() : (sanitize(raw) ?? fresh())
+  }
+  // The stored text this tab's value came from or was last saved as, so a value taken from
+  // another tab isn't saved straight back, and a re-read that finds nothing new changes nothing.
+  const synced = useRef<string | null>(null)
+  const [value, setValue] = useState<T>(() => fromText(readText(key)))
+
+  useEffect(() => {
+    const text = JSON.stringify(value)
+    if (text !== synced.current && writeText(key, text)) synced.current = text
+  }, [key, value])
+
+  const pull = useEffectEvent(() => {
+    const text = readText(key)
+    if (text === synced.current) return
+    const next = fromText(text)
+    // Dropped elsewhere (a deleted plan's folds, say): start over without storing it again.
+    synced.current = text ?? JSON.stringify(next)
+    setValue(next)
+  })
+  useEffect(() => {
+    if (perTab) return
+    const onStorage = (e: StorageEvent) => {
+      if (e.storageArea === localStorage && (e.key === null || e.key === PREFIX + key)) pull()
+    }
+    // Storage events can be missed by a tab the browser froze or kept for back/forward.
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') pull()
+    }
+    addEventListener('storage', onStorage)
+    addEventListener('pageshow', onVisible)
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      removeEventListener('storage', onStorage)
+      removeEventListener('pageshow', onVisible)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [key, perTab])
+
   return [value, setValue] as const
 }
 
