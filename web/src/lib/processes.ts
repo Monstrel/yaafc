@@ -462,11 +462,19 @@ function fuelProcesses(mods: Modifiers): Process[] {
   return [
     ...items.filter((i) => i.heatValue > 0 && i.key !== STEAM).map((i) => fuelProcess(i, i.heatValue * mods.fuel, `Burn ${i.name}`)),
     // A heating pad gives back the heat a boiler put into the Steam: Fuel Efficiency doesn't apply.
-    ...(steam ? [fuelProcess(steam, STEAM_HEAT, 'Heat with Steam', [`Steam Heating Pads: ${STEAM_HEAT} P per Steam`])] : []),
+    ...(steam
+      ? [
+          {
+            ...fuelProcess(steam, STEAM_HEAT, 'Heat with Steam', [`Steam Heating Pads: ${STEAM_HEAT} P per Steam`]),
+            tier: machineTier(STEAM_HEATER),
+          },
+        ]
+      : []),
   ]
 }
 
 const STEAM_BOILER = 'SteamBoiler'
+const STEAM_HEATER = 'SteamHeater'
 export const boilerId = (setting: string) => `boiler:${setting}`
 
 /** A Steam Boiler on one of its settings: heat from the furnace under it in, Steam out to its pipes. */

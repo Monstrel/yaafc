@@ -141,11 +141,12 @@ const outside = (item: string, producer: string) => (producer === IMPORT && item
 /**
  * Whether a row is a fuel burned for its parent's heat or a fertilizer spread for its nurseries:
  * those come off the bus unless their branch picks otherwise (plan-wide picks are for making the
- * item as an ingredient, and older plans have many). Steam is made, by boilers.
+ * item as an ingredient, and older plans have many). Steam too: the plan makes it with boilers
+ * only when asked (a net-surplus target of it, or a branch pick).
  */
-const isBurned = (item: string, id: string) => {
+const isBurned = (id: string) => {
   const above = parentId(id)
-  return item !== STEAM && above !== null && (rowItem(above) === HEAT || rowItem(above) === NUTRIENTS)
+  return above !== null && (rowItem(above) === HEAT || rowItem(above) === NUTRIENTS)
 }
 
 /** A boiler's own heat can't come from Steam: it would only turn Steam into Steam, slower. */
@@ -220,7 +221,7 @@ export function resolveChoice(
     const p = catalog.byId.get(pick.producer)
     if (makes(p, item)) return onRow(p!, pick.machine, at === id)
   }
-  if (isBurned(item, id)) return { producer: BUS, own: false, mine: false, ...NO_SETUP }
+  if (isBurned(id)) return { producer: BUS, own: false, mine: false, ...NO_SETUP }
   let choice = planChoice(plan, catalog, item, isTargetRow(id))
   if (!allowed(choice.producer)) choice = { producer: defaultProducer(catalog, item), mine: false }
   const p = catalog.byId.get(choice.producer)

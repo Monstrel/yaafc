@@ -77,6 +77,29 @@ export function chooseProducer(plan: Plan, catalog: ProcessCatalog, pick: Produc
   }
 }
 
+/**
+ * Sets the fuel or fertilizer (`item`: heat or nutrients) the plan's rows burn or spread by
+ * default. Rows that pick their own keep it (see `followDefault`).
+ */
+export const setPlanDefault = (plan: Plan, item: string, producer: string): Plan => ({
+  ...plan,
+  producers: { ...plan.producers, [item]: producer },
+})
+
+/** Rows of `item` picking a producer other than the plan's, by row id. */
+export function ownPicks(plan: Plan, catalog: ProcessCatalog, item: string): string[] {
+  const planWide = planProducer(plan, catalog, item)
+  return Object.entries(plan.branches ?? {})
+    .filter(([id, pick]) => pick.producer && pick.producer !== planWide && rowItem(id) === item)
+    .map(([id]) => id)
+}
+
+/** Drops every row's own pick of `item`'s producer, so they all follow the plan's (reuse settings stay). */
+export const followDefault = (plan: Plan, item: string): Plan => ({
+  ...plan,
+  branches: withoutProducer(plan.branches, (id) => rowItem(id) === item),
+})
+
 /** A list of items with `item` in it or not. */
 function withItem(list: string[] | undefined, item: string, on: boolean): string[] | undefined {
   const rest = (list ?? []).filter((k) => k !== item)

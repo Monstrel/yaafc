@@ -45,8 +45,11 @@ import {
   setTargetFeedback,
   pruneChoices,
   rememberSetup,
+  ownPicks,
   setBuilt,
+  setPlanDefault,
   setRoundUp,
+  followDefault,
   setRowCatalysts,
   setRowHeight,
   setRowStack,
@@ -138,20 +141,27 @@ export function PlannerPage({
   const setProducer = (pick: ProducerPick) => onUpdatePlan((p) => chooseProducer(p, catalog, pick))
   const resetProducer = (row: string) => onUpdatePlan((p) => clearBranchChoice(p, row))
   const setReuse = (item: string, on: boolean, row?: string) => onUpdatePlan((p) => chooseReuse(p, item, on, row))
-  /** The fuel or fertilizer rows burn or spread unless their branch picks another. */
-  const planWide = (item: string, link?: boolean) => {
+  /**
+   * The fuel or fertilizer (heat or nutrients) rows burn or spread unless their branch picks
+   * another. Changing it keeps those picks; the rows making them can follow it too.
+   */
+  const planDefault = (item: typeof HEAT | typeof NUTRIENTS) => {
     const producer = planProducer(plan, catalog, item)
-    return (
-      <ProducerSelect
-        item={item}
-        current={{ producer, process: catalog.byId.get(producer) }}
-        catalog={catalog}
-        onChange={(producer, machine) => setProducer({ item, producer, machine })}
-        noImport
-        oneLine
-        link={link}
-      />
-    )
+    return {
+      pick: (
+        <ProducerSelect
+          item={item}
+          current={{ producer, process: catalog.byId.get(producer) }}
+          catalog={catalog}
+          onChange={(producer) => onUpdatePlan((p) => setPlanDefault(p, item, producer))}
+          noImport
+          oneLine
+          link
+        />
+      ),
+      own: ownPicks(plan, catalog, item).length,
+      onFollow: () => onUpdatePlan((p) => followDefault(p, item)),
+    }
   }
   const setCatalysts = (row: string, catalysts: string[], inherited: string[]) =>
     onUpdatePlan((p) => setRowCatalysts(p, row, catalysts, inherited))
@@ -511,10 +521,7 @@ export function PlannerPage({
                 ledgers={ledger}
                 money={money}
                 defaults={
-                  <PlanDefaults
-                    heat={(heat?.consumed ?? 0) > 0 ? planWide(HEAT, true) : null}
-                    nutrients={(result.balances.find((b) => b.item === NUTRIENTS)?.consumed ?? 0) > 0 ? planWide(NUTRIENTS, true) : null}
-                  />
+                  <PlanDefaults heat={planDefault(HEAT)} nutrients={planDefault(NUTRIENTS)} />
                 }
                 overflowFrom={overflowSources}
                 onFeedback={(item, target, on) =>
@@ -813,24 +820,38 @@ function BusLine() {
   )
 }
 
+/** A plan-wide default pick: the picker, and the rows picking something else, which can follow it. */
+interface DefaultPick {
+  pick: ReactNode
+  /** Rows picking something else. */
+  own: number
+  onFollow: () => void
+}
+
 /**
- * The fuel and fertilizer the plan's Heat and Nutrients rows burn and spread unless their branch
- * picks another (a branch can, on its row in the tree).
+ * The fuel and fertilizer the plan's machines burn and spread unless their row picks another,
+ * shown from the start so a plan can be set up before it needs them. Changing one keeps the rows
+ * picking their own; a link switches them too.
  */
-function PlanDefaults({ heat, nutrients }: { heat: ReactNode; nutrients: ReactNode }) {
-  if (!heat && !nutrients) return null
+function PlanDefaults({ heat, nutrients }: { heat: DefaultPick; nutrients: DefaultPick }) {
+  const line = (glyph: string, verb: string, d: DefaultPick) => (
+    <span className="ledger-what">
+      {glyph} {verb} {d.pick}
+      {d.own > 0 && (
+        <button
+          className="tree-link hint-inline"
+          title={`${d.own} ${noun(d.own, 'row')} ${verb === 'burns' ? 'burn' : 'spread'} something else, picked on ${d.own === 1 ? 'its' : 'their'} own: switch them to this too`}
+          onClick={d.onFollow}
+        >
+          {d.own} {noun(d.own, 'row')} {d.own === 1 ? 'differs' : 'differ'} · use it there too
+        </button>
+      )}
+    </span>
+  )
   return (
-    <div className="bus-defaults" title="What the plan's rows burn and spread unless their branch picks another, on its row">
-      {heat && (
-        <span className="ledger-what">
-          🔥 burns {heat}
-        </span>
-      )}
-      {nutrients && (
-        <span className="ledger-what">
-          🌱 spreads {nutrients}
-        </span>
-      )}
+    <div className="bus-defaults" title="What the plan's machines burn and spread unless their row picks another">
+      {line('🔥', 'burns', heat)}
+      {line('🌱', 'spreads', nutrients)}
       <span className="hint-inline">by default</span>
     </div>
   )

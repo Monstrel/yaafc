@@ -52,6 +52,9 @@ import {
   keepDefaultInPlan,
   rememberChanges,
   rememberSetup,
+  ownPicks,
+  followDefault,
+  setPlanDefault,
   rowsById,
   setBuilt,
   setRoundUp,
@@ -1418,22 +1421,51 @@ describe('heat and nutrients as rows', () => {
     expect(rows(solvePlan(everywhere, catalog, mods)).find((n) => n.id === id)!.kind).toBe('bus')
   })
 
-  it('heats with Steam from boilers, whose own heat comes from a solid fuel', () => {
+  it('heats with Steam from the bus, on heating pads', () => {
     const p = plan({ targets: [{ item: 'SteelIngot', rate: 10 }], producers: { [HEAT]: STEAM_HEAT_ID } })
     const result = solvePlan(p, catalog, mods)
     expectBalanced(result)
     const pads = rows(result).filter((n) => n.item === HEAT && n.producer === STEAM_HEAT_ID)
-    expect(pads.length).toBeGreaterThan(0)
-    for (const pad of pads) expect(pad.children[0].rate * 20).toBeCloseTo(pad.rate) // 20 P per Steam
-    const boilers = rows(result).filter((n) => n.item === 'Steam' && n.kind === 'produce')
-    expect(boilers.length).toBe(pads.length)
-    for (const b of boilers) {
-      expect(b.producer).toBe('boiler:High')
-      expect(b.machines).toBeCloseTo(b.rate / 9000) // High: 300 Steam every 2 s
-      const heat = b.children.find((c) => c.item === HEAT)!
-      expect(heat.producer).toBe(defaultProducer(catalog, HEAT))
-      expect(heat.rate).toBeCloseTo(b.rate * 20)
+    expect(pads.length).toBeGreaterThan(1)
+    for (const pad of pads) {
+      expect(pad.children[0]).toMatchObject({ item: 'Steam', kind: 'bus' })
+      expect(pad.children[0].rate * 20).toBeCloseTo(pad.rate) // 20 P per Steam
     }
+    expect(rows(result).some((n) => n.item === 'Steam' && n.kind === 'produce')).toBe(false)
+    const [steam] = ledgers(p, result)
+    expect(steam).toMatchObject({ item: 'Steam', uses: { burn: steam.need } })
+  })
+
+  it('makes the Steam in the plan when asked, its boilers burning a solid fuel', () => {
+    const p = addProvider(plan({ targets: [{ item: 'SteelIngot', rate: 10 }], producers: { [HEAT]: STEAM_HEAT_ID } }), 'Steam')
+    const result = solvePlan(p, catalog, mods)
+    expectBalanced(result)
+    const boilers = result.tree[1]
+    expect(boilers).toMatchObject({ item: 'Steam', kind: 'produce', producer: 'boiler:High' })
+    expect(boilers.machines).toBeCloseTo(boilers.rate / 9000) // High: 300 Steam every 2 s
+    const heat = boilers.children.find((c) => c.item === HEAT)!
+    expect(heat.producer).toBe(defaultProducer(catalog, HEAT))
+    expect(heat.rate).toBeCloseTo(boilers.rate * 20)
+    const [steam, fuel] = [...ledgers(p, result)].sort((a) => (a.item === 'Steam' ? -1 : 1))
+    expect(steam).toMatchObject({ item: 'Steam', absorbedBy: 1, bus: 0 })
+    expect(boilers.rate).toBeCloseTo(steam.need)
+    // What the boilers burn comes off the bus instead.
+    expect(fuel.item).toBe(catalog.byId.get(defaultProducer(catalog, HEAT))!.inputs[0].item)
+    expect(fuel.need * catalog.byId.get(defaultProducer(catalog, HEAT))!.outputs[0].count).toBeCloseTo(heat.rate)
+  })
+
+  it('changes the default fuel without losing the rows that pick their own, which can follow it after', () => {
+    const first = solvePlan(steel, catalog, mods).tree[0].children.find((c) => c.item === HEAT)!
+    const picked = chooseProducer(steel, catalog, { item: HEAT, producer: 'fuel:WoodBoard', row: first.id })
+    const changed = setPlanDefault(picked, HEAT, 'fuel:Charcoal')
+    expect(changed.branches).toEqual(picked.branches)
+    expect(ownPicks(changed, catalog, HEAT)).toEqual([first.id])
+    const heat = rows(solvePlan(changed, catalog, mods)).filter((n) => n.item === HEAT)
+    expect(heat.find((h) => h.id === first.id)!.producer).toBe('fuel:WoodBoard')
+    expect(heat.filter((h) => h.id !== first.id).every((h) => h.producer === 'fuel:Charcoal')).toBe(true)
+    const all = followDefault(changed, HEAT)
+    expect(ownPicks(all, catalog, HEAT)).toEqual([])
+    expect(rows(solvePlan(all, catalog, mods)).filter((n) => n.item === HEAT).every((h) => h.producer === 'fuel:Charcoal')).toBe(true)
   })
 
   it('never heats a boiler with Steam, even when picked there', () => {
