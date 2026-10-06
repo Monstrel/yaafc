@@ -61,7 +61,7 @@ import type { OverflowUse, PlanResult, ResolvedTarget, SupplyUse } from '../lib/
 import { separationsOf } from '../lib/separate'
 import { canSeparateShared, mergeSingleUses, separateShared, setSeparation } from '../lib/separateAll'
 import { buildingNameFor, machineNameFor, noun } from '../lib/plural'
-import { BOILER_HEAT, BUS, IMPORT, planProducer } from '../lib/unfold'
+import { BOILER_HEAT, BUS, IMPORT, planProducer, rowItem } from '../lib/unfold'
 import { dropUnits, setUnits, unitScales } from '../lib/units'
 import type { TreeNode } from '../lib/tree'
 import { usePersistentState } from '../lib/store'
@@ -84,18 +84,23 @@ interface Props {
   model: PlanModel
   /** Upgrade levels and research tier, for every plan. */
   progress: Progress
-  onProgress: (update: (p: Progress) => Progress) => void
+  /** Each change says what it does, for undo. */
+  onProgress: (label: string, update: (p: Progress) => Progress) => void
   /** How the player likes to make items, for every plan. */
   myDefaults: MyDefaults
-  onMyDefaults: (defaults: MyDefaults) => void
+  onMyDefaults: (label: string, defaults: MyDefaults) => void
   onSelectPlan: (id: string) => void
-  onUpdatePlan: (update: (p: Plan) => Plan) => void
+  /** Null for upkeep the app does by itself, which is never a step of its own to undo. */
+  onUpdatePlan: (label: string | null, update: (p: Plan) => Plan) => void
   onNewPlan: () => void
   onDuplicatePlan: () => void
   onDeletePlan: () => void
 }
 
 const NO_ROWS: string[] = []
+
+/** A tree row's name in undo's list. */
+const rowName = (row: string) => itemName(rowItem(row))
 
 /** Stands in until the plan's first solve comes back. */
 const UNSOLVED: PlanResult = { status: 'ok', targets: [], runs: [], balances: [], tree: [] }
@@ -119,9 +124,9 @@ export function PlannerPage({
   // Forget recipe, machine, catalyst, branch and build-separately picks for anything that has left
   // the plan (and build-separately picks that no longer gather anything).
   useEffect(() => {
-    if (migrateCatalysts(plan, catalog)) onUpdatePlan((p) => migrateCatalysts(p, catalog) ?? p)
-    else if (migrateFeedback(plan, catalog)) onUpdatePlan((p) => migrateFeedback(p, catalog) ?? p)
-    else if (pruneChoices(plan, catalog)) onUpdatePlan((p) => pruneChoices(p, catalog) ?? p)
+    if (migrateCatalysts(plan, catalog)) onUpdatePlan(null, (p) => migrateCatalysts(p, catalog) ?? p)
+    else if (migrateFeedback(plan, catalog)) onUpdatePlan(null, (p) => migrateFeedback(p, catalog) ?? p)
+    else if (pruneChoices(plan, catalog)) onUpdatePlan(null, (p) => pruneChoices(p, catalog) ?? p)
   }, [plan, catalog, onUpdatePlan])
   // result.targets skips rows with no item chosen yet; line them back up with the rows.
   let resolvedIndex = 0
@@ -138,12 +143,14 @@ export function PlannerPage({
   )
   const stale = model.result?.status === 'ok' && units.stale.length > 0
   useEffect(() => {
-    if (stale) onUpdatePlan((p) => dropUnits(p, units.stale, plan.units))
+    if (stale) onUpdatePlan(null, (p) => dropUnits(p, units.stale, plan.units))
   }, [stale, units, plan.units, onUpdatePlan])
 
-  const setProducer = (pick: ProducerPick) => onUpdatePlan((p) => chooseProducer(p, catalog, pick))
-  const resetProducer = (row: string) => onUpdatePlan((p) => clearBranchChoice(p, row))
-  const setReuse = (item: string, on: boolean, row?: string) => onUpdatePlan((p) => chooseReuse(p, item, on, row))
+  const setProducer = (pick: ProducerPick) =>
+    onUpdatePlan(`Change how ${itemName(pick.item)} is made`, (p) => chooseProducer(p, catalog, pick))
+  const resetProducer = (row: string) => onUpdatePlan(`Reset the pick for ${rowName(row)}`, (p) => clearBranchChoice(p, row))
+  const setReuse = (item: string, on: boolean, row?: string) =>
+    onUpdatePlan(`${on ? 'Reuse' : 'Stop reusing'} ${itemName(item)} by-products`, (p) => chooseReuse(p, item, on, row))
   /**
    * The fuel or fertilizer (heat or nutrients) rows burn or spread unless their branch picks
    * another. Changing it keeps those picks; the rows making them can follow it too.
@@ -156,14 +163,14 @@ export function PlannerPage({
           item={item}
           current={{ producer, process: catalog.byId.get(producer) }}
           catalog={catalog}
-          onChange={(producer) => onUpdatePlan((p) => setPlanDefault(p, item, producer))}
+          onChange={(producer) => onUpdatePlan(`Change the plan default for ${itemName(item)}`, (p) => setPlanDefault(p, item, producer))}
           noImport
           oneLine
           link
         />
       ),
       own: ownPicks(plan, catalog, item).length,
-      onFollow: () => onUpdatePlan((p) => followDefault(p, item)),
+      onFollow: () => onUpdatePlan(`Follow the plan default for ${itemName(item)}`, (p) => followDefault(p, item)),
     }
   }
   /** When the plan heats with Steam: the solid fuel its boilers burn (their own heat can't be Steam). */
@@ -176,7 +183,7 @@ export function PlannerPage({
         item={HEAT}
         current={{ producer, process: catalog.byId.get(producer) }}
         catalog={catalog}
-        onChange={(producer) => onUpdatePlan((p) => setPlanDefault(p, BOILER_HEAT, producer))}
+        onChange={(producer) => onUpdatePlan('Change boiler fuel', (p) => setPlanDefault(p, BOILER_HEAT, producer))}
         noImport
         oneLine
         link
@@ -185,25 +192,30 @@ export function PlannerPage({
     )
   }
   const setCatalysts = (row: string, catalysts: string[], inherited: string[]) =>
-    onUpdatePlan((p) => setRowCatalysts(p, row, catalysts, inherited))
+    onUpdatePlan(`Change catalysts for ${rowName(row)}`, (p) => setRowCatalysts(p, row, catalysts, inherited))
   const setHeight = (row: string, height: number, inherited: number) =>
-    onUpdatePlan((p) => setRowHeight(p, row, height, inherited))
+    onUpdatePlan(`Change height for ${rowName(row)}`, (p) => setRowHeight(p, row, height, inherited))
   const setStack = (row: string, stack: number, inherited: number) =>
-    onUpdatePlan((p) => setRowStack(p, row, stack, inherited))
+    onUpdatePlan(`Change stacking for ${rowName(row)}`, (p) => setRowStack(p, row, stack, inherited))
   const remember = (row: TreeNode) => {
     const next = rememberSetup(plan, catalog, result.tree, row)
-    onMyDefaults(next.mine)
-    onUpdatePlan(() => next.plan)
+    const label = `Save default for ${itemName(row.item)}`
+    onMyDefaults(label, next.mine)
+    onUpdatePlan(label, () => next.plan)
   }
-  const forget = (item: string) => onMyDefaults(Object.fromEntries(Object.entries(myDefaults).filter(([k]) => k !== item)))
+  const forget = (item: string, label = `Forget default for ${itemName(item)}`) =>
+    onMyDefaults(label, Object.fromEntries(Object.entries(myDefaults).filter(([k]) => k !== item)))
   /** Un-saves a default from a row: this plan stays made that way; only other plans lose it. */
   const unsave = (item: string) => {
     const saved = myDefaults[item]
-    if (saved) onUpdatePlan((p) => keepDefaultInPlan(p, result.tree, item, saved))
-    forget(item)
+    const label = `Unsave default for ${itemName(item)}`
+    if (saved) onUpdatePlan(label, (p) => keepDefaultInPlan(p, result.tree, item, saved))
+    forget(item, label)
   }
   const setSeparate = (s: Separation, on: boolean, from?: string, replacing?: Separation) =>
-    onUpdatePlan((p) => setSeparation(p, catalog, s, on, from, replacing))
+    onUpdatePlan(`${on ? 'Build' : 'Stop building'} ${itemName(s.item)} separately`, (p) =>
+      setSeparation(p, catalog, s, on, from, replacing),
+    )
   // Whether the plan-wide build-separately buttons would change anything.
   const canSeparate = useMemo(() => canSeparateShared(plan, catalog), [plan, catalog])
   const canMerge = useMemo(() => mergeSingleUses(plan, catalog) !== plan, [plan, catalog])
@@ -231,12 +243,20 @@ export function PlannerPage({
     // A plan with only its blank target uses that one: show it instead of adding another.
     if (plan.targets.length === 1 && !plan.targets[0].item) return showTarget(0)
     const index = plan.targets.length
-    onUpdatePlan((p) => ({ ...p, targets: [...p.targets, blankTarget()] }))
+    onUpdatePlan('Add target', (p) => ({ ...p, targets: [...p.targets, blankTarget()] }))
     setAdded({ plan: plan.id, index })
     showTarget(index)
   }
+  /** A target's name in undo's list. */
+  const targetName = (i: number) => (plan.targets[i]?.item ? `${itemName(plan.targets[i].item)} target` : `target ${i + 1}`)
   const updateTarget = (i: number, patch: Partial<PlanTarget>) =>
-    onUpdatePlan((p) => ({
+    onUpdatePlan(
+      patch.item === undefined
+        ? `Change amount of ${targetName(i)}`
+        : patch.item
+          ? `Set target ${i + 1} to ${itemName(patch.item)}`
+          : `Clear ${targetName(i)}`,
+      (p) => ({
       ...p,
       targets: p.targets.map((x, j) => {
         if (j !== i) return x
@@ -245,13 +265,14 @@ export function PlannerPage({
         const { feedback: _, ...rest } = x
         return { ...rest, ...patch }
       }),
-    }))
+      }),
+    )
   // Row ids number only the targets with an item.
   let filled = 0
   const targetRoots = plan.targets.map((t) => (t.item ? `${filled++}/${t.item}` : null))
   const builtAtTop = new Set(separationsOf(plan.separate).flatMap((s) => (s.anchor ? [] : [s.item])))
   const targetSlot = (t: PlanTarget, i: number): TargetSlot => {
-    const moveTo = (to: number) => onUpdatePlan((p) => moveTarget(p, i, to))
+    const moveTo = (to: number) => onUpdatePlan(`Move ${targetName(i)} ${to < i ? 'up' : 'down'}`, (p) => moveTarget(p, i, to))
     // Targets of an item built separately share the first one's row (theirs isn't in the tree).
     const sharedWith = builtAtTop.has(t.item) ? plan.targets.findIndex((x) => x.item === t.item) : i
     const absorbs = ledger.some((l) => l.absorbedBy === i)
@@ -286,14 +307,16 @@ export function PlannerPage({
           feedsInto={t.item ? feedsInto(t.item) : null}
           fedBack={targetFedBack(plan, t)}
           ownFeedback={t.feedback !== undefined}
-          onFeedback={(on) => onUpdatePlan((p) => setTargetFeedback(p, i, on))}
+          onFeedback={(on) => onUpdatePlan(`${on ? 'Feed back' : 'Stop feeding back'} ${targetName(i)}`, (p) => setTargetFeedback(p, i, on))}
           sharedWith={sharedWith === i ? null : sharedWith}
           onShowTarget={showTarget}
-          onConvert={() => onUpdatePlan((p) => convertOverflowTarget(p, i, resolvedByRow[i]?.rate ?? 0))}
+          onConvert={() =>
+            onUpdatePlan(`Give ${targetName(i)} a set amount`, (p) => convertOverflowTarget(p, i, resolvedByRow[i]?.rate ?? 0))
+          }
           overflowing={overflowing}
-          onUseOverflow={(consumes) => onUpdatePlan((p) => linkToOverflow(p, i, consumes))}
+          onUseOverflow={(consumes) => onUpdatePlan(`Size ${targetName(i)} to use overflow`, (p) => linkToOverflow(p, i, consumes))}
           capped={capped}
-          onUseSupply={(consumes) => onUpdatePlan((p) => linkToSupply(p, i, consumes))}
+          onUseSupply={(consumes) => onUpdatePlan(`Size ${targetName(i)} to use the bus supply`, (p) => linkToSupply(p, i, consumes))}
         />
       ),
       move: plan.targets.length > 1 && (
@@ -330,7 +353,7 @@ export function PlannerPage({
           disabled={plan.targets.length === 1 && !t.item}
           onClick={() => {
             setAdded(null)
-            onUpdatePlan((p) => removeTarget(p, i))
+            onUpdatePlan(`${plan.targets.length > 1 ? 'Remove' : 'Clear'} ${targetName(i)}`, (p) => removeTarget(p, i))
           }}
         >
           ×
@@ -375,7 +398,7 @@ export function PlannerPage({
             <p className="hint">Your game&apos;s progress: shared by every plan.</p>
             <ResearchTier
               tier={catalog.tier}
-              onChange={(tier) => onProgress((p) => ({ ...p, tier: tier === MAX_TIER ? undefined : tier }))}
+              onChange={(tier) => onProgress('Change research tier', (p) => ({ ...p, tier: tier === MAX_TIER ? undefined : tier }))}
             />
             {PLANNER_UPGRADES.map((u) => (
               <label
@@ -399,7 +422,7 @@ export function PlannerPage({
                   max={Number.isFinite(maxLevel(u)) ? maxLevel(u) : undefined}
                   value={upgradeLevel(progress.upgrades, u)}
                   onChange={(e) =>
-                    onProgress((p) => ({
+                    onProgress(`Change ${u.name} level`, (p) => ({
                       ...p,
                       upgrades: { ...p.upgrades, [u.key]: upgradeLevel({ [u.key]: Number(e.target.value) || 0 }, u) },
                     }))
@@ -423,7 +446,7 @@ export function PlannerPage({
             <input
               className="plan-name"
               value={plan.name}
-              onChange={(e) => onUpdatePlan((p) => ({ ...p, name: e.target.value }))}
+              onChange={(e) => onUpdatePlan('Rename plan', (p) => ({ ...p, name: e.target.value }))}
               aria-label="Plan name"
             />
             <button onClick={onNewPlan}>New</button>
@@ -555,19 +578,21 @@ export function PlannerPage({
                 }
                 overflowFrom={overflowSources}
                 onFeedback={(item, target, on) =>
-                  onUpdatePlan((p) => (target === null ? setItemFeedback(p, item, on) : setTargetFeedback(p, target, on)))
+                  onUpdatePlan(`${on ? 'Feed back' : 'Stop feeding back'} ${itemName(item)}`, (p) =>
+                    target === null ? setItemFeedback(p, item, on) : setTargetFeedback(p, target, on),
+                  )
                 }
                 onProvide={(item) => {
-                  onUpdatePlan((p) => addProvider(p, item))
+                  onUpdatePlan(`Add target for ${itemName(item)}`, (p) => addProvider(p, item))
                   showTarget(plan.targets.length)
                 }}
                 onUseOverflow={(item, consumes) => {
-                  onUpdatePlan((p) => addOverflowTarget(p, item, consumes))
+                  onUpdatePlan(`Use overflow of ${itemName(item)}`, (p) => addOverflowTarget(p, item, consumes))
                   showTarget(plan.targets.length)
                 }}
-                onCap={(item, cap) => onUpdatePlan((p) => setBusSupply(p, item, cap))}
+                onCap={(item, cap) => onUpdatePlan(`Change bus supply of ${itemName(item)}`, (p) => setBusSupply(p, item, cap))}
                 onUseSupply={(item, consumes) => {
-                  onUpdatePlan((p) => addSupplyTarget(p, item, consumes))
+                  onUpdatePlan(`Use bus supply of ${itemName(item)}`, (p) => addSupplyTarget(p, item, consumes))
                   showTarget(plan.targets.length)
                 }}
                 onShowTarget={showTarget}
@@ -591,21 +616,30 @@ export function PlannerPage({
                   onHeight={setHeight}
                   onStack={setStack}
                   onSeparate={setSeparate}
-                  onSeparateShared={canSeparate ? () => onUpdatePlan((p) => separateShared(p, catalog)) : undefined}
-                  onMergeSingles={canMerge ? () => onUpdatePlan((p) => mergeSingleUses(p, catalog)) : undefined}
+                  onSeparateShared={
+                    canSeparate ? () => onUpdatePlan('Build shared items separately', (p) => separateShared(p, catalog)) : undefined
+                  }
+                  onMergeSingles={canMerge ? () => onUpdatePlan('Merge single-use builds', (p) => mergeSingleUses(p, catalog)) : undefined}
                   logistics={logistics}
                   mods={mods}
                   roundUp={plan.roundUp ?? NO_ROWS}
                   fed={fed}
                   onUseOverflow={(item, consumes) => {
-                    onUpdatePlan((p) => addOverflowTarget(p, item, consumes))
+                    onUpdatePlan(`Use overflow of ${itemName(item)}`, (p) => addOverflowTarget(p, item, consumes))
                     showTarget(plan.targets.length)
                   }}
-                  onRoundUp={(row, on) => onUpdatePlan((p) => setRoundUp(p, row, on))}
+                  onRoundUp={(row, on) => onUpdatePlan(`${on ? 'Round up' : 'Stop rounding up'} ${rowName(row)}`, (p) => setRoundUp(p, row, on))}
                   units={units}
-                  onUnits={(row, unit) => onUpdatePlan((p) => setUnits(p, row, unit))}
+                  onUnits={(row, unit) =>
+                    onUpdatePlan(`Build ${rowName(row)} ${unit ? 'in units' : 'as one line'}`, (p) => setUnits(p, row, unit))
+                  }
                   built={plan.built ?? NO_ROWS}
-                  onBuilt={(rows, on) => onUpdatePlan((p) => setBuilt(p, rows, on))}
+                  onBuilt={(rows, on) =>
+                    onUpdatePlan(
+                      `${on ? 'Check off' : 'Uncheck'} ${rows.length === 1 ? rowName(rows[0]) : `${rows.length} rows`}`,
+                      (p) => setBuilt(p, rows, on),
+                    )
+                  }
                   targets={plan.targets.map(targetSlot)}
                   onAddTarget={addTarget}
                   shownTarget={shownTarget}

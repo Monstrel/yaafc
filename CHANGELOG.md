@@ -8,6 +8,14 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
+## 2026-10-06T22:15Z
+
+- Undo and Redo, next to Export and Import, or Ctrl+Z and Ctrl+Shift+Z (⌘ on a Mac). They step
+  back through changes to your plans, saved recipes, defaults and upgrades, and each step says what
+  it was, such as "Delete plan “My factory”". A deleted plan comes back where it was. Typing in a
+  box counts as one step, and a page reload keeps the history. A change made in another tab clears
+  this tab's history, so undo never takes back what you did there.
+
 ## 2026-10-06T21:00Z
 
 - Any row can now take its item from the bus. Fuel and fertilizer rows do by default. "Import" now

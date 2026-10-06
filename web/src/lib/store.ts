@@ -21,6 +21,9 @@ function parse(text: string | null): unknown {
   }
 }
 
+/** The text `usePersistentState` stored under a key (null when missing or storage is blocked). */
+export const storedText = readText
+
 /** What a key holds, parsed but unchecked (undefined when missing or unreadable). */
 function readRaw(key: string): unknown {
   return parse(readText(key))
@@ -44,13 +47,14 @@ function writeText(key: string, text: string): boolean {
  * Other tabs of the app share the stored value: a change in one shows up in the rest, as it
  * happens and again whenever a tab comes back into view. `perTab` values (what a tab is looking
  * at, rather than the player's data) are only read when the tab opens, so each tab keeps its own
- * while the last one changed is what a new tab starts from.
+ * while the last one changed is what a new tab starts from. `onPull` hears of a value taken from
+ * another tab, just before it is.
  */
 export function usePersistentState<T>(
   key: string,
   initial: T | (() => T),
   sanitize: (v: unknown) => T | undefined,
-  { perTab = false }: { perTab?: boolean } = {},
+  { perTab = false, onPull }: { perTab?: boolean; onPull?: () => void } = {},
 ) {
   const fresh = () => (typeof initial === 'function' ? (initial as () => T)() : initial)
   const fromText = (text: string | null) => {
@@ -73,6 +77,7 @@ export function usePersistentState<T>(
     const next = fromText(text)
     // Dropped elsewhere (a deleted plan's folds, say): start over without storing it again.
     synced.current = text ?? JSON.stringify(next)
+    onPull?.()
     setValue(next)
   })
   useEffect(() => {
@@ -108,6 +113,18 @@ export function forget(key: string) {
 
 /** Where a plan's folded production rows are kept. */
 export const foldKey = (planId: string) => `tree-collapsed:${planId}`
+
+/** Drops the folded rows of plans other than `keep` (plans deleted, and past undoing). */
+export function forgetFolds(keep: Set<string>) {
+  const fold = PREFIX + foldKey('')
+  try {
+    for (const key of Object.keys(localStorage)) {
+      if (key.startsWith(fold) && !keep.has(key.slice(fold.length))) localStorage.removeItem(key)
+    }
+  } catch {
+    // Storage blocked: nothing to drop.
+  }
+}
 
 export function newId(): string {
   return Math.random().toString(36).slice(2, 10)

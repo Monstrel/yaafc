@@ -1,13 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
 import { recipeSignature, type CauldronMode } from './lib/cauldron'
 import { planGroups } from './lib/itemGroups'
 import { usePlanModel } from './lib/planModel'
-import { gameVersion } from './lib/gameData'
+import { gameVersion, itemName } from './lib/gameData'
 import { noun } from './lib/plural'
 import {
   emptyPlan,
-  foldKey,
-  forget,
+  forgetFolds,
   legacyProgress,
   newId,
   readBackup,
@@ -19,6 +18,7 @@ import {
 import { mergeBackup } from './lib/importPlans'
 import { oneOf, sanitizeMyDefaults, sanitizePlans, sanitizeProgress, sanitizeSavedRecipes, sanitizeString } from './lib/sanitize'
 import type { MyDefaults, Plan, Progress, SavedRecipe } from './lib/types'
+import { UndoHistory, useUndo } from './lib/undo'
 import { useUpdateAvailable } from './lib/updateCheck'
 import { PAGES, usePage, type Page } from './lib/router'
 import { PageLink } from './components/PageLink'
@@ -33,21 +33,61 @@ export default function App() {
   const [lastPage, setLastPage] = usePersistentState<Page>('tab', 'home', oneOf(...PAGES), { perTab: true })
   const [tab, setTab] = usePage(lastPage)
   useEffect(() => setLastPage(tab), [tab, setLastPage])
-  const [saved, setSaved] = usePersistentState<SavedRecipe[]>('saved-recipes', [], (v) => sanitizeSavedRecipes(v, newId))
-  const [plans, setPlans] = usePersistentState<Plan[]>('plans', () => [emptyPlan('My factory')], (v) => sanitizePlans(v, newId))
+  // This tab's undo history, which a change to the player's data in another tab clears.
+  const [undos] = useState(() => new UndoHistory())
+  const onPull = undos.fromOutside
+  const [saved, setSaved] = usePersistentState<SavedRecipe[]>('saved-recipes', [], (v) => sanitizeSavedRecipes(v, newId), { onPull })
+  const [plans, setPlans] = usePersistentState<Plan[]>('plans', () => [emptyPlan('My factory')], (v) => sanitizePlans(v, newId), {
+    onPull,
+  })
   const [activePlanId, setActivePlanId] = usePersistentState<string>('active-plan', '', sanitizeString, { perTab: true })
-  const [myDefaults, setMyDefaults] = usePersistentState<MyDefaults>('my-defaults', {}, sanitizeMyDefaults)
+  const [myDefaults, setMyDefaults] = usePersistentState<MyDefaults>('my-defaults', {}, sanitizeMyDefaults, { onPull })
   // One game, so one set of upgrades for every plan. Plans saved before that each had their own:
   // start from the open plan's, then drop them from the plans.
   const [progress, setProgress] = usePersistentState<Progress>(
     'progress',
     () => legacyProgress(plans, activePlanId) ?? { upgrades: {} },
     sanitizeProgress,
+    { onPull },
   )
   useEffect(() => {
     if (plans.some((p) => withoutLegacyProgress(p) !== p)) setPlans((ps) => ps.map(withoutLegacyProgress))
   }, [plans, setPlans])
+  const history = useUndo(undos, { plans, saved, myDefaults, progress }, (s) => {
+    setPlans(s.plans)
+    setSaved(s.saved)
+    setMyDefaults(s.myDefaults)
+    setProgress(s.progress)
+  })
   const [status, setStatus] = useState<string | null>(null)
+  // Undo's notes go by themselves; the rest stay until clicked.
+  const fading = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const step = (how: 'undo' | 'redo') => {
+    const done = history[how]()
+    if (!done) return
+    if (done.plan) setActivePlanId(done.plan)
+    const note = `${how === 'undo' ? 'Undid' : 'Redid'}: ${done.label}`
+    setStatus(note)
+    clearTimeout(fading.current)
+    fading.current = setTimeout(() => setStatus((s) => (s === note ? null : s)), 4000)
+  }
+  const onKey = useEffectEvent((e: KeyboardEvent) => {
+    // Text boxes keep their own undo.
+    if (!(e.ctrlKey || e.metaKey) || e.altKey || isTextField(e.target)) return
+    const key = e.key.toLowerCase()
+    const how = key === 'z' ? (e.shiftKey ? 'redo' : 'undo') : key === 'y' && !e.shiftKey ? 'redo' : null
+    if (!how) return
+    e.preventDefault()
+    step(how)
+  })
+  useEffect(() => {
+    const listener = (e: KeyboardEvent) => onKey(e)
+    addEventListener('keydown', listener)
+    return () => removeEventListener('keydown', listener)
+  }, [])
+  // Folded rows of deleted plans are kept while undo could bring the plan back.
+  const keepFolds = useEffectEvent(() => forgetFolds(new Set([...plans.map((p) => p.id), ...history.planIds()])))
+  useEffect(() => keepFolds(), [])
   const fileInput = useRef<HTMLInputElement>(null)
   const downloadBackup = useBackup(saved, plans, progress, myDefaults)
   const updateAvailable = useUpdateAvailable()
@@ -65,10 +105,16 @@ export default function App() {
       ),
     [plan.name, model.result],
   )
-  const updatePlan = (update: (p: Plan) => Plan) => setPlans((ps) => ps.map((p) => (p.id === plan.id ? update(p) : p)))
+  /** Changes the open plan; `label` says how, for undo (null for upkeep the app does by itself). */
+  const updatePlan = (label: string | null, update: (p: Plan) => Plan) => {
+    if (label) history.name(label)
+    setPlans((ps) => ps.map((p) => (p.id === plan.id ? update(p) : p)))
+  }
 
   const toggleSave = (mode: CauldronMode, inputs: string[], output: string) => {
     const sig = recipeSignature(mode, inputs)
+    const has = saved.some((s) => recipeSignature(s.mode, s.inputs) === sig)
+    history.name(`${has ? 'Unsave' : 'Save'} recipe for ${itemName(output)}`)
     setSaved((list) =>
       list.some((s) => recipeSignature(s.mode, s.inputs) === sig)
         ? list.filter((s) => recipeSignature(s.mode, s.inputs) !== sig)
@@ -95,6 +141,7 @@ export default function App() {
     importDialog.current?.close()
     if (!pending || how === 'cancel') return
     const { backup } = pending
+    history.name(`${how === 'add' ? 'Import' : 'Restore'} ${pending.name}`)
     if (how === 'add') {
       const merged = mergeBackup({ saved, plans }, backup, newId)
       setSaved(merged.saved)
@@ -142,6 +189,20 @@ export default function App() {
           </PageLink>
         </nav>
         <div className="header-actions">
+          <button
+            onClick={() => step('undo')}
+            disabled={!history.undoLabel}
+            title={history.undoLabel ? `Undo: ${history.undoLabel} (${MOD}Z)` : 'Nothing to undo'}
+          >
+            ↶ Undo
+          </button>
+          <button
+            onClick={() => step('redo')}
+            disabled={!history.redoLabel}
+            title={history.redoLabel ? `Redo: ${history.redoLabel} (${MOD}Shift+Z)` : 'Nothing to redo'}
+          >
+            ↷ Redo
+          </button>
           <button onClick={downloadBackup} title="Download saved recipes, plans and your default recipes">
             Export
           </button>
@@ -185,8 +246,15 @@ export default function App() {
       {tab === 'saved' && (
         <SavedPage
           saved={saved}
-          onUpdate={(id, patch) => setSaved((list) => list.map((s) => (s.id === id ? { ...s, ...patch } : s)))}
-          onRemove={(id) => setSaved((list) => list.filter((s) => s.id !== id))}        />
+          onUpdate={(id, patch) => {
+            history.name(`Edit saved recipe for ${itemName(saved.find((s) => s.id === id)?.output ?? '')}`)
+            setSaved((list) => list.map((s) => (s.id === id ? { ...s, ...patch } : s)))
+          }}
+          onRemove={(id) => {
+            history.name(`Remove saved recipe for ${itemName(saved.find((s) => s.id === id)?.output ?? '')}`)
+            setSaved((list) => list.filter((s) => s.id !== id))
+          }}
+        />
       )}
       {tab === 'planner' && (
         <PlannerPage
@@ -194,24 +262,32 @@ export default function App() {
           plan={plan}
           model={model}
           progress={progress}
-          onProgress={setProgress}
+          onProgress={(label, update) => {
+            history.name(label)
+            setProgress(update)
+          }}
           myDefaults={myDefaults}
-          onMyDefaults={setMyDefaults}
+          onMyDefaults={(label, defaults) => {
+            history.name(label)
+            setMyDefaults(defaults)
+          }}
           onSelectPlan={setActivePlanId}
           onUpdatePlan={updatePlan}
           onNewPlan={() => {
             const p = emptyPlan()
+            history.name('New plan')
             setPlans((ps) => [...ps, p])
             setActivePlanId(p.id)
           }}
           onDuplicatePlan={() => {
             const p = { ...structuredClone(plan), id: newId(), name: `${plan.name} (copy)` }
+            history.name(`Duplicate plan “${plan.name}”`)
             setPlans((ps) => [...ps, p])
             setActivePlanId(p.id)
           }}
           onDeletePlan={() => {
             const rest = plans.filter((p) => p.id !== plan.id)
-            forget(foldKey(plan.id))
+            history.name(`Delete plan “${plan.name}”`)
             setPlans(rest)
             setActivePlanId(rest[0]?.id ?? '')
           }}
@@ -225,6 +301,19 @@ export default function App() {
         </PageLink>
       </footer>
     </div>
+  )
+}
+
+/** The key held with Z to undo. */
+const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+'
+
+const NOT_TEXT = new Set(['checkbox', 'radio', 'button', 'submit', 'reset', 'range', 'color', 'file', 'image'])
+
+/** Whether keys pressed in an element type into it, which has an undo of its own. */
+function isTextField(el: EventTarget | null) {
+  return (
+    el instanceof HTMLElement &&
+    (el.isContentEditable || el instanceof HTMLTextAreaElement || (el instanceof HTMLInputElement && !NOT_TEXT.has(el.type)))
   )
 }
 
