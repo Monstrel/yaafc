@@ -1,5 +1,5 @@
 import { type CSSProperties, type ReactNode, useEffect, useId, useMemo, useRef, useState } from 'react'
-import { CATALYSTS, coinValue, heightMultiplier, itemsByKey } from '../lib/gameData'
+import { CATALYSTS, HEAT, NUTRIENTS, STEAM, coinValue, heightMultiplier, itemName, itemsByKey } from '../lib/gameData'
 import { fmt, fmtMachines, wholeMachines } from '../lib/format'
 import { buildingNameFor, machineNameFor, noun } from '../lib/plural'
 import { sanitizeStrings } from '../lib/sanitize'
@@ -7,7 +7,7 @@ import { foldKey, usePersistentState } from '../lib/store'
 import type { BusUse, FedOverflow } from '../lib/money'
 import type { LogisticsCheck } from '../lib/logistics'
 import { COIN_STACK, itemsPerSlot, onBelt } from '../lib/machineRate'
-import { DEFAULT_BANK_STACK, MAX_BANK_STACK, clampBankStack, type ProcessCatalog } from '../lib/processes'
+import { DEFAULT_BANK_STACK, MAX_BANK_STACK, STEAM_HEAT_ID, clampBankStack, type ProcessCatalog } from '../lib/processes'
 import { branchIds, onOverflow, type TreeNode } from '../lib/tree'
 import { rememberChanges, rowsById, type ProducerPick } from '../lib/choices'
 import { parentId, rowItem } from '../lib/unfold'
@@ -59,7 +59,7 @@ interface Props {
   /** Rows marked built in the player's game (a checklist: it changes nothing the plan makes). */
   built: string[]
   onBuilt: (rows: string[], on: boolean) => void
-  /** Per item, the share of its overflow the plan feeds back into its own heat or fertilizer. */
+  /** Per item, the share of its overflow the plan feeds back in place of the bus or into its money. */
   fed: Map<string, FedOverflow>
   /** Adds a target making `item` from the plan's overflow of `consumes`. */
   onUseOverflow: (item: string, consumes: string) => void
@@ -940,8 +940,13 @@ function TreeRow({
     : 0
   const canChoose = !!node.producer && ((catalog.byProduct.get(node.item)?.length ?? 0) > 0 || !!reuse)
   const coin = coinValue(node.item)
-  const price = coin ?? itemsByKey.get(node.item)?.buyPrice
-  const name = itemsByKey.get(node.item)?.name ?? node.item
+  const price = itemsByKey.get(node.item)?.buyPrice
+  const name = itemName(node.item)
+  // Heat and nutrients are rows of their own, burning or spreading the row below them.
+  const pseudo = node.item === HEAT || node.item === NUTRIENTS
+  const above = parentId(node.id)
+  const burned = above !== null && (rowItem(above) === HEAT || rowItem(above) === NUTRIENTS)
+  const underBoiler = node.item === HEAT && above !== null && rowItem(above) === STEAM
   const anchorName = node.separation?.anchor && itemsByKey.get(node.separation.anchor)?.name
   const sources = node.byproductSources.map((s, i) => (
     <span key={s.id}>
@@ -976,7 +981,8 @@ function TreeRow({
     </button>
   ) : (
     node.kind === 'produce' &&
-    depth > 0 && (
+    depth > 0 &&
+    !pseudo && (
       <button
         type="button"
         className="tree-action"
@@ -1058,7 +1064,7 @@ function TreeRow({
         </div>
       </td>
       <td className="num rate-cell">
-        {target ? target.amount : fmt(node.rate)}
+        {target ? target.amount : pseudo ? `${fmt(node.rate / 60)} ${node.item === HEAT ? 'P/s' : '/s'}` : fmt(node.rate)}
         {beltsNeeded > 1 && (
           <div className="machine-meta" title={`${fmt(mods.beltSpeed)} items/min per belt`}>
             {beltsNeeded} belts
@@ -1080,8 +1086,6 @@ function TreeRow({
               `Show where ${name} is built`,
             )}
           </span>
-        ) : node.kind === 'bus' ? (
-          <span className="leaf-note">from the bus</span>
         ) : node.kind === 'overflow' ? (
           <span className="leaf-note" title="What the rest of the plan makes of it and nothing else uses">
             ↪ from the plan&apos;s overflow
@@ -1096,11 +1100,29 @@ function TreeRow({
                 onChange={(producer, machine, everywhere) =>
                   onProducer({ item: node.item, producer, machine, row: node.id, everywhere })
                 }
-                branch={{ rows, own: node.ownChoice, mine: node.mine, onReset: () => onResetProducer(node.id) }}
+                // What a row burns or spreads follows its branch only: plan-wide picks are for ingredients.
+                branch={{ rows: burned ? 1 : rows, own: node.ownChoice, mine: node.mine, onReset: () => onResetProducer(node.id) }}
                 reuse={reuse}
+                noImport={pseudo}
+                oneLine={pseudo}
+                exclude={underBoiler ? [STEAM_HEAT_ID] : undefined}
                 compact
               />
             )}
+            {p?.kind === 'fuel' && (
+              <span className="leaf-note" title="Furnaces and heating pads pass the heat on without loss, however many machines share one">
+                {p.id === STEAM_HEAT_ID ? 'on Steam Heating Pads' : 'in furnaces'}
+              </span>
+            )}
+            {node.kind === 'bus' &&
+              (coin !== null ? (
+                <span className="leaf-note">
+                  {canChoose ? '' : 'From the bus · '}
+                  <Money copper={node.fromBus * coin} suffix="/min" />
+                </span>
+              ) : (
+                !canChoose && <span className="leaf-note">from the bus</span>
+              ))}
             {details.length > 0 && (
               <span className="info-icon" tabIndex={0} title={details.join('\n')} aria-label={details.join('. ')}>
                 ⓘ
@@ -1117,15 +1139,12 @@ function TreeRow({
                 )}
               </div>
             )}
-            {node.kind === 'purchase' &&
-              (price != null ? (
-                <span className="leaf-note">
-                  {canChoose ? '' : coin !== null ? 'From the bus · ' : 'Bought · '}
-                  <Money copper={node.purchased * price} suffix="/min" />
-                </span>
-              ) : (
-                <span className="tag warn">not sold at portals</span>
-              ))}
+            {node.kind === 'purchase' && price != null && (
+              <span className="leaf-note">
+                {canChoose ? '' : 'Bought · '}
+                <Money copper={node.purchased * price} suffix="/min" />
+              </span>
+            )}
             {p?.acceptsCatalysts && node.kind === 'produce' && (
               <div className="catalysts" role="group" aria-label="Catalysts">
                 {CATALYSTS.map((c) => {
@@ -1652,6 +1671,7 @@ function blankRow(id: string, children: TreeNode[] = []): TreeNode {
     fromByproduct: 0,
     byproductSources: [],
     purchased: 0,
+    fromBus: 0,
     shortfall: 0,
     producer: '',
     ownChoice: false,
@@ -1895,6 +1915,7 @@ function shareOf(n: TreeNode, copies: number): TreeNode {
     overflow: n.overflow * k,
     fromByproduct: n.fromByproduct * k,
     purchased: n.purchased * k,
+    fromBus: n.fromBus * k,
     shortfall: n.shortfall * k,
     byproducts: n.byproducts.map((b) => ({
       ...b,
@@ -1905,11 +1926,11 @@ function shareOf(n: TreeNode, copies: number): TreeNode {
   }
 }
 
-const FED_INTO: Record<BusUse, string> = { heat: 'burned for heat', fertilizer: 'spread as fertilizer', money: 'spent in the plan' }
+const FED_INTO: Record<BusUse, string> = { plan: 'used in the plan in place of the bus', money: 'spent in the plan' }
 
 /**
- * What a row makes of an item that nothing uses: the part the plan feeds back into its own heat or
- * fertilizer (not overflow: it's used), and the rest, overflowing.
+ * What a row makes of an item that nothing uses: the part the plan feeds back in place of the bus
+ * or into its money (not overflow: it's used), and the rest, overflowing.
  */
 function OverflowNote({
   item,

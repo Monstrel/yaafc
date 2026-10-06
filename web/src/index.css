@@ -1283,37 +1283,6 @@ tr.idle {
   cursor: pointer;
 }
 
-.boiler-room {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin: 10px 0 0;
-  padding-top: 8px;
-  border-top: 1px solid var(--border);
-  font-size: 13px;
-}
-
-.boiler-fuel,
-.boiler-counts {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 8px;
-}
-
-.boiler-fuel .item-label {
-  flex: 0 0 auto;
-}
-
-/* Counts sit under the fuel, lined up past the boiler icon. */
-.boiler-counts {
-  padding-left: 28px;
-}
-
-.boiler-room strong {
-  font-variant-numeric: tabular-nums;
-}
-
 .hint-inline {
   color: var(--muted);
   font-size: 13px;
@@ -2519,12 +2488,12 @@ tr.unit-totals td.num {
   color: var(--accent);
 }
 
-/* Overflow the plan feeds back into its own heat or fertilizer: used, so not a warning. */
+/* Overflow the plan feeds back in place of the bus: used, so not a warning. */
 .fed-text {
   color: var(--muted);
 }
 
-/* Heat and fertilizer: balance in the header, then what comes in and what goes out. */
+/* A bus line: the item and its balance in the header, then where it comes from or goes. */
 .ledger-head {
   display: flex;
   flex-wrap: wrap;
@@ -2714,7 +2683,7 @@ tr.unit-totals td.num {
   gap: 8px;
 }
 
-/* The bus: three inputs on the left, an output per item on the right. */
+/* The bus: an input per item (and money) on the left, an output per item on the right. */
 .bus-inputs,
 .bus-outputs {
   display: flex;
@@ -2728,6 +2697,20 @@ tr.unit-totals td.num {
   list-style: none;
   margin: 0;
   padding: 0;
+}
+
+/* The fuel and fertilizer the plan burns and spreads unless a branch picks another. */
+.bus-defaults {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 16px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.bus-defaults .hint-inline {
+  flex: 0 0 auto;
 }
 
 .bus-input .ledger-head {

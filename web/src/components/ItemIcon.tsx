@@ -1,4 +1,4 @@
-import { HEAT, NUTRIENTS, iconUrl, itemName, itemsByKey, realItem } from '../lib/gameData'
+import { HEAT, NUTRIENTS, iconUrl, itemName, itemsByKey } from '../lib/gameData'
 import { fmt } from '../lib/format'
 import { itemNameFor } from '../lib/plural'
 
@@ -12,7 +12,7 @@ export function ItemIcon({ item, size = 24 }: { item: string; size?: number }) {
         {glyph}
       </span>
     )
-  const src = iconUrl(itemsByKey.get(realItem(item))?.icon)
+  const src = iconUrl(itemsByKey.get(item)?.icon)
   return src ? (
     <img className="item-icon" src={src} width={size} height={size} alt="" loading="lazy" />
   ) : (

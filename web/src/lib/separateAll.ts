@@ -70,8 +70,9 @@ function* sharedSeparations(plan: Plan, catalog: ProcessCatalog): Generator<Plan
     // An overflow target's row makes only its overflow: it never gathers other uses.
     const overflowRows = new Set(targetRows.filter((_, i) => consumedBy(filled[i])))
     const byItem = new Map<string, PlanNode[]>()
+    // Heat and nutrients go to the machines on their furnaces and in their nurseries: never gathered.
     for (const n of nodes)
-      if (n.kind === 'make' && !n.separation && !overflowRows.has(n) && !chosen.has(n.item) && !skipped.has(n.item))
+      if (n.kind === 'make' && !n.item.startsWith('@') && !n.separation && !overflowRows.has(n) && !chosen.has(n.item) && !skipped.has(n.item))
         byItem.set(n.item, [...(byItem.get(n.item) ?? []), n])
     const shared = [...byItem].filter(([, rows]) => rows.length > 1)
     const items = new Set(shared.map(([item]) => item))

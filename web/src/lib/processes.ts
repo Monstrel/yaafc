@@ -25,6 +25,7 @@ import {
   manualCraftTypes,
   recipeTier,
   seeds,
+  STEAM,
   type GameRecipe,
   type Item,
   type Machine,
@@ -32,10 +33,11 @@ import {
 } from './gameData'
 import { itemNameFor, noun } from './plural'
 import { COIN_STACK, itemsPerSlot } from './machineRate'
+import { BOILER_SETTINGS, STEAM_HEAT } from './steamBoiler'
 import type { MyDefaults, SavedRecipe } from './types'
 import type { Modifiers } from './upgrades'
 
-export type ProcessKind = 'recipe' | 'cauldron' | 'nursery' | 'paradox' | 'bank' | 'fuel' | 'fertilizer'
+export type ProcessKind = 'recipe' | 'cauldron' | 'nursery' | 'paradox' | 'bank' | 'boiler' | 'fuel' | 'fertilizer'
 
 /**
  * One way of turning inputs into outputs, normalised to a single craft.
@@ -82,6 +84,8 @@ export interface Process {
   license?: string
   /** Seed planted in its Nursery (not set for World Trees, which have no choice of seed). */
   seed?: string
+  /** Fertilizer its Nursery grows on, which sets its speed (not set for World Trees, which grow at their own pace). */
+  fertilizer?: string
 }
 
 export interface ProcessContext {
@@ -89,7 +93,7 @@ export interface ProcessContext {
   /** Chosen machine per process id. */
   machines: Record<string, string>
   mods: Modifiers
-  /** Fertilizer item feeding nurseries (sets their growth speed). */
+  /** Fertilizer nurseries grow on unless their row spreads another (sets their growth speed). */
   fertilizer: string | null
   /** Catalysts loaded per process id (Advanced Athanor). */
   catalysts?: Record<string, string[]>
@@ -268,53 +272,52 @@ export function savedRecipeProcess(s: SavedRecipe): Process | null {
 const WORLD_TREE_STAGE_RATE = [5000, 10000, 20000] // nutrients/s for TreeStage1..3
 const WORLD_TREE_LEAVES_PER_CORE = 100
 
-function nurseryProcesses(ctx: ProcessContext): Process[] {
-  const nursery = machinesByKey.get(NURSERY) ?? null
-  const treeNursery = machinesByKey.get(WORLD_TREE_NURSERY) ?? null
-  const miniTree = machinesByKey.get(MINI_WORLD_TREE) ?? null
-  const fert = ctx.fertilizer ? itemsByKey.get(ctx.fertilizer) : undefined
-  const fertSpeed = fert?.nutrientSpeed || 1
-  const result: Process[] = []
-  for (const s of seeds) {
-    if (!s.plant || !itemsByKey.has(s.plant) || s.nutrientCost <= 0) continue
-    const stage = s.seed.match(/^TreeStage(\d)$/)?.[1]
-    const worldTree = stage !== undefined
-    const machine = !worldTree ? nursery : stage === '2' ? miniTree : treeNursery
-    const speed = worldTree ? WORLD_TREE_STAGE_RATE[Number(stage) - 1] : fertSpeed
-    // One nutrient "charge" grows one plant (and its side product in proportion).
-    const sidePerPlant = !s.side ? 0 : worldTree ? 1 / WORLD_TREE_LEAVES_PER_CORE : s.count ? s.sideCount / s.count : 0
-    const nutrients = s.nutrientCost * (1 + sidePerPlant)
-    const outputs: Stack[] = [{ item: s.plant, count: 1 }]
-    if (s.side && sidePerPlant) outputs.push({ item: s.side, count: sidePerPlant })
-    result.push({
-      id: `nursery:${s.seed}`,
-      kind: 'nursery',
-      label: `${itemName(s.plant)} (${worldTree ? (machine?.name ?? `stage ${stage}`) : 'nursery'})`,
-      product: s.plant,
-      secondary: s.side && sidePerPlant ? [s.side] : [],
-      machine,
-      machineOptions: machine ? [machine] : [],
-      seconds: nutrients / speed,
-      inputs: [{ item: NUTRIENTS, count: nutrients }],
-      outputs,
-      alternate: false,
-      catalysts: [],
-      acceptsCatalysts: false,
-      height: 0,
-      acceptsHeight: false,
-      // Nurseries grow from bought seeds.
-      tier: Math.max(machine ? machineTier(machine.key) : 1, buyTier(worldTree ? 'WorldTreeSeed' : s.seed)),
-      ...(!worldTree && { seed: s.seed }),
-      notes: [
-        !worldTree
-          ? `Growth speed from ${fert?.name ?? 'fertilizer'} (${speed} nutrients/s)`
-          : stage === '2'
-            ? `Stays a stage 2 tree: leaves only, ${speed} nutrients/s; fertilizer only supplies nutrients`
-            : `Mature (stage 3) tree, ${speed} nutrients/s; fertilizer only supplies nutrients. A new tree first grows through stages 1 and 2`,
-      ],
-    })
+type Seed = (typeof seeds)[number]
+
+type Growing = Seed & { plant: string }
+
+const grows = (s: Seed): s is Growing => !!s.plant && itemsByKey.has(s.plant) && s.nutrientCost > 0
+
+/** A seed growing in its nursery on `fertilizer`, which sets an ordinary Nursery's speed. */
+function nurseryProcess(s: Growing, fertilizer: string | null): Process {
+  const stage = s.seed.match(/^TreeStage(\d)$/)?.[1]
+  const worldTree = stage !== undefined
+  const machine = (!worldTree ? machinesByKey.get(NURSERY) : machinesByKey.get(stage === '2' ? MINI_WORLD_TREE : WORLD_TREE_NURSERY)) ?? null
+  const fert = !worldTree && fertilizer ? itemsByKey.get(fertilizer) : undefined
+  const speed = worldTree ? WORLD_TREE_STAGE_RATE[Number(stage) - 1] : fert?.nutrientSpeed || 1
+  // One nutrient "charge" grows one plant (and its side product in proportion).
+  const sidePerPlant = !s.side ? 0 : worldTree ? 1 / WORLD_TREE_LEAVES_PER_CORE : s.count ? s.sideCount / s.count : 0
+  const nutrients = s.nutrientCost * (1 + sidePerPlant)
+  const outputs: Stack[] = [{ item: s.plant, count: 1 }]
+  if (s.side && sidePerPlant) outputs.push({ item: s.side, count: sidePerPlant })
+  return {
+    id: `nursery:${s.seed}`,
+    kind: 'nursery',
+    label: `${itemName(s.plant)} (${worldTree ? (machine?.name ?? `stage ${stage}`) : 'nursery'})`,
+    product: s.plant,
+    secondary: s.side && sidePerPlant ? [s.side] : [],
+    machine,
+    machineOptions: machine ? [machine] : [],
+    seconds: nutrients / speed,
+    inputs: [{ item: NUTRIENTS, count: nutrients }],
+    outputs,
+    alternate: false,
+    catalysts: [],
+    acceptsCatalysts: false,
+    height: 0,
+    acceptsHeight: false,
+    // Nurseries grow from bought seeds.
+    tier: Math.max(machine ? machineTier(machine.key) : 1, buyTier(worldTree ? 'WorldTreeSeed' : s.seed)),
+    ...(!worldTree && { seed: s.seed }),
+    ...(fert && { fertilizer: fert.key }),
+    notes: [
+      !worldTree
+        ? `Growth speed from ${fert?.name ?? 'fertilizer'} (${speed} nutrients/s)`
+        : stage === '2'
+          ? `Stays a stage 2 tree: leaves only, ${speed} nutrients/s; fertilizer only supplies nutrients`
+          : `Mature (stage 3) tree, ${speed} nutrients/s; fertilizer only supplies nutrients. A new tree first grows through stages 1 and 2`,
+    ],
   }
-  return result
 }
 
 // ---- Paradox Crucible: any item → Oblivion Essence ----
@@ -423,34 +426,71 @@ function bankProcess(input: Coin, output: Coin, stack: number, mods: Modifiers):
 /** Conversions between different coins (re-stacking one coin would feed its own row). */
 const bankPairs = COINS.flatMap((input) => COINS.filter((output) => output !== input).map((output) => ({ input, output })))
 
-/**
- * Steam has a heat value, but it isn't a fuel: boilers make it from the heat of a burned fuel and
- * heating pads turn it back (see steamBoiler.ts), so the plan's fuel is what the boilers burn.
- */
-const NOT_FUEL = new Set(['Steam'])
+// ---- Heat: the machines on a furnace or heating pad ----
+// Heat-using machines sit on a Stone or Blast Furnace burning a solid fuel, or on a Steam Heating
+// Pad taking Steam from pipes. Both pass the heat on without loss, however many machines share one,
+// so they aren't counted: what a row burns depends only on the heat its machines use. Steam comes
+// from Steam Boilers, themselves heated machines (see steamBoiler.ts).
+
+/** Heating with Steam, on Steam Heating Pads. */
+export const STEAM_HEAT_ID = `fuel:${STEAM}`
+
+function fuelProcess(i: Item, heat: number, label: string, notes: string[] = []): Process {
+  return {
+    id: `fuel:${i.key}`,
+    kind: 'fuel',
+    label,
+    product: HEAT,
+    secondary: [],
+    machine: null,
+    machineOptions: [],
+    seconds: 0,
+    inputs: [{ item: i.key, count: 1 }],
+    outputs: [{ item: HEAT, count: heat }],
+    alternate: false,
+    notes,
+    catalysts: [],
+    acceptsCatalysts: false,
+    height: 0,
+    acceptsHeight: false,
+    tier: 1,
+  }
+}
 
 function fuelProcesses(mods: Modifiers): Process[] {
-  return items
-    .filter((i) => i.heatValue > 0 && !NOT_FUEL.has(i.key))
-    .map((i) => ({
-      id: `fuel:${i.key}`,
-      kind: 'fuel' as const,
-      label: `Burn ${i.name}`,
-      product: HEAT,
-      secondary: [],
-      machine: null,
-      machineOptions: [],
-      seconds: 0,
-      inputs: [{ item: i.key, count: 1 }],
-      outputs: [{ item: HEAT, count: i.heatValue * mods.fuel }],
-      alternate: false,
-      notes: [],
-      catalysts: [],
-      acceptsCatalysts: false,
-      height: 0,
-      acceptsHeight: false,
-      tier: 1,
-    }))
+  const steam = itemsByKey.get(STEAM)
+  return [
+    ...items.filter((i) => i.heatValue > 0 && i.key !== STEAM).map((i) => fuelProcess(i, i.heatValue * mods.fuel, `Burn ${i.name}`)),
+    // A heating pad gives back the heat a boiler put into the Steam: Fuel Efficiency doesn't apply.
+    ...(steam ? [fuelProcess(steam, STEAM_HEAT, 'Heat with Steam', [`Steam Heating Pads: ${STEAM_HEAT} P per Steam`])] : []),
+  ]
+}
+
+const STEAM_BOILER = 'SteamBoiler'
+export const boilerId = (setting: string) => `boiler:${setting}`
+
+/** A Steam Boiler on one of its settings: heat from the furnace under it in, Steam out to its pipes. */
+function boilerProcess(setting: (typeof BOILER_SETTINGS)[number]): Process {
+  const machine = machinesByKey.get(STEAM_BOILER) ?? null
+  return {
+    id: boilerId(setting.name),
+    kind: 'boiler',
+    label: `Steam (${setting.name})`,
+    product: STEAM,
+    secondary: [],
+    machine,
+    machineOptions: machine ? [machine] : [],
+    seconds: setting.seconds,
+    inputs: [{ item: HEAT, count: setting.steam * STEAM_HEAT }],
+    outputs: [{ item: STEAM, count: setting.steam }],
+    alternate: false,
+    notes: [`${setting.name} setting: ${setting.steam} Steam every ${setting.seconds} s`],
+    catalysts: [],
+    acceptsCatalysts: false,
+    height: 0,
+    acceptsHeight: false,
+    tier: machine ? machineTier(machine.key) : 1,
+  }
 }
 
 function fertilizerProcesses(mods: Modifiers): Process[] {
@@ -481,18 +521,16 @@ function fertilizerProcesses(mods: Modifiers): Process[] {
 export const defaultMachine = (p: Process, tier: number) =>
   (p.machineOptions.find((m) => machineTier(m.key) <= tier) ?? p.machineOptions[0])?.key
 
-/** Items a building makes natively, outside the recipe tables. */
-const BUILDING_MADE: Record<string, string> = { Steam: 'SteamBoiler' }
-
 /**
- * How one row runs a process: its machine, catalysts, the height its machines are built at and the
- * coins its Bank Portals output per entry.
+ * How one row runs a process: its machine, catalysts, the height its machines are built at, the
+ * coins its Bank Portals output per entry and the fertilizer its Nurseries grow on.
  */
 export interface RunChange {
   machine?: string
   catalysts?: string[]
   height?: number
   stack?: number
+  fertilizer?: string
   /** Coins per input belt entry, per ingredient fed smaller stacks than 50 (empty: none). */
   inputStacks?: Record<string, number>
 }
@@ -523,12 +561,16 @@ export function buildCatalog(ctx: ProcessContext): ProcessCatalog {
   const recipes = new Map(gameRecipes.map((r) => [`recipe:${r.key}`, r]))
   const banks = new Map(bankPairs.map((b) => [bankId(b.input.coin, b.output.coin), b]))
   const paradox = new Map(paradoxInputs.map((i) => [paradoxId(i.key), i]))
+  const nurseries = new Map(seeds.filter(grows).map((s) => [`nursery:${s.seed}`, s]))
   const rerun = (p: Process, change: RunChange) => {
     const bank = banks.get(p.id)
     if (bank) {
       const stack = clampBankStack(change.stack ?? p.stack ?? DEFAULT_BANK_STACK)
       return stack === p.stack ? p : bankProcess(bank.input, bank.output, stack, ctx.mods)
     }
+    const seed = nurseries.get(p.id)
+    // World Trees grow at their own pace: only ordinary Nurseries (with a seed) take a fertilizer.
+    if (seed) return !p.seed || !change.fertilizer || change.fertilizer === p.fertilizer ? p : nurseryProcess(seed, change.fertilizer)
     const { machine = p.machine?.key, catalysts = p.catalysts, height = p.height } = change
     const r = recipes.get(p.id)
     const same = (a: string[], b: string[]) => a.length === b.length && a.every((k) => b.includes(k))
@@ -557,10 +599,11 @@ export function buildCatalog(ctx: ProcessContext): ProcessCatalog {
   }
   const all: Process[] = [
     ...gameRecipes.filter((r) => !r.hidden && !manualCraftTypes.has(r.craftType)).map((r) => recipeProcess(r, ctx)),
-    ...nurseryProcesses(ctx),
+    ...seeds.filter(grows).map((s) => nurseryProcess(s, ctx.fertilizer)),
     ...ctx.saved.map(savedRecipeProcess).filter((p): p is Process => !!p),
     ...paradoxInputs.map((i) => paradoxProcess(i)),
     ...bankPairs.map(({ input, output }) => bankProcess(input, output, DEFAULT_BANK_STACK, ctx.mods)),
+    ...BOILER_SETTINGS.map(boilerProcess),
     ...fuelProcesses(ctx.mods),
     ...fertilizerProcesses(ctx.mods),
   ]
@@ -580,7 +623,7 @@ export function buildCatalog(ctx: ProcessContext): ProcessCatalog {
 
   // Lower each item's reach to that of the processes making it until nothing changes (loops settle
   // on their cheapest way in). Items nothing makes and portals don't sell come from outside: tier 1.
-  const reached = new Map<string, number>(Object.entries(BUILDING_MADE).map(([item, b]) => [item, machineTier(b)]))
+  const reached = new Map<string, number>()
   const itemReach = (item: string) => {
     if (item.startsWith('@')) return 1
     const known = reached.get(item)
@@ -608,15 +651,17 @@ export function buildCatalog(ctx: ProcessContext): ProcessCatalog {
  * standard game recipe, else a nursery (preferred over seed plots; the World Tree Nursery over the
  * Miniature World Tree), else the Paradox Crucible (for
  * Oblivion Essence, whose only recipe loops back through Vitality), else an alternate recipe, else
- * a saved cauldron recipe, else import. Coins are money off the bus: they're taken in at face value,
- * and minted only for a target (`asTarget`).
+ * a saved cauldron recipe, else a Steam Boiler on High, else bought at a portal, else taken from
+ * the bus. Coins are money off the bus: they're taken in at face value, and minted only for a
+ * target (`asTarget`).
  */
 export function defaultProducer(catalog: ProcessCatalog, item: string, asTarget = false): string {
-  if (coinValue(item) !== null && !asTarget) return 'import'
+  const outside = itemsByKey.get(item)?.buyPrice != null ? 'import' : 'bus'
+  if (coinValue(item) !== null && !asTarget) return 'bus'
   const open = (p: Process | undefined): p is Process => !!p && catalog.reach(p) <= catalog.tier
-  // The unlocked fuel with the most heat per item.
+  // The unlocked solid fuel with the most heat per item (Steam has to be made first).
   if (item === HEAT) {
-    const fuels = catalog.byProduct.get(HEAT) ?? []
+    const fuels = (catalog.byProduct.get(HEAT) ?? []).filter((p) => p.id !== STEAM_HEAT_ID)
     return ([...fuels].filter(open).sort((a, b) => b.outputs[0].count - a.outputs[0].count)[0] ?? fuels[0])?.id ?? 'import'
   }
   if (item === NUTRIENTS) {
@@ -634,6 +679,8 @@ export function defaultProducer(catalog: ProcessCatalog, item: string, asTarget 
       options.find((p) => p.kind === 'paradox') ??
       options.find((p) => p.kind === 'recipe') ??
       options.find((p) => p.kind === 'cauldron') ??
+      // The fewest boilers.
+      options.find((p) => p.id === boilerId('High')) ??
       // Only made as a side product (e.g. Gentian Nectar from the Gentian nursery). Items only made
       // by failed crafts aren't run for: they're reused, else brought in.
       all.find((p) => p.secondary.includes(item) && (p.kind === 'nursery' || p.kind === 'recipe')) ??
@@ -641,7 +688,7 @@ export function defaultProducer(catalog: ProcessCatalog, item: string, asTarget 
     )
   }
   const all = catalog.byProduct.get(item) ?? []
-  return (rank(all.filter(open)) ?? rank(all))?.id ?? 'import'
+  return (rank(all.filter(open)) ?? rank(all))?.id ?? outside
 }
 
 /**
@@ -655,6 +702,7 @@ export const runKey = (p: Process) =>
     ...[...p.catalysts].sort(),
     ...(p.acceptsHeight ? [`h${p.height}`] : []),
     ...(p.stack !== undefined ? [`s${p.stack}`] : []),
+    ...(p.fertilizer ? [`f${p.fertilizer}`] : []),
     ...Object.entries(p.inputStacks ?? {})
       .sort()
       .map(([item, n]) => `${item}@${n}`),
@@ -670,6 +718,7 @@ export const sameRecipe = (a: Process, b: Process) => a.id === b.id && a.machine
 export function processTitle(p: Process): string {
   if (p.kind === 'cauldron') return p.name || `${p.machine?.name ?? 'Cauldron'}: ${itemName(p.product)}`
   if (p.kind === 'fuel' || p.kind === 'fertilizer') return itemName(p.inputs[0]?.item ?? '')
+  if (p.kind === 'boiler') return `${p.machine?.name ?? 'Steam Boiler'} · ${p.label.slice(p.label.indexOf('(') + 1, -1)}`
   return p.machine?.name ?? p.label
 }
 
@@ -678,5 +727,5 @@ export function processLabel(p: Process, forItem?: string): string {
   const prefix = p.kind === 'cauldron' ? '★ ' : ''
   const machine = p.machine ? ` · ${p.machine.name}` : ''
   const side = forItem && forItem !== p.product ? ' (by-product)' : ''
-  return `${prefix}${p.label}${p.kind === 'recipe' || p.kind === 'nursery' ? machine : ''}${side}`
+  return `${prefix}${p.label}${p.kind === 'recipe' || p.kind === 'nursery' || p.kind === 'boiler' ? machine : ''}${side}`
 }

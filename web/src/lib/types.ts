@@ -19,8 +19,8 @@ export interface PlanTarget {
   rate: number
   /**
    * 'items' = items per minute (default); 'machines' = that many of the producer's machines' output;
-   * 'net' = items per minute left over after the plan burns or spreads what it needs of a fed-back
-   * fuel or fertilizer (the planner sizes the build); 'overflow' = as many as the overflow of
+   * 'net' = items per minute left over after the plan's rows take what they need of a fed-back item
+   * in place of the bus (the planner sizes the build); 'overflow' = as many as the overflow of
    * `consumes` makes (the planner sizes the build, and `rate` is unused).
    */
   unit?: 'items' | 'machines' | 'net' | 'overflow'
@@ -30,13 +30,13 @@ export interface PlanTarget {
    */
   consumes?: string
   /**
-   * Whether this target's output feeds the plan's own heat or fertilizer need (when the item is a
-   * fuel, or the nurseries' fertilizer). Absent = as the plan's `feedbackItems` says for the item.
+   * Whether this target's output covers what the plan's rows take of its item from the bus (or,
+   * coins, the plan's money). Absent = as the plan's `feedbackItems` says for the item.
    */
   feedback?: boolean
 }
 
-/** Chosen producer for an item: a process id, or 'import' to bring it in from outside. */
+/** Chosen producer for an item: a process id, 'import' to buy it at a Purchase Portal, or 'bus' to take it from the bus. */
 export type ProducerChoice = string
 
 /** A producer picked for one branch of the production tree. */
@@ -71,8 +71,9 @@ export interface Plan {
   /** Plans saved before upgrades were global: their research tier (moved to `Progress` on load). */
   tier?: number
   /**
-   * Fuel and fertilizer items whose output the plan feeds back into its own heat or fertilizer
-   * need: every source of them (overflow, and targets that don't say otherwise). See ledger.ts.
+   * Items whose output the plan feeds back in place of what its rows take of them from the bus (or,
+   * coins, into its money): every source of them (overflow, and targets that don't say otherwise).
+   * See ledger.ts.
    */
   feedbackItems?: string[]
   /** Plans saved before feedback was per item: per use (moved to `feedbackItems` on load). */
@@ -135,7 +136,7 @@ export interface Separation {
  * and used by every plan unless the plan picks something else.
  */
 export interface MyDefault {
-  /** Process id, or 'import'. */
+  /** Process id, 'import' (bought) or 'bus'. */
   producer: string
   /** Machine to run it on, when it can run on several. */
   machine?: string

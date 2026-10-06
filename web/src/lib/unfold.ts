@@ -1,16 +1,19 @@
-import { HEAT, NUTRIENTS, buyTier, itemsByKey, realItem } from './gameData'
+import { HEAT, NUTRIENTS, STEAM, buyTier, itemsByKey } from './gameData'
 import { COIN_STACK } from './machineRate'
-import { DEFAULT_BANK_STACK, defaultProducer, sameRecipe, type Process, type ProcessCatalog } from './processes'
+import { DEFAULT_BANK_STACK, STEAM_HEAT_ID, defaultProducer, sameRecipe, type Process, type ProcessCatalog } from './processes'
 import { separationsOf } from './separate'
 import type { MyDefault, Plan, PlanTarget, Separation } from './types'
 
+/** Bought at a Purchase Portal. */
 export const IMPORT = 'import'
+/** Taken from the factory bus: made somewhere outside the plan. */
+export const BUS = 'bus'
 const MAX_DEPTH = 40
 
 export type PlanNodeKind =
   | 'make' // machines run `process` for this row
-  | 'import' // bought, or brought in from outside the plan
-  | 'bus' // fuel/fertilizer taken from the factory bus
+  | 'import' // bought at a Purchase Portal
+  | 'bus' // taken from the factory bus
   | 'loop' // fed by the row `ref` further up this branch (or cut off, too deep, with no `ref`)
   | 'separate' // built separately, by the row `ref`
   | 'overflow' // the plan's overflow of the item, taken by an overflow target's rows
@@ -52,7 +55,7 @@ export interface PlanNode {
   groupAnchor?: string
   /** For a row gathering the uses of an item built separately: the choice behind it. */
   separation?: Separation
-  /** Ingredient rows of a `make` row (heat and nutrients aside), then the rows it gathers. */
+  /** Rows of a `make` row's ingredients (heat and nutrients too), then the rows it gathers. */
   children: PlanNode[]
 }
 
@@ -68,7 +71,7 @@ export interface PlanShape {
 export const consumedBy = (t: PlanTarget) => (t.unit === 'overflow' && t.consumes ? t.consumes : null)
 
 export interface ResolvedChoice {
-  /** Process id, or 'import'. */
+  /** Process id, 'import' or 'bus'. */
   producer: string
   process?: Process
   /** Picked for this row itself. */
@@ -126,6 +129,31 @@ export const rowItem = (id: string) => {
 const makes = (p: Process | undefined, item: string) =>
   !!p && (p.product === item || p.secondary.includes(item) || p.outputs.some((o) => o.item === item))
 
+/** Heat and nutrients aren't items: they can't be bought or taken from the bus, only made by burning or spreading one. */
+const isPseudo = (item: string) => item.startsWith('@')
+
+/** Whether a producer pick brings the item in from outside the plan. */
+export const fromOutside = (producer: string) => producer === IMPORT || producer === BUS
+
+/** Bought where portals sell the item, else taken from the bus (plans saved before the bus was a pick bought everything). */
+const outside = (item: string, producer: string) => (producer === IMPORT && itemsByKey.get(item)?.buyPrice != null ? IMPORT : BUS)
+
+/**
+ * Whether a row is a fuel burned for its parent's heat or a fertilizer spread for its nurseries:
+ * those come off the bus unless their branch picks otherwise (plan-wide picks are for making the
+ * item as an ingredient, and older plans have many). Steam is made, by boilers.
+ */
+const isBurned = (item: string, id: string) => {
+  const above = parentId(id)
+  return item !== STEAM && above !== null && (rowItem(above) === HEAT || rowItem(above) === NUTRIENTS)
+}
+
+/** A boiler's own heat can't come from Steam: it would only turn Steam into Steam, slower. */
+const underBoiler = (item: string, id: string) => {
+  const above = parentId(id)
+  return item === HEAT && above !== null && rowItem(above) === STEAM
+}
+
 /** What a row loads, how high it's built and the coins it outputs per entry when it follows no saved default. */
 const NO_SETUP = { defaultCatalysts: [] as string[], defaultHeight: 0, defaultStack: DEFAULT_BANK_STACK }
 
@@ -138,7 +166,8 @@ const knownMachine = (p: Process, machine: string | undefined) =>
  */
 export function myDefault(catalog: ProcessCatalog, item: string): MyDefault | undefined {
   const mine = catalog.mine[item]
-  if (!mine) return undefined
+  if (!mine || (isPseudo(item) && fromOutside(mine.producer))) return undefined
+  if (mine.producer === BUS) return mine
   if (mine.producer === IMPORT) return itemsByKey.get(item)?.buyPrice == null || buyTier(item) <= catalog.tier ? mine : undefined
   const p = catalog.byId.get(mine.producer)
   if (!makes(p, item)) return undefined
@@ -158,7 +187,8 @@ export function myDefault(catalog: ProcessCatalog, item: string): MyDefault | un
  */
 export function planChoice(plan: Plan, catalog: ProcessCatalog, item: string, asTarget = false): MyDefault & { mine: boolean } {
   const choice = plan.producers[item]
-  if (choice === IMPORT || (choice && makes(catalog.byId.get(choice), item))) return { producer: choice, mine: false }
+  if ((fromOutside(choice) && !isPseudo(item)) || (choice && makes(catalog.byId.get(choice), item)))
+    return { producer: choice, mine: false }
   const mine = myDefault(catalog, item)
   if (mine) return { ...mine, mine: true }
   return { producer: defaultProducer(catalog, item, asTarget), mine: false }
@@ -168,7 +198,9 @@ export const planProducer = (plan: Plan, catalog: ProcessCatalog, item: string) 
 
 /**
  * What a row of `item` with id `id` uses: the nearest pick on it or a row of the same item above
- * it, else the plan-wide producer. `inherited` skips the row's own pick (what it would fall back to).
+ * it, else the plan-wide producer. A fuel or fertilizer row comes off the bus unless its branch
+ * picks otherwise, and a boiler's heat never comes from Steam. `inherited` skips the row's own pick
+ * (what it would fall back to).
  */
 export function resolveChoice(
   plan: Plan,
@@ -177,16 +209,22 @@ export function resolveChoice(
   id: string,
   inherited = false,
 ): ResolvedChoice {
+  const allowed = (producer: string) => !(underBoiler(item, id) && producer === STEAM_HEAT_ID)
   for (let at = inherited ? parentId(id) : id; at !== null; at = parentId(at)) {
     const pick = plan.branches?.[at]
-    if (!pick || rowItem(at) !== item) continue
-    if (pick.producer === IMPORT) return { producer: IMPORT, own: at === id, mine: false, ...NO_SETUP }
+    if (!pick || rowItem(at) !== item || !allowed(pick.producer)) continue
+    if (fromOutside(pick.producer)) {
+      if (isPseudo(item)) continue
+      return { producer: outside(item, pick.producer), own: at === id, mine: false, ...NO_SETUP }
+    }
     const p = catalog.byId.get(pick.producer)
     if (makes(p, item)) return onRow(p!, pick.machine, at === id)
   }
-  const choice = planChoice(plan, catalog, item, isTargetRow(id))
+  if (isBurned(item, id)) return { producer: BUS, own: false, mine: false, ...NO_SETUP }
+  let choice = planChoice(plan, catalog, item, isTargetRow(id))
+  if (!allowed(choice.producer)) choice = { producer: defaultProducer(catalog, item), mine: false }
   const p = catalog.byId.get(choice.producer)
-  if (!p) return { producer: IMPORT, own: false, mine: choice.mine, ...NO_SETUP }
+  if (!p) return { producer: outside(item, choice.producer), own: false, mine: choice.mine, ...NO_SETUP }
   const defaults = choice.mine
     ? {
         defaultCatalysts: choice.catalysts ?? [],
@@ -196,12 +234,16 @@ export function resolveChoice(
     : NO_SETUP
   return onRow(p, choice.machine, false, choice.mine, defaults)
 
-  /** The process on the picked machine, with the row's own catalysts, height and stack (else the default's). */
+  /**
+   * The process on the picked machine, with the row's own catalysts, height and stack (else the
+   * default's), and for a Nursery the fertilizer its row spreads, which sets its speed.
+   */
   function onRow(p: Process, machine: string | undefined, own: boolean, mine = false, defaults = NO_SETUP): ResolvedChoice {
     const catalysts = plan.rowCatalysts?.[id] ?? defaults.defaultCatalysts
     const height = plan.rowHeights?.[id] ?? defaults.defaultHeight
     const stack = plan.rowStacks?.[id] ?? defaults.defaultStack
-    const process = catalog.variant(p, { machine: knownMachine(p, machine), catalysts, height, stack })
+    const fertilizer = p.seed ? resolveChoice(plan, catalog, NUTRIENTS, `${id}/${NUTRIENTS}`).process?.inputs[0]?.item : undefined
+    const process = catalog.variant(p, { machine: knownMachine(p, machine), catalysts, height, stack, fertilizer })
     return { producer: p.id, process, own, mine, ...defaults }
   }
 }
@@ -301,13 +343,16 @@ export function unfold(plan: Plan, catalog: ProcessCatalog): PlanShape {
     return row ? { ref: row } : null
   }
 
+  /** A row brought in from outside the plan: bought, or taken from the bus. */
+  const leaf = (item: string, id: string, depth: number, parent: PlanNode | undefined, choice: ResolvedChoice) =>
+    create(item, id, depth, parent, { kind: choice.producer === BUS ? 'bus' : 'import', ...picked(choice) })
+
   const child = (item: string, parent: PlanNode): PlanNode => {
     const id = `${parent.id}/${item}`
     const depth = parent.depth + 1
-    if (realItem(item) !== item) return create(realItem(item), id, depth, parent, { kind: 'bus' })
     if (item === linked) return create(item, id, depth, parent, { kind: 'overflow', reuse: false, reuseChosen: false })
     const choice = resolveChoice(plan, catalog, item, id)
-    if (!choice.process) return create(item, id, depth, parent, { ...picked(choice) })
+    if (!choice.process) return leaf(item, id, depth, parent, choice)
     for (let a: PlanNode | undefined = parent; a; a = a.parent)
       if (a.item === item && a.kind === 'make' && sameRecipe(a.process!, choice.process))
         return create(item, id, depth, parent, { kind: 'loop', ref: a, ...picked(choice) })
@@ -326,7 +371,7 @@ export function unfold(plan: Plan, catalog: ProcessCatalog): PlanShape {
       if (s.anchor === n.item && (!s.at || s.at === n.id) && !groups.has(s.item)) groups.set(s.item, { sep: s, expanded: false })
     const frame = groups.size ? { node: n, groups } : null
     if (frame) frames.push(frame)
-    for (const s of n.process!.inputs) if (s.item !== HEAT && s.item !== NUTRIENTS) n.children.push(child(s.item, n))
+    for (const s of n.process!.inputs) n.children.push(child(s.item, n))
     const fed = fedStacks(n.children)
     if (fed) n.process = catalog.variant(n.process!, { inputStacks: fed })
     if (!frame) return
@@ -367,7 +412,7 @@ export function unfold(plan: Plan, catalog: ProcessCatalog): PlanShape {
             ...picked(choice),
             ...(sep && { separation: sep }),
           })
-        : create(t.item, id, 0, undefined, { ...picked(choice) })
+        : leaf(t.item, id, 0, undefined, choice)
       if (sep) topRows.set(t.item, n.kind === 'make' ? n : null)
       if (from) consumes.set(n, from)
       roots.push(n)

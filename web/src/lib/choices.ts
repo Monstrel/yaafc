@@ -1,13 +1,13 @@
-import { HEAT, NUTRIENTS, realItem } from './gameData'
+import { HEAT, NUTRIENTS } from './gameData'
 import { DEFAULT_BANK_STACK, defaultMachine, defaultProducer, type ProcessCatalog } from './processes'
 import { separationKey, separationsOf } from './separate'
 import type { TreeNode } from './tree'
 import type { MyDefault, MyDefaults, Plan } from './types'
-import { planProducer, resolveChoice, reusesByproducts, rowItem, unfold } from './unfold'
+import { parentId, planProducer, resolveChoice, reusesByproducts, rowItem, unfold } from './unfold'
 
 export interface ProducerPick {
   item: string
-  /** Process id, or 'import'. */
+  /** Process id, 'import' (bought) or 'bus'. */
   producer: string
   /** Machine to run it on, when it can run on several. */
   machine?: string
@@ -165,12 +165,12 @@ export function migrateFeedback(plan: Plan, catalog: ProcessCatalog): Plan | nul
   let feedbackItems = plan.feedbackItems
   for (const [use, key] of [['fuel', HEAT], ['fertilizer', NUTRIENTS]] as const) {
     const item = catalog.byId.get(planProducer(plan, catalog, key))?.inputs[0]?.item
-    if (legacy[use] && item) feedbackItems = withItem(feedbackItems, realItem(item), true)
+    if (legacy[use] && item) feedbackItems = withItem(feedbackItems, item, true)
   }
   return { ...rest, feedbackItems }
 }
 
-/** Whether every source of an item feeds the plan's heat or fertilizer (targets can say otherwise). */
+/** Whether every source of an item covers what the plan takes of it from the bus (targets can say otherwise). */
 export const setItemFeedback = (plan: Plan, item: string, on: boolean): Plan => ({
   ...plan,
   feedbackItems: withItem(plan.feedbackItems, item, on),
@@ -206,8 +206,8 @@ export function setBuilt(plan: Plan, rows: string[], on: boolean): Plan {
 }
 
 /**
- * Makes the plan provide its own heat or fertilizer: a target of `item` at 0 net per minute, fed
- * back, at the end of the list, so it covers whatever the sources ahead of it leave. It's an
+ * Makes the plan provide its own `item` instead of taking it from the bus: a target of it at 0 net
+ * per minute, fed back, at the end of the list, so it covers whatever the sources ahead of it leave. It's an
  * ordinary target from then on; removing it puts the plan back as it was.
  */
 export const addProvider = (plan: Plan, item: string): Plan => ({
@@ -442,7 +442,10 @@ function setupsBelow(rows: Map<string, TreeNode>, row: TreeNode) {
       continue
     }
     const p = n.run?.process
-    if (n.producer && !setups.has(n.item))
+    // What a row burns or spreads is the plan's choice, not how its item is made.
+    const above = parentId(n.id)
+    const fuel = n.item.startsWith('@') || (above !== null && rowItem(above).startsWith('@'))
+    if (n.producer && !fuel && !setups.has(n.item))
       setups.set(n.item, {
         node: n,
         setup: {

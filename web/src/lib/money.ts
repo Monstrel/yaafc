@@ -1,6 +1,5 @@
 import { coinValue, itemsByKey } from './gameData'
-import { carriers, itemFedBack, targetFedBack, type ResourceLedger } from './ledger'
-import type { ProcessCatalog } from './processes'
+import { itemFedBack, targetFedBack, type ItemLedger } from './ledger'
 import type { PlanResult } from './solver'
 import type { Plan } from './types'
 
@@ -8,12 +7,15 @@ import type { Plan } from './types'
 export interface MoneyLine {
   item: string
   count: number
-  /** Copper per item; null when portals don't sell it (brought in from outside, no price). */
+  /** Copper per item; null when portals don't sell it. */
   price: number | null
 }
 
-/** What crossing the bus an output can feed back into: the plan's heat, fertilizer or money. */
-export type BusUse = 'heat' | 'fertilizer' | 'money'
+/**
+ * What an output can feed back into, in place of the bus: what the plan's rows take of the same
+ * item from it, or (coins) the plan's money.
+ */
+export type BusUse = 'plan' | 'money'
 
 /** One source of an output: a target, or overflow (made, but nothing in the plan uses it). */
 export interface OutputSource {
@@ -66,13 +68,13 @@ export interface MoneyLedger {
   value: number
 }
 
-export function moneyLedger(plan: Plan, catalog: ProcessCatalog, result: PlanResult, ledgers: ResourceLedger[]): MoneyLedger {
+export function moneyLedger(plan: Plan, result: PlanResult, ledgers: ItemLedger[]): MoneyLedger {
   const purchases: MoneyLine[] = []
   const coins: MoneyLine[] = []
   for (const b of result.balances) {
-    if (b.item.startsWith('@') || b.imported <= 0) continue
+    if (b.imported > 0) purchases.push({ item: b.item, count: b.imported, price: itemsByKey.get(b.item)?.buyPrice ?? null })
     const face = coinValue(b.item)
-    ;(face !== null ? coins : purchases).push({ item: b.item, count: b.imported, price: face ?? itemsByKey.get(b.item)?.buyPrice ?? null })
+    if (face !== null && b.fromBus > 0) coins.push({ item: b.item, count: b.fromBus, price: face })
   }
   const total = (lines: MoneyLine[]) => lines.reduce((t, l) => t + l.count * (l.price ?? 0), 0)
   const need = total(purchases) + total(coins)
@@ -102,11 +104,11 @@ export function moneyLedger(plan: Plan, catalog: ProcessCatalog, result: PlanRes
   }
   const find = (item: string, target: number | null) => sources.find((s) => s.item === item && s.target === target)
 
-  // Heat and fertilizer took their share already (see ledger.ts).
+  // What the plan's rows take from the bus took its share already (see ledger.ts).
   for (const l of ledgers)
     for (const s of l.sources) {
       const o = find(s.item, s.target)
-      if (o && s.used > 0) o.used[l.resource] = s.used
+      if (o && s.used > 0) o.used.plan = s.used
     }
 
   // Fed-back coins cover the money need at face value: overflow first, then targets in order.
@@ -121,15 +123,13 @@ export function moneyLedger(plan: Plan, catalog: ProcessCatalog, result: PlanRes
   }
   if (remaining < need * 1e-9) remaining = 0
 
-  const fuels = carriers(plan, catalog, 'heat')
-  const fertilizers = carriers(plan, catalog, 'fertilizer')
+  const drawn = new Set(ledgers.map((l) => l.item))
   const outputs: OutputRow[] = []
   for (const s of sources) {
     let row = outputs.find((o) => o.item === s.item)
     if (!row) {
       const feeds: BusUse[] = []
-      if (fuels.has(s.item)) feeds.push('heat')
-      if (fertilizers.has(s.item)) feeds.push('fertilizer')
+      if (drawn.has(s.item)) feeds.push('plan')
       if (coinValue(s.item) !== null) feeds.push('money')
       row = { item: s.item, sources: [], feeds, used: {}, toBus: 0, price: coinValue(s.item) ?? itemsByKey.get(s.item)?.sellPrice ?? null }
       outputs.push(row)
@@ -157,8 +157,8 @@ export interface FedOverflow {
 }
 
 /**
- * Per item, the share of its overflow that overflow targets take or the plan feeds back into its
- * heat, fertilizer or money, and what into: that part isn't overflow, since the plan uses it.
+ * Per item, the share of its overflow that overflow targets take or the plan feeds back in place of
+ * the bus or into its money, and what into: that part isn't overflow, since the plan uses it.
  */
 export function fedOverflow(money: MoneyLedger): Map<string, FedOverflow> {
   const fed = new Map<string, FedOverflow>()

@@ -1,4 +1,4 @@
-import { HEAT, NUTRIENTS, baseInputKey, realItem, type Stack } from './gameData'
+import type { Stack } from './gameData'
 import { checkProcess, wholeMachines } from './logistics'
 import { unitScales } from './units'
 import { solveLP } from './lp'
@@ -6,8 +6,8 @@ import { craftsPerMachine } from './machineRate'
 import { runKey, type Process, type ProcessCatalog } from './processes'
 import { NO_FLOWS, buildTree, onOverflow, type ByproductRoute, type RowFlows, type TreeNode } from './tree'
 import type { Plan } from './types'
-import { PSEUDO, absorbers, supplyAhead } from './ledger'
-import { consumedBy, isTargetRow, planProducer, unfold, type PlanNode, type PlanShape } from './unfold'
+import { absorbers, supplyAhead } from './ledger'
+import { consumedBy, isTargetRow, unfold, type PlanNode, type PlanShape } from './unfold'
 import type { Modifiers } from './upgrades'
 
 export interface ProcessRun {
@@ -25,7 +25,12 @@ export interface ItemBalance {
   target: number
   produced: number
   consumed: number
+  /** Bought at Purchase Portals. */
   imported: number
+  /** Taken from the bus, less what the plan's own output covers (a fed-back net-surplus target). */
+  fromBus: number
+  /** What the plan's rows take from the bus, before its own output covers any. */
+  drawn: number
   /** Shortfall the chosen producers can't cover (e.g. a loop that doesn't sustain itself). */
   deficit: number
   surplus: number
@@ -35,7 +40,7 @@ export interface ItemBalance {
 export interface ResolvedTarget {
   item: string
   rate: number
-  /** Items per minute its row makes: `rate`, plus what the plan burns or spreads of a net-surplus target. */
+  /** Items per minute its row makes: `rate`, plus what the plan takes of a net-surplus target in place of the bus. */
   made: number
   /** Items per minute one of the chosen producer's machines makes, or null if bought/not made by a machine. */
   perMachine: number | null
@@ -136,16 +141,6 @@ const SHORTFALL_ROW = 'shortfall'
 // shortfall in a runaway loop would make it look like it settles).
 const UNUSED_OVERFLOW_COST = 1
 
-/**
- * Fuel and fertilizer come off the factory bus: their processes draw from a separate pool
- * (`@base:X`) so the plan's own output of X never changes how much gets built. Feeding the plan's
- * output back is a reporting step (see baseInputs.ts), not part of the solve.
- */
-function fromBus(p: Process): Process {
-  if (p.kind !== 'fuel' && p.kind !== 'fertilizer') return p
-  return { ...p, inputs: p.inputs.map((s) => ({ ...s, item: baseInputKey(s.item) })) }
-}
-
 /** Items per minute of `item` one machine running process `p` makes (output-belt cap included). */
 export function outputPerMachine(p: Process, item: string, mods: Modifiers): number | null {
   const out = p.outputs.find((s) => s.item === item)?.count ?? 0
@@ -174,15 +169,13 @@ function resolveTargets(plan: Plan, shape: PlanShape, mods: Modifiers): Resolved
 }
 
 /**
- * Net-surplus targets the solve sizes: per heat or nutrients, the target that covers what's left
- * of the plan's need, and the heat or nutrients the fed-back sources ahead of it supply.
+ * Net-surplus targets the solve sizes, per item: the target that covers what's left of what the
+ * plan's rows take of it from the bus, and what the fed-back sources ahead of it supply.
  */
 interface Absorbing {
   /** Index among the targets with an item (as `targets` and `shape.targetRows`). */
   target: number
-  /** Burning or spreading the target's item: its real item in, heat or nutrients out. */
-  process: Process
-  /** Heat or nutrients per minute the sources ahead of it can supply. */
+  /** Items per minute the sources ahead of it can supply. */
   ahead: number
 }
 
@@ -227,27 +220,23 @@ export function solvePlan(plan: Plan, catalog: ProcessCatalog, mods: Modifiers):
 
 /**
  * Solves the plan with rows held to at least `floors` crafts per minute (by row id). A net-surplus
- * target that's fed back makes the plan cover its own heat or nutrients: its row grows to burn what
- * the sources ahead of it (overflow, then fed-back targets in order) leave of the need, and still
- * delivers its rate. Overflow depends on the solution, so the solve repeats until what those
- * sources supply settles.
+ * target that's fed back makes the plan cover its own use of its item: its row grows to make what
+ * the plan's rows would take of it from the bus, less what the sources ahead of it (overflow, then
+ * fed-back targets in order) supply, and still delivers its rate. Overflow depends on the solution,
+ * so the solve repeats until what those sources supply settles.
  */
 function solveFed(plan: Plan, catalog: ProcessCatalog, mods: Modifiers, floors: Map<string, number>): PlanResult {
-  const found = absorbers(plan, catalog)
+  const found = absorbers(plan)
   if (!found.size) return solveRound(plan, catalog, mods, new Map(), floors)
   const filtered = plan.targets.map((t, i) => (t.item ? plan.targets.slice(0, i).filter((x) => x.item).length : -1))
   const absorbing = new Map<string, Absorbing>()
-  for (const [resource, { target, item }] of found) {
-    const pseudo = PSEUDO[resource]
-    const process = catalog.byProduct.get(pseudo)?.find((p) => realItem(p.inputs[0]?.item ?? '') === item)
-    if (process) absorbing.set(pseudo, { target: filtered[target], process, ahead: 0 })
-  }
+  for (const [item, target] of found) absorbing.set(item, { target: filtered[target], ahead: 0 })
   let result = solveRound(plan, catalog, mods, absorbing, floors)
   for (let round = 1; round < MAX_FEEDBACK_ROUNDS && result.status === 'ok'; round++) {
-    const ahead = supplyAhead(plan, catalog, result)
+    const ahead = supplyAhead(plan, result)
     let settled = true
-    for (const [pseudo, a] of absorbing) {
-      const next = ahead[pseudo === HEAT ? 'heat' : 'fertilizer']
+    for (const [item, a] of absorbing) {
+      const next = ahead.get(item) ?? 0
       if (Math.abs(next - a.ahead) > 1e-9 * Math.max(1, next)) settled = false
       a.ahead = next
     }
@@ -309,8 +298,8 @@ function distance(a: PlanNode, b: PlanNode): number {
   return x.length + y.length - 2 * common
 }
 
-/** Ingredients a row's process takes from the rows below it, in the order of its children. */
-const ingredients = (p: Process) => p.inputs.filter((s) => s.item !== HEAT && s.item !== NUTRIENTS)
+/** Ingredients a row's process takes from the rows below it (heat and nutrients too), in the order of its children. */
+const ingredients = (p: Process) => p.inputs
 const outputOf = (p: Process, item: string) => p.outputs.find((s) => s.item === item)?.count ?? 0
 
 /**
@@ -321,8 +310,9 @@ const outputOf = (p: Process, item: string) => p.outputs.find((s) => s.item === 
  * By-products are the one exception: each row's side outputs can feed any row of their item,
  * the nearest first, and what's left over is surplus. They're only what rows make for their own use:
  * no row runs harder to make more of them for a row that can make its item itself. Heat and
- * nutrients are plan-wide: fuel and fertilizer come off the bus for every machine, unless a
- * net-surplus target covers them (`absorbing`).
+ * nutrients are rows like any ingredient, burning or spreading the fuel or fertilizer below them.
+ * Rows taking their item from the bus draw on a fed-back net-surplus target of it instead, where
+ * there is one (`absorbing`).
  * A row with a floor runs at least that many crafts per minute; what nothing uses overflows.
  * An overflow target takes all of its item's overflow (the first such target in order that uses the
  * item does), its rows of the item drawing from it, and its rate is what that makes. The overflow
@@ -377,6 +367,22 @@ function solveRound(
     if (v) col[row] = (col[row] ?? 0) + v
   }
 
+  // Per item a fed-back net-surplus target covers: a pool its row and the sources ahead of it supply
+  // (up to `ahead`), and the plan's rows taking the item from the bus draw on. What they can't
+  // cover is a shortfall: the target's own chain uses more than it gives.
+  const pooled = new Map<string, Absorbing>()
+  for (const [item, a] of absorbing) {
+    const row = shape.targetRows[a.target]
+    if (!row) continue
+    pooled.set(item, a)
+    equalities[`g:${item}`] = 0
+    columns[`d:g:${item}`] = { [`g:${item}`]: 1, cost: MIN_DEFICIT_COST }
+    equalities[`ahead:${item}`] = a.ahead
+    columns[`fa:${item}`] = { [`g:${item}`]: 1, [`ahead:${item}`]: 1, cost: 0 }
+    columns[`fu:${item}`] = { [`ahead:${item}`]: 1, cost: 0 }
+    columns[`fb:${item}`] = { [bal(row)]: -1, [`g:${item}`]: 1, cost: 0 }
+  }
+
   const supplies = shape.nodes.filter(isSupply)
   for (const s of supplies) {
     const k = index.get(s)!
@@ -389,7 +395,8 @@ function solveRound(
         ...(s.kind === 'make' && takerOf.has(s.item) && { [`o:${s.item}`]: 1 }),
         cost: SURPLUS_COST,
       }
-    if (s.kind === 'import' || s.kind === 'bus') columns[`i:${k}`] = { [`b:${k}`]: 1, cost: IMPORT_COST }
+    if (s.kind === 'bus' && pooled.has(s.item)) columns[`i:${k}`] = { [`b:${k}`]: 1, [`g:${s.item}`]: -1, cost: 0 }
+    else if (s.kind === 'import' || s.kind === 'bus') columns[`i:${k}`] = { [`b:${k}`]: 1, cost: IMPORT_COST }
     else if (s.kind === 'overflow') continue
     else {
       const cost = Math.max(MIN_DEFICIT_COST, DEFICIT_COST * DEFICIT_DEPTH_FACTOR ** s.depth)
@@ -409,46 +416,9 @@ function solveRound(
     columns[`d:o:${item}`] = { [`o:${item}`]: -1, cost: UNUSED_OVERFLOW_COST }
   }
 
-  // Plan-wide heat and nutrients, supplied by the preferred fuel and fertilizer from the bus, or
-  // by a net-surplus target's row after the fed-back sources ahead of it.
-  const globals = new Map<string, Process | null>()
-  const global = (item: string) => {
-    if (globals.has(item)) return
-    const a = absorbing.get(item)
-    const row = a && shape.targetRows[a.target]
-    if (a && row) {
-      globals.set(item, null)
-      equalities[`g:${item}`] = 0
-      columns[`gs:${item}`] = { [`g:${item}`]: -1, cost: SURPLUS_COST }
-      columns[`d:g:${item}`] = { [`g:${item}`]: 1, cost: MIN_DEFICIT_COST }
-      // The sources ahead supply up to `ahead`; burning the target's own output costs its crafts.
-      equalities[`ahead:${item}`] = a.ahead
-      columns[`fa:${item}`] = { [`g:${item}`]: 1, [`ahead:${item}`]: 1, cost: 0 }
-      columns[`fu:${item}`] = { [`ahead:${item}`]: 1, cost: 0 }
-      columns[`fb:${item}`] = { [bal(row)]: -1, [`g:${item}`]: a.process.outputs[0]?.count ?? 0, cost: 0 }
-      return
-    }
-    const p = realItem(item) !== item ? undefined : catalog.byId.get(planProducer(plan, catalog, item))
-    const process = p ? fromBus(p) : null
-    globals.set(item, process)
-    equalities[`g:${item}`] = 0
-    columns[`gs:${item}`] = { [`g:${item}`]: -1, cost: SURPLUS_COST }
-    if (process) columns[`d:g:${item}`] = { [`g:${item}`]: 1, cost: MIN_DEFICIT_COST }
-    else columns[`gi:${item}`] = { [`g:${item}`]: 1, cost: IMPORT_COST }
-    if (!process) return
-    const col: Record<string, number> = { cost: CRAFT_COST * Math.max(process.seconds, 1) }
-    columns[`gx:${item}`] = col
-    for (const s of process.outputs) add(col, `g:${s.item}`, s.count)
-    for (const s of process.inputs) {
-      global(s.item)
-      add(col, `g:${s.item}`, -s.count)
-    }
-  }
-
   // By-product pools: what one row makes of each side output, shared out to rows of that item.
   const consumers = new Map<string, PlanNode[]>()
-  for (const s of supplies)
-    if (s.kind !== 'bus' && s.reuse) consumers.set(s.item, [...(consumers.get(s.item) ?? []), s])
+  for (const s of supplies) if (s.reuse) consumers.set(s.item, [...(consumers.get(s.item) ?? []), s])
   const flows: { name: string; from: PlanNode; to: PlanNode }[] = []
 
   // Rows held to their crafts: rounded up, or as they are without the plan's overflow targets.
@@ -518,12 +488,7 @@ function solveRound(
     }
     add(col, `b:${k}`, outputOf(p, n.item))
     for (const o of p.outputs) {
-      if (o.item === n.item) continue
-      if (o.item.startsWith('@')) {
-        global(o.item)
-        add(col, `g:${o.item}`, o.count)
-        continue
-      }
+      if (o.item === n.item || o.item.startsWith('@')) continue
       const pool = `p:${k}:${o.item}`
       equalities[pool] = 0
       add(col, pool, o.count)
@@ -550,11 +515,6 @@ function solveRound(
         flows.push({ name, from: n, to: c })
       }
     }
-    for (const s of p.inputs)
-      if (s.item === HEAT || s.item === NUTRIENTS) {
-        global(s.item)
-        add(col, `g:${s.item}`, -s.count)
-      }
     ingredients(p).forEach((s, j) => {
       const c = n.children[j]
       if (c) add(col, bal(c), -s.count)
@@ -599,8 +559,8 @@ function solveRound(
 
   // What each row uses or delivers itself; a supplying row adds what loops and separate builds take.
   const crafts = (n: PlanNode) => (n.kind === 'make' ? v(`x:${index.get(n)}`) : 0)
-  // A net-surplus target's row also makes what the plan burns or spreads of it.
-  for (const [item, a] of absorbing) if (globals.has(item)) targets[a.target].made += v(`fb:${item}`)
+  // A net-surplus target's row also makes what the plan takes of it in place of the bus.
+  for (const [item, a] of pooled) targets[a.target].made += v(`fb:${item}`)
   // An overflow target makes what the overflow it takes comes to.
   const taken = (i: number) => (takers.get(i) ?? []).reduce((t, leaf) => t + v(`od:${index.get(leaf)}`), 0)
   const unused = (item: string) => {
@@ -678,20 +638,20 @@ function solveRound(
     const fromByproduct = draws.reduce((sum, d) => sum + d.amount, 0)
     const missing = need - made - fromByproduct
     const short = missing > tol ? missing : 0
-    const bought = n.kind === 'import' || n.kind === 'bus'
     rowFlows.set(n, {
       rate: need,
       crafts: x,
       fromByproduct,
       byproductSources: draws.map((d) => ({ id: d.from.id, label: d.from.process!.label })),
-      purchased: bought ? short : 0,
-      shortfall: bought ? 0 : short,
+      purchased: n.kind === 'import' ? short : 0,
+      fromBus: n.kind === 'bus' ? short : 0,
+      shortfall: n.kind === 'import' || n.kind === 'bus' ? 0 : short,
       overflow: cleaned(v(`s:${index.get(n)}`), tol),
       byproductRoutes: n.kind === 'make' ? routes(n, x) : {},
     })
   }
 
-  // Machines per process on its machine, summed over the rows, plus the plan-wide fuel and fertilizer.
+  // Machines per process on its machine, summed over the rows.
   const totals = new Map<string, { process: Process; crafts: number }>()
   const count = (p: Process, x: number) => {
     const key = runKey(p)
@@ -700,8 +660,6 @@ function solveRound(
     totals.set(key, t)
   }
   for (const n of shape.nodes) if (n.kind === 'make') count(n.process!, crafts(n))
-  for (const [item, p] of globals) if (p) count(p, v(`gx:${item}`))
-  for (const [item, a] of absorbing) if (globals.has(item)) count(a.process, v(`fb:${item}`))
   const runs: ProcessRun[] = [...totals].map(([key, { process: p, crafts: x }]) => ({
     key,
     process: p,
@@ -711,21 +669,25 @@ function solveRound(
     outputs: p.outputs.map((s) => ({ item: s.item, count: s.count * x })),
   }))
 
-  // Per item: imports and shortfalls from the rows, surplus whatever's left, so every balance is
-  // exact. Plan-wide items (heat, nutrients, the bus) balance from the craft rates alone; the
-  // solver's own slack values are rounded and would leave visible noise on items with huge counts.
+  // Per item: imports, bus draws and shortfalls from the rows, surplus whatever's left, so every
+  // balance is exact (the solver's own slack values are rounded and would leave visible noise on
+  // items with huge counts). Draws a net-surplus target covers are made in the plan: what the
+  // sources ahead of it supply counts as made (the ledger shows which), and what nothing can cover
+  // as a shortfall.
   const balance = new Map<string, ItemBalance>()
   const of = (item: string) => {
     let b = balance.get(item)
     if (!b) {
-      b = { item, target: 0, produced: 0, consumed: 0, imported: 0, deficit: 0, surplus: 0 }
+      b = { item, target: 0, produced: 0, consumed: 0, imported: 0, fromBus: 0, drawn: 0, deficit: 0, surplus: 0 }
       balance.set(item, b)
     }
     return b
   }
   for (const t of targets) of(t.item).target += t.rate
-  // What fed-back sources ahead of a net-surplus target supply (the ledger shows which).
-  for (const item of absorbing.keys()) if (globals.has(item)) of(item).produced += v(`fa:${item}`)
+  for (const item of pooled.keys()) {
+    of(item).produced += v(`fa:${item}`)
+    of(item).deficit += v(`d:g:${item}`)
+  }
   for (const r of runs) {
     for (const s of r.outputs) of(s.item).produced += s.count
     for (const s of r.inputs) of(s.item).consumed += s.count
@@ -734,16 +696,13 @@ function solveRound(
     const f = rowFlows.get(n)!
     const b = of(n.item)
     b.imported += f.purchased
+    b.drawn += f.fromBus
+    if (!pooled.has(n.item)) b.fromBus += f.fromBus
     b.deficit += f.shortfall
   }
   for (const b of balance.values()) {
-    let net = b.produced - b.consumed + b.imported + b.deficit - b.target
+    let net = b.produced - b.consumed + b.imported + b.fromBus + b.deficit - b.target
     if (Math.abs(net) <= RELATIVE_NOISE * Math.max(1, b.produced, b.consumed)) net = 0
-    if (globals.has(b.item)) {
-      const missing = Math.max(0, -net)
-      if (globals.get(b.item) || absorbing.has(b.item)) b.deficit += missing
-      else b.imported += missing
-    }
     b.surplus = Math.max(0, net)
   }
 

@@ -1,4 +1,4 @@
-import { buildingsByKey, itemName, itemsByKey, realItem } from './gameData'
+import { buildingsByKey, itemName, itemsByKey } from './gameData'
 import { fmt } from './format'
 
 /**
@@ -73,9 +73,8 @@ export const noun = (count: number, singular: string, plural = pluralWord(singul
 /** An item's name for a count of it: "1 Iron Ingot", "12 Iron Ingots", "12 Coal", "1 Log". */
 export function itemNameFor(item: string, count: number): string {
   const name = itemName(item)
-  const real = realItem(item)
-  if (SINGULAR[real]) return isOne(count) ? SINGULAR[real] : name
-  return isOne(count) || SAME_NAME.has(real) || !itemsByKey.has(real) ? name : pluralize(name)
+  if (SINGULAR[item]) return isOne(count) ? SINGULAR[item] : name
+  return isOne(count) || SAME_NAME.has(item) || !itemsByKey.has(item) ? name : pluralize(name)
 }
 
 /** A building's name for a count of it: "1 Grinder", "2.5 Grinders", "3 Nurseries". */

@@ -3,14 +3,14 @@ import { craftsPerMachine } from './machineRate'
 import { runKey } from './processes'
 import type { ProcessRun } from './solver'
 import type { Separation } from './types'
-import { IMPORT, type PlanNode } from './unfold'
+import { BUS, IMPORT, type PlanNode } from './unfold'
 import type { Modifiers } from './upgrades'
 
 export type TreeNodeKind =
   | 'produce' // made by machines running for this item
   | 'byproduct' // covered by side output of machines running for something else
   | 'purchase' // bought at a purchasing portal
-  | 'bus' // fuel/fertilizer taken from the factory bus
+  | 'bus' // taken from the factory bus
   | 'loop' // already produced further up this branch (cycle)
   | 'separate' // built separately: its machines are under the row `groupId`
   | 'overflow' // the plan's overflow of the item, taken by an overflow target
@@ -23,7 +23,7 @@ export interface TreeNode {
   /** Items per minute this row supplies: what the row above uses, plus anything gathered or looped back to it. */
   rate: number
   run?: ProcessRun
-  /** Process id the row uses, 'import', or '' for rows supplied elsewhere (loops, separate builds, the bus). */
+  /** Process id the row uses, 'import' or 'bus', or '' for rows supplied elsewhere (loops, separate builds). */
   producer: string
   /** The producer was picked for this row's branch, not inherited from above or the plan. */
   ownChoice: boolean
@@ -55,6 +55,8 @@ export interface TreeNode {
   byproductSources: { id: string; label: string }[]
   /** Part of the rate bought, per minute. */
   purchased: number
+  /** Part of the rate taken from the bus, per minute. */
+  fromBus: number
   /** Part of the rate nothing can supply, per minute. */
   shortfall: number
   children: TreeNode[]
@@ -89,6 +91,7 @@ export interface RowFlows {
   fromByproduct: number
   byproductSources: { id: string; label: string }[]
   purchased: number
+  fromBus: number
   shortfall: number
   /** Part of the row's own item made or brought in that nothing uses. */
   overflow: number
@@ -102,6 +105,7 @@ export const NO_FLOWS: RowFlows = {
   fromByproduct: 0,
   byproductSources: [],
   purchased: 0,
+  fromBus: 0,
   shortfall: 0,
   overflow: 0,
   byproductRoutes: {},
@@ -117,7 +121,7 @@ export function buildTree(roots: PlanNode[], flows: Map<PlanNode, RowFlows>, mod
       id: n.id,
       item: n.item,
       rate: f.rate,
-      producer: n.kind === 'import' ? IMPORT : (n.process?.id ?? ''),
+      producer: n.kind === 'import' ? IMPORT : n.kind === 'bus' ? BUS : (n.process?.id ?? ''),
       ownChoice: n.ownChoice,
       mine: n.mine,
       defaultCatalysts: n.defaultCatalysts,
@@ -133,12 +137,13 @@ export function buildTree(roots: PlanNode[], flows: Map<PlanNode, RowFlows>, mod
       fromByproduct: f.fromByproduct,
       byproductSources: f.byproductSources,
       purchased: f.purchased,
+      fromBus: f.fromBus,
       shortfall: f.shortfall,
       children: [],
     }
     switch (n.kind) {
       case 'bus':
-        return { ...base, kind: 'bus' }
+        return { ...base, kind: f.fromByproduct > 0 && f.fromBus === 0 ? 'byproduct' : 'bus' }
       case 'loop':
         return { ...base, kind: 'loop' }
       case 'overflow':

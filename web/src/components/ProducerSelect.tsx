@@ -15,7 +15,10 @@ import { ItemPicker } from './ItemPicker'
 import { Money } from './Money'
 
 const CRUCIBLE = 'crucible'
+/** Buying at a Purchase Portal. */
 const IMPORT = 'import'
+/** Taking the item from the bus. */
+const BUS = 'bus'
 /** Menu value of reusing other rows' by-products. */
 const REUSE = 'reuse'
 /** Building shown for buying an item at a portal. */
@@ -32,7 +35,7 @@ const describe = (stacks: Stack[]) => stacks.map((s) => `${fmt(s.count)} ${itemN
 
 /**
  * One menu entry: a process on one of its machines, the Paradox Crucible (input picked alongside),
- * or buying (importing, when portals don't sell) the item.
+ * buying the item at a portal, or taking it from the bus.
  */
 interface Choice {
   value: string
@@ -40,8 +43,8 @@ interface Choice {
   process?: Process
   /** Machine to set with the process, when it can run on several. */
   machine?: string
-  /** Buying: copper per item at a portal; null when portals don't sell it (imported instead). */
-  price?: number | null
+  /** Buying: copper per item at a portal. */
+  price?: number
   /** Taking coins off the bus: copper per coin. */
   coin?: number
   /** Research tier the entry needs, when the plan hasn't reached it. */
@@ -75,7 +78,8 @@ export interface ReuseOption {
 const onMachineValue = (id: string, machine: string) => `${id}@${machine}`
 
 /**
- * Chooses which process makes an item (game recipe, nursery, saved ★ cauldron recipe, buy or import),
+ * Chooses which process makes an item (game recipe, nursery, saved ★ cauldron recipe), or whether
+ * it's bought or taken from the bus,
  * and the machine that runs it: a recipe several machines can run is offered once per machine.
  * A button showing the machine opens a menu previewing each option's ingredients and products;
  * ingredients the current choice also uses are dimmed so the differences stand out.
@@ -90,19 +94,23 @@ export function ProducerSelect({
   compact,
   link,
   noImport,
+  exclude,
   oneLine,
   branch,
   reuse,
 }: {
   item: string
-  /** The producer in use ('import' or a process id) and its process on the machine it runs on. */
+  /** The producer in use (a process id, 'import' or 'bus') and its process on the machine it runs on. */
   current: { producer: string; process?: Process }
   catalog: ProcessCatalog
   onChange: (producer: string, machine?: string, everywhere?: boolean) => void
   compact?: boolean
   /** Shown as a link (icon and name, underlined) rather than a button, inside a line of text. */
   link?: boolean
+  /** Offers only ways of making it: not buying it or taking it from the bus (heat, nutrients). */
   noImport?: boolean
+  /** Processes not to offer here (Steam for a boiler's own heat). */
+  exclude?: string[]
   /** Short lists of items with one yield each (fuels, fertilizers): an option per line, yield on the right, no search. */
   oneLine?: boolean
   /** On a tree row: picks cover the row's branch, or every row of the item when asked. */
@@ -112,7 +120,7 @@ export function ProducerSelect({
 }) {
   const all = catalog.byProduct.get(item) ?? []
   const isCrucible = (p: Process) => p.machine?.key === PARADOX_CRUCIBLE && p.product === item
-  const options = all.filter((p) => !isCrucible(p))
+  const options = all.filter((p) => !isCrucible(p) && !exclude?.includes(p.id))
   const crucible = new Map(all.filter(isCrucible).map((p) => [inputOf(p), p]))
   const onCrucible = !!currentProcess && isCrucible(currentProcess)
   const crucibleDefault = crucible.get(DEFAULT_PARADOX_INPUT) ?? [...crucible.values()][0]
@@ -123,7 +131,7 @@ export function ProducerSelect({
    * it yet; locked ingredients show on their own rows.
    */
   const needs = (c: Choice) => {
-    const tier = c.process ? c.process.tier : c.value === IMPORT && c.price != null ? buyTier(item) : 1
+    const tier = c.process ? c.process.tier : c.value === IMPORT ? buyTier(item) : 1
     return tier > catalog.tier ? tier : undefined
   }
   const entries: Choice[] = [
@@ -137,7 +145,7 @@ export function ProducerSelect({
         : [{ value: p.id, process: p }],
     ),
     ...(crucible.size > 0 ? [{ value: CRUCIBLE, process: onCrucible ? currentProcess : crucibleDefault }] : []),
-    ...(noImport ? [] : [{ value: IMPORT, price: itemsByKey.get(item)?.buyPrice ?? null, coin: coinValue(item) ?? undefined }]),
+    ...(noImport ? [] : outside(item)),
   ]
   // What the plan's research tier can't run yet goes last.
   const choices = entries.map((c) => ({ ...c, needs: needs(c) })).sort((a, b) => Number(!!a.needs) - Number(!!b.needs))
@@ -422,17 +430,24 @@ export function ProducerSelect({
   )
 }
 
+/** Ways of bringing an item in from outside the plan: buying it where portals sell it, or taking it from the bus. */
+function outside(item: string): Choice[] {
+  const price = itemsByKey.get(item)?.buyPrice
+  return [...(price != null ? [{ value: IMPORT, price }] : []), { value: BUS, coin: coinValue(item) ?? undefined }]
+}
+
 function choiceTitle(c: Choice): string {
   if (c.value === REUSE) return 'Reuse by-products'
-  if (c.value === IMPORT) return c.coin ? 'From the bus' : c.price != null ? 'Buy' : 'Import'
+  if (c.value === IMPORT) return 'Buy'
+  if (c.value === BUS) return 'From the bus'
   if (c.value === CRUCIBLE) return 'Paradox Crucible'
   return c.process ? processTitle(c.process) : c.value
 }
 
 function choiceDescription(c: Choice, item: string): string {
   const p = c.process
-  if (c.value === IMPORT)
-    return c.coin ? 'Take coins off the bus' : c.price != null ? 'Buy at a Purchasing Portal' : 'Import: not sold at portals'
+  if (c.value === IMPORT) return 'Buy at a Purchasing Portal'
+  if (c.value === BUS) return c.coin ? 'Take coins off the bus' : 'Take it from the bus: made outside this plan'
   if (!p) return choiceTitle(c)
   if (c.value === CRUCIBLE) return `${choiceTitle(c)}: refine any item`
   return `${processLabel(p, item)}: ${describe(materials(p))} → ${describe(p.outputs)}`
@@ -440,7 +455,7 @@ function choiceDescription(c: Choice, item: string): string {
 
 /**
  * The building that runs the option (the fuel itself for burning), as the game draws it.
- * Importing has no building in game, so it gets an abstract arrow into a crate.
+ * The bus has no building in game, so it gets an abstract arrow into a crate.
  */
 function ChoiceIcon({ choice, size }: { choice: Choice; size: number }) {
   const p = choice.process
@@ -451,7 +466,7 @@ function ChoiceIcon({ choice, size }: { choice: Choice; size: number }) {
       </span>
     )
   if (p && (p.kind === 'fuel' || p.kind === 'fertilizer')) return <ItemIcon item={inputOf(p)} size={size} />
-  if (choice.value === IMPORT && choice.price == null) return <ImportIcon size={size} />
+  if (choice.value === BUS) return <ImportIcon size={size} />
   const icon = choice.value === IMPORT ? buildingsByKey.get(BUY_PORTAL)?.icon : p?.machine?.icon
   const src = iconUrl(icon)
   const img = src ? (
@@ -470,7 +485,7 @@ function ChoiceIcon({ choice, size }: { choice: Choice; size: number }) {
   )
 }
 
-/** An arrow dropping into an open crate: brought in from outside the plan. */
+/** An arrow dropping into an open crate: brought in on the bus, from outside the plan. */
 function ImportIcon({ size }: { size: number }) {
   return (
     <span className="item-icon recipe-import-icon" style={{ width: size, height: size }} aria-hidden>
@@ -544,19 +559,19 @@ function ChoiceMeta({ choice }: { choice: Choice }) {
 /** Ingredients → products of one craft, the wanted item first among the products. */
 function ChoicePreview({ choice, item, shared }: { choice: Choice; item: string; shared: Set<string> }) {
   const p = choice.process
-  if (choice.value === IMPORT && choice.coin)
-    return (
+  if (choice.value === BUS)
+    return choice.coin ? (
       <span className="recipe-preview">
         <Money copper={choice.coin} suffix=" each, off the bus" />
       </span>
+    ) : (
+      <span className="recipe-preview muted">Made outside this plan, brought in on the bus</span>
     )
   if (choice.value === IMPORT)
-    return choice.price != null ? (
+    return (
       <span className="recipe-preview">
-        <Money copper={choice.price} suffix=" each at a Purchasing Portal" />
+        <Money copper={choice.price ?? 0} suffix=" each at a Purchasing Portal" />
       </span>
-    ) : (
-      <span className="recipe-preview muted">Not sold at portals: brought in from outside the plan</span>
     )
   if (choice.value === CRUCIBLE) return <span className="recipe-preview muted">Refines any item; pick the input alongside</span>
   if (!p) return null

@@ -178,17 +178,13 @@ export const coinValue = (item: string): number | null => COINS.find((c) => c.co
 export const HEAT = '@heat'
 export const NUTRIENTS = '@nutrients'
 
-/** Fuel/fertilizer bought from outside, kept apart from the same item made in the plan. */
-const BASE_PREFIX = '@base:'
-export const baseInputKey = (item: string) => BASE_PREFIX + item
-/** The real item behind a key (strips the base-input marker). */
-export const realItem = (key: string) => (key.startsWith(BASE_PREFIX) ? key.slice(BASE_PREFIX.length) : key)
+/** Carries heat through pipes, from Steam Boilers to Steam Heating Pads. */
+export const STEAM = 'Steam'
 
 export function itemName(key: string): string {
   if (key === HEAT) return 'Heat (P)'
   if (key === NUTRIENTS) return 'Nutrients'
-  const real = realItem(key)
-  return itemsByKey.get(real)?.name ?? real
+  return itemsByKey.get(key)?.name ?? key
 }
 
 export function iconUrl(file: string | null | undefined): string | null {
