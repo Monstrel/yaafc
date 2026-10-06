@@ -47,7 +47,7 @@ describe('reading a backup file', () => {
     expect(backup.savedRecipes).toEqual([])
     expect(backup.plans).toHaveLength(2)
     const [blank, a] = backup.plans
-    expect(blank).toMatchObject({ name: 'Untitled plan', targets: [], producers: {}, machines: {} })
+    expect(blank).toMatchObject({ name: 'Untitled plan', targets: [{ item: '', rate: 10 }], producers: {}, machines: {} }) // never empty
     expect(blank.id).not.toBe('')
     expect(a).toEqual({
       id: 'a',

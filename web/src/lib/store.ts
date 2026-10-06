@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react'
 import { sanitizeMyDefaults, sanitizePlans, sanitizeProgress, sanitizeSavedRecipes } from './sanitize'
-import type { MyDefaults, Plan, Progress, SavedRecipe } from './types'
+import { blankTarget, type MyDefaults, type Plan, type Progress, type SavedRecipe } from './types'
 
 const PREFIX = 'alchemy-calculator:'
 
@@ -114,7 +114,7 @@ export function newId(): string {
 }
 
 export function emptyPlan(name = 'New plan'): Plan {
-  return { id: newId(), name, targets: [], producers: {}, machines: {} }
+  return { id: newId(), name, targets: [blankTarget()], producers: {}, machines: {} }
 }
 
 /**

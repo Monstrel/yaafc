@@ -13,6 +13,9 @@ export interface SavedRecipe {
   createdAt: number
 }
 
+/** A target with nothing picked yet: every plan has at least one, so it's never empty. */
+export const blankTarget = (): PlanTarget => ({ item: '', rate: 10 })
+
 export interface PlanTarget {
   item: string
   /** Amount wanted, in `unit`. */

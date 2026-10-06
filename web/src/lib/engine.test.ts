@@ -2262,6 +2262,14 @@ describe('rounding rows up to whole machines', () => {
 })
 
 describe('reordering targets', () => {
+  it("clears the only target instead of removing it, its rows' settings going with it", () => {
+    const one = plan({ targets: [{ item: 'Salt', rate: 5 }], branches: { '0/Salt': { producer: 'recipe:Salt_Alt' } }, roundUp: ['0/Salt'] })
+    const cleared = removeTarget(one, 0)
+    expect(cleared.targets).toEqual([{ item: '', rate: 10 }])
+    expect(cleared.branches ?? {}).toEqual({})
+    expect(cleared.roundUp).toBeUndefined()
+  })
+
   const base = plan({
     targets: [
       { item: 'A', rate: 1 },

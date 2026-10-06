@@ -2,7 +2,7 @@ import { HEAT, NUTRIENTS } from './gameData'
 import { DEFAULT_BANK_STACK, defaultMachine, defaultProducer, type ProcessCatalog } from './processes'
 import { separationKey, separationsOf } from './separate'
 import type { TreeNode } from './tree'
-import type { MyDefault, MyDefaults, Plan } from './types'
+import { blankTarget, type MyDefault, type MyDefaults, type Plan } from './types'
 import { parentId, planProducer, resolveChoice, reusesByproducts, rowItem, unfold } from './unfold'
 
 export interface ProducerPick {
@@ -373,11 +373,14 @@ export const moveTarget = (plan: Plan, from: number, to: number) => {
   return reorderTargets(plan, order)
 }
 
-export const removeTarget = (plan: Plan, index: number) =>
-  reorderTargets(
+/** Removes a target, its rows' settings with it. The only target is cleared instead: a plan always has one. */
+export function removeTarget(plan: Plan, index: number): Plan {
+  const rest = reorderTargets(
     plan,
     plan.targets.map((_, i) => i).filter((i) => i !== index),
   )
+  return rest.targets.length ? rest : { ...rest, targets: [blankTarget()] }
+}
 
 /**
  * "Use as my default": remembers how a row and everything below it is made (recipe, machine,

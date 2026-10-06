@@ -317,8 +317,10 @@ export function PlannerPage({
         <button
           type="button"
           className="target-button"
-          title="Remove target"
-          aria-label={`Remove target ${i + 1}`}
+          // The only target clears instead: a plan always has one (nothing to clear on a blank one).
+          title={plan.targets.length > 1 ? 'Remove target' : 'Clear target'}
+          aria-label={`${plan.targets.length > 1 ? 'Remove' : 'Clear'} target ${i + 1}`}
+          disabled={plan.targets.length === 1 && !t.item}
           onClick={() => {
             setAdded(null)
             onUpdatePlan((p) => removeTarget(p, i))
@@ -417,19 +419,7 @@ export function PlannerPage({
         <main className="planner-main">
           {result.status !== 'ok' && <div className="panel warning">Could not solve this plan: {result.message}</div>}
 
-          {plan.targets.length === 0 ? (
-            <div className="panel empty-state">
-              <h2>Add a target to start</h2>
-              <p>
-                Pick what you want to make and how many per minute, or how many machines&apos; worth. The planner works out every
-                step and machine needed. Every item uses its standard recipe by default; switch any step to one of your saved
-                cauldron recipes (★) in the production tree.
-              </p>
-              <button className="primary empty-state-action" onClick={addTarget}>
-                + Add target
-              </button>
-            </div>
-          ) : !model.result ? (
+          {!model.result ? (
             <div className="panel empty-state" aria-busy>
               <p>Solving…</p>
             </div>

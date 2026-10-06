@@ -1611,10 +1611,6 @@ tr.kind-separate .item-label .name {
   cursor: default;
 }
 
-.empty-state-action {
-  margin-top: 16px;
-}
-
 /*
  * Card edges: each open branch gets a rounded "[" from its row down to its last row. Rows are
  * separated only from the rate column on, so the edges have the item column to themselves.

@@ -1,6 +1,6 @@
 import type { CauldronMode } from './cauldron'
 import type { IngredientPrefs } from './itemGroups'
-import type { BranchChoice, MyDefault, MyDefaults, Plan, PlanTarget, Progress, SavedRecipe, Separation, Unitizing } from './types'
+import { blankTarget, type BranchChoice, type MyDefault, type MyDefaults, type Plan, type PlanTarget, type Progress, type SavedRecipe, type Separation, type Unitizing } from './types'
 
 /**
  * Checks data from outside the code (an imported file, or what localStorage holds) against the
@@ -90,6 +90,9 @@ function unitizing(v: unknown): Unitizing | undefined {
   return count && of && count > 1 && count <= of ? { count, of } : undefined
 }
 
+/** A plan's targets, or a blank one when none survive: a plan always has one. */
+const nonEmpty = (targets: PlanTarget[] | undefined) => (targets?.length ? targets : [blankTarget()])
+
 function plan(v: unknown, newId: () => string): Plan | undefined {
   if (!isObj(v)) return undefined
   const caps = record(v.busSupply, (x) => {
@@ -100,7 +103,7 @@ function plan(v: unknown, newId: () => string): Plan | undefined {
   return defined({
     id: str(v.id) || newId(),
     name: str(v.name) ?? 'Untitled plan',
-    targets: list(v.targets, target) ?? [],
+    targets: nonEmpty(list(v.targets, target)),
     producers: record(v.producers, str) ?? {},
     machines: record(v.machines, str) ?? {},
     branches: record(v.branches, branch),
