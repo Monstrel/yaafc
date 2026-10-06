@@ -71,6 +71,11 @@ export interface TreeNode {
   reusedBy?: string
   /** Shown only: other rows' by-products cover part of the row, on a line of their own above it; `rate` leaves them out. */
   reusedApart?: boolean
+  /**
+   * Shown only: the Heat and Nutrients rows folded into this one. Their picks (what it burns or
+   * spreads) show on its row, and the fuel or fertilizer rows below them sit below it.
+   */
+  folded?: TreeNode[]
 }
 
 /** Where one by-product of a row goes: rows of its item that take it, and what's left over. */

@@ -181,7 +181,8 @@ export function ProductionTree({
   const rowsOf = useMemo(() => {
     const counts = new Map<string, number>()
     for (const { node } of all)
-      if (node.producer && node.id !== PLAN_ROOT) counts.set(node.item, (counts.get(node.item) ?? 0) + 1)
+      for (const n of [node, ...(node.folded ?? [])])
+        if (n.producer && n.id !== PLAN_ROOT) counts.set(n.item, (counts.get(n.item) ?? 0) + 1)
     return counts
   }, [all])
 
@@ -552,6 +553,7 @@ export function ProductionTree({
                   onToggle={() => toggle(line.node.id)}
                   catalog={catalog}
                   rows={rowsOf.get(line.node.item) ?? 1}
+                  rowsOf={rowsOf}
                   onProducer={onProducer}
                   onResetProducer={onResetProducer}
                   onReuse={onReuse}
@@ -777,6 +779,7 @@ function TreeRow({
   onToggle,
   catalog,
   rows,
+  rowsOf,
   onProducer,
   onResetProducer,
   onReuse,
@@ -824,6 +827,8 @@ function TreeRow({
   catalog: ProcessCatalog
   /** Rows of this item using a producer of their own. */
   rows: number
+  /** Rows per item using a producer of their own (for what the row burns or spreads). */
+  rowsOf: Map<string, number>
   onProducer: (pick: ProducerPick) => void
   onResetProducer: (row: string) => void
   onReuse: (item: string, on: boolean, row?: string) => void
@@ -942,11 +947,9 @@ function TreeRow({
   const coin = coinValue(node.item)
   const price = itemsByKey.get(node.item)?.buyPrice
   const name = itemName(node.item)
-  // Heat and nutrients are rows of their own, burning or spreading the row below them.
-  const pseudo = node.item === HEAT || node.item === NUTRIENTS
+  // A fuel or fertilizer row, under the row whose Heat or Nutrients it supplies (folded into it).
   const above = parentId(node.id)
-  const burned = above !== null && (rowItem(above) === HEAT || rowItem(above) === NUTRIENTS)
-  const underBoiler = node.item === HEAT && above !== null && rowItem(above) === STEAM
+  const burned = above === null ? null : rowItem(above) === HEAT ? 'burned' : rowItem(above) === NUTRIENTS ? 'spread' : null
   const anchorName = node.separation?.anchor && itemsByKey.get(node.separation.anchor)?.name
   const sources = node.byproductSources.map((s, i) => (
     <span key={s.id}>
@@ -981,8 +984,7 @@ function TreeRow({
     </button>
   ) : (
     node.kind === 'produce' &&
-    depth > 0 &&
-    !pseudo && (
+    depth > 0 && (
       <button
         type="button"
         className="tree-action"
@@ -1064,7 +1066,7 @@ function TreeRow({
         </div>
       </td>
       <td className="num rate-cell">
-        {target ? target.amount : pseudo ? `${fmt(node.rate / 60)} ${node.item === HEAT ? 'P/s' : '/s'}` : fmt(node.rate)}
+        {target ? target.amount : fmt(node.rate)}
         {beltsNeeded > 1 && (
           <div className="machine-meta" title={`${fmt(mods.beltSpeed)} items/min per belt`}>
             {beltsNeeded} belts
@@ -1103,15 +1105,12 @@ function TreeRow({
                 // What a row burns or spreads follows its branch only: plan-wide picks are for ingredients.
                 branch={{ rows: burned ? 1 : rows, own: node.ownChoice, mine: node.mine, onReset: () => onResetProducer(node.id) }}
                 reuse={reuse}
-                noImport={pseudo}
-                oneLine={pseudo}
-                exclude={underBoiler ? [STEAM_HEAT_ID] : undefined}
                 compact
               />
             )}
-            {p?.kind === 'fuel' && (
-              <span className="leaf-note" title="Furnaces and heating pads pass the heat on without loss, however many machines share one">
-                {p.id === STEAM_HEAT_ID ? 'on Steam Heating Pads' : 'in furnaces'}
+            {burned && (
+              <span className="leaf-note" title={burned === 'burned' ? 'Burned for the heat of the machines above' : 'Spread on the nurseries above'}>
+                {burned === 'burned' ? '🔥 burned' : '🌱 spread'}
               </span>
             )}
             {node.kind === 'bus' &&
@@ -1128,6 +1127,28 @@ function TreeRow({
                 ⓘ
               </span>
             )}
+            {node.folded?.map((f) => (
+              <div key={f.id} className="note-line fuel-pick">
+                {f.item === HEAT ? '🔥 burns' : '🌱 spreads'}
+                <ProducerSelect
+                  item={f.item}
+                  current={{ producer: f.producer, process: f.run?.process }}
+                  catalog={catalog}
+                  onChange={(producer, machine, everywhere) => onProducer({ item: f.item, producer, machine, row: f.id, everywhere })}
+                  branch={{ rows: rowsOf.get(f.item) ?? 1, own: f.ownChoice, mine: false, onReset: () => onResetProducer(f.id) }}
+                  noImport
+                  oneLine
+                  link
+                  // A boiler heated with Steam would only turn Steam into Steam, slower.
+                  exclude={node.item === STEAM ? [STEAM_HEAT_ID] : undefined}
+                />
+                {f.item === HEAT && (
+                  <span className="hint-inline" title="Furnaces and heating pads pass the heat on without loss, however many machines share one">
+                    {f.run?.process.id === STEAM_HEAT_ID ? 'on Steam Heating Pads' : 'in furnaces'}
+                  </span>
+                )}
+              </div>
+            ))}
             {node.consolidated && (
               <div className="note-line">
                 ⇱{' '}
@@ -1629,17 +1650,27 @@ function viewOf(tree: TreeNode[], rootIds: (string | null)[]): { view: TreeNode[
 /** Line id suffix for the by-products covering part of a row. */
 const REUSED_LINE = '#reused'
 
+/** Heat and Nutrients rows: shown as a pick on the row they heat or feed, not rows of their own. */
+const isFolded = (n: TreeNode) => n.item === HEAT || n.item === NUTRIENTS
+
 /**
- * A row with each ingredient partly covered by other rows' by-products shown as the two feeds its
- * machines get: the by-products, on a line of their own, then what the ingredient's row makes (or
- * buys) itself. A row gathering an item built separately stays whole.
+ * A row as shown. Its Heat and Nutrients rows fold into it: what it burns or spreads is picked on
+ * its own row, the fuel or fertilizer rows sitting with its ingredients. Each ingredient partly
+ * covered by other rows' by-products shows as the two feeds its machines get: the by-products, on a
+ * line of their own, then what the ingredient's row makes (or buys) itself. A row gathering an
+ * item built separately stays whole.
  */
 function withReused(n: TreeNode): TreeNode {
   const partly = (c: TreeNode) =>
-    (c.kind === 'produce' || c.kind === 'purchase') && !c.consolidated && c.fromByproduct > 1e-9 && c.rate - c.fromByproduct > 1e-9
+    (c.kind === 'produce' || c.kind === 'purchase' || c.kind === 'bus') &&
+    !c.consolidated &&
+    c.fromByproduct > 1e-9 &&
+    c.rate - c.fromByproduct > 1e-9
+  const folded = n.children.filter(isFolded)
   return {
     ...n,
-    children: n.children.flatMap((child) => {
+    ...(folded.length > 0 && { folded: folded.map((f) => ({ ...f, children: [] })) }),
+    children: n.children.flatMap((c) => (isFolded(c) ? c.children : [c])).flatMap((child) => {
       const c = withReused(child)
       if (!partly(c)) return [c]
       const line: TreeNode = {

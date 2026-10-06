@@ -2699,6 +2699,20 @@ tr.unit-totals td.num {
   padding: 0;
 }
 
+/* On a heated or fed row: what it burns or spreads, picked like its recipe. */
+.fuel-pick {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 6px;
+}
+
+.fuel-pick .hint-inline {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 0;
+}
+
 /* The fuel and fertilizer the plan burns and spreads unless a branch picks another. */
 .bus-defaults {
   display: flex;
