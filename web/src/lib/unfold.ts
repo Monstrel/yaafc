@@ -150,6 +150,12 @@ const isBurned = (id: string) => {
   return above !== null && [HEAT, NUTRIENTS, MONEY].includes(rowItem(above))
 }
 
+/**
+ * What the plan's boilers burn when it heats with Steam by default (a producer pick, kept with the
+ * plan's other defaults): a solid fuel.
+ */
+export const BOILER_HEAT = '@heat:boilers'
+
 /** A boiler's own heat can't come from Steam: it would only turn Steam into Steam, slower. */
 const underBoiler = (item: string, id: string) => {
   const above = parentId(id)
@@ -201,7 +207,8 @@ export const planProducer = (plan: Plan, catalog: ProcessCatalog, item: string) 
 /**
  * What a row of `item` with id `id` uses: the nearest pick on it or a row of the same item above
  * it, else the plan-wide producer. A fuel or fertilizer row comes off the bus unless its branch
- * picks otherwise, and a boiler's heat never comes from Steam. `inherited` skips the row's own pick
+ * picks otherwise, and a boiler's heat never comes from Steam (when the plan heats with Steam, its
+ * boilers burn the plan's pick for them, else the best solid fuel). `inherited` skips the row's own pick
  * (what it would fall back to).
  */
 export function resolveChoice(
@@ -225,7 +232,11 @@ export function resolveChoice(
   }
   if (isBurned(id)) return { producer: BUS, own: false, mine: false, ...NO_SETUP }
   let choice = planChoice(plan, catalog, item, isTargetRow(id))
-  if (!allowed(choice.producer)) choice = { producer: defaultProducer(catalog, item), mine: false }
+  if (!allowed(choice.producer)) {
+    const boilers = plan.producers[BOILER_HEAT]
+    const burns = boilers && catalog.byId.has(boilers) && allowed(boilers) ? boilers : defaultProducer(catalog, item)
+    choice = { producer: burns, mine: false }
+  }
   const p = catalog.byId.get(choice.producer)
   if (!p) return { producer: BUS, own: false, mine: choice.mine, ...NO_SETUP }
   const defaults = choice.mine

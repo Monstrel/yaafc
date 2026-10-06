@@ -1134,7 +1134,8 @@ function TreeRow({
                   current={{ producer: f.producer, process: f.run?.process }}
                   catalog={catalog}
                   onChange={(producer, machine, everywhere) => onProducer({ item: f.item, producer, machine, row: f.id, everywhere })}
-                  branch={{ rows: rowsOf.get(f.item) ?? 1, own: f.ownChoice, mine: false, onReset: () => onResetProducer(f.id) }}
+                  // A boiler's fuel is its own: the plan-wide pick for heat is about Steam (see the bus panel).
+                  branch={{ rows: node.item === STEAM ? 1 : (rowsOf.get(f.item) ?? 1), own: f.ownChoice, mine: false, onReset: () => onResetProducer(f.id) }}
                   noImport
                   oneLine
                   link

@@ -25,7 +25,7 @@ import { altarsFor, altarYield, type AltarYield } from '../lib/altar'
 import { fmt, fmtMachines, fmtSeconds, wholeMachines } from '../lib/format'
 import { buildingCounts, checkLogistics, resourceUsers, type LogisticsCheck, type ResourceUser } from '../lib/logistics'
 import { fedOverflow, moneyLedger, type BusUse, type MoneyLedger, type OutputRow, type OutputSource } from '../lib/money'
-import { processTitle, type ProcessCatalog } from '../lib/processes'
+import { STEAM_HEAT_ID, defaultProducer, processTitle, type ProcessCatalog } from '../lib/processes'
 import type { PlanModel } from '../lib/planModel'
 import {
   chooseProducer,
@@ -58,7 +58,7 @@ import type { OverflowUse, PlanResult, ResolvedTarget } from '../lib/solver'
 import { separationsOf } from '../lib/separate'
 import { canSeparateShared, mergeSingleUses, separateShared, setSeparation } from '../lib/separateAll'
 import { buildingNameFor, machineNameFor, noun } from '../lib/plural'
-import { BUS, IMPORT, planProducer } from '../lib/unfold'
+import { BOILER_HEAT, BUS, IMPORT, planProducer } from '../lib/unfold'
 import { dropUnits, setUnits, unitScales } from '../lib/units'
 import type { TreeNode } from '../lib/tree'
 import type { MyDefaults, Plan, PlanTarget, Progress, Separation } from '../lib/types'
@@ -161,6 +161,24 @@ export function PlannerPage({
       own: ownPicks(plan, catalog, item).length,
       onFollow: () => onUpdatePlan((p) => followDefault(p, item)),
     }
+  }
+  /** When the plan heats with Steam: the solid fuel its boilers burn (their own heat can't be Steam). */
+  const boilerDefault = () => {
+    if (planProducer(plan, catalog, HEAT) !== STEAM_HEAT_ID) return null
+    const picked = plan.producers[BOILER_HEAT]
+    const producer = picked && catalog.byId.has(picked) ? picked : defaultProducer(catalog, HEAT)
+    return (
+      <ProducerSelect
+        item={HEAT}
+        current={{ producer, process: catalog.byId.get(producer) }}
+        catalog={catalog}
+        onChange={(producer) => onUpdatePlan((p) => setPlanDefault(p, BOILER_HEAT, producer))}
+        noImport
+        oneLine
+        link
+        exclude={[STEAM_HEAT_ID]}
+      />
+    )
   }
   const setCatalysts = (row: string, catalysts: string[], inherited: string[]) =>
     onUpdatePlan((p) => setRowCatalysts(p, row, catalysts, inherited))
@@ -520,7 +538,7 @@ export function PlannerPage({
                 ledgers={ledger}
                 money={money}
                 defaults={
-                  <PlanDefaults heat={planDefault(HEAT)} nutrients={planDefault(NUTRIENTS)} money={planDefault(MONEY)} />
+                  <PlanDefaults heat={planDefault(HEAT)} boilers={boilerDefault()} nutrients={planDefault(NUTRIENTS)} money={planDefault(MONEY)} />
                 }
                 overflowFrom={overflowSources}
                 onFeedback={(item, target, on) =>
@@ -832,7 +850,18 @@ interface DefaultPick {
  * are paid in, unless their row picks another, shown from the start so a plan can be set up before it needs them. Changing one keeps the rows
  * picking their own; a link switches them too.
  */
-function PlanDefaults({ heat, nutrients, money }: { heat: DefaultPick; nutrients: DefaultPick; money: DefaultPick }) {
+function PlanDefaults({
+  heat,
+  boilers,
+  nutrients,
+  money,
+}: {
+  heat: DefaultPick
+  /** What boilers burn, when the plan heats with Steam. */
+  boilers: ReactNode
+  nutrients: DefaultPick
+  money: DefaultPick
+}) {
   const line = (glyph: string, verb: string, d: DefaultPick) => (
     <span className="ledger-what">
       {glyph} {verb} {d.pick}
@@ -850,6 +879,11 @@ function PlanDefaults({ heat, nutrients, money }: { heat: DefaultPick; nutrients
   return (
     <div className="bus-defaults" title="What the plan's machines burn, spread and pay with unless their row picks another">
       {line('🔥', 'burns', heat)}
+      {boilers && (
+        <span className="ledger-what" title="The solid fuel under the plan's Steam Boilers, unless a boiler row picks another">
+          🔥 boilers burn {boilers}
+        </span>
+      )}
       {line('🌱', 'spreads', nutrients)}
       {line('🪙', 'pays with', money)}
       <span className="hint-inline">by default</span>

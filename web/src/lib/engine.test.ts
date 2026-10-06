@@ -67,7 +67,7 @@ import {
 } from './choices'
 import { sanitizePlans } from './sanitize'
 import { dropUnits, setUnits, unitChoices, unitScales, wholePerCopy } from './units'
-import { resolveChoice } from './unfold'
+import { BOILER_HEAT, resolveChoice } from './unfold'
 import { separationsOf, withSeparation } from './separate'
 import { canSeparateShared, mergeSingleUses, separateShared, setSeparation } from './separateAll'
 import { buildingNameFor, itemNameFor, noun } from './plural'
@@ -1461,6 +1461,17 @@ describe('heat and nutrients as rows', () => {
     // What the boilers burn comes off the bus instead.
     expect(fuel.item).toBe(catalog.byId.get(defaultProducer(catalog, HEAT))!.inputs[0].item)
     expect(fuel.need * catalog.byId.get(defaultProducer(catalog, HEAT))!.outputs[0].count).toBeCloseTo(heat.rate)
+  })
+
+  it("burns the plan's pick for boilers when it heats with Steam, else the best solid fuel", () => {
+    const steam = addProvider(plan({ targets: [{ item: 'SteelIngot', rate: 10 }], producers: { [HEAT]: STEAM_HEAT_ID } }), 'Steam')
+    const boilerHeat = (p: Plan) => solvePlan(p, catalog, mods).tree[1].children.find((c) => c.item === HEAT)!.producer
+    expect(boilerHeat(steam)).toBe(defaultProducer(catalog, HEAT))
+    const coal = setPlanDefault(steam, BOILER_HEAT, 'fuel:Coal')
+    expect(boilerHeat(coal)).toBe('fuel:Coal')
+    // Kept with the plan's other defaults, even before anything needs them.
+    const empty = { ...coal, targets: [], producers: { ...coal.producers, [MONEY]: 'spend:CopperCoin' } }
+    expect(pruneChoices(empty, catalog)).toBeNull()
   })
 
   it('changes the default fuel without losing the rows that pick their own, which can follow it after', () => {
