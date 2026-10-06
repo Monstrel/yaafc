@@ -47,6 +47,7 @@ import {
   setBusSupply,
   convertOverflowTarget,
   linkToOverflow,
+  linkToSupply,
   migrateCatalysts,
   migrateFeedback,
   moveTarget,
@@ -1949,6 +1950,14 @@ describe("the bus's capped supply", () => {
     expect(second).toMatchObject({ made: 0, supply: { takenBy: 1 } })
     // Made a standard target, it keeps what it makes.
     expect(convertOverflowTarget(capped, 1, 750).targets[1]).toEqual({ item: 'Flax', rate: 750 })
+  })
+
+  it('switches a standard target to using the rest of the supply, and back', () => {
+    const standard = { ...setBusSupply(coke, 'Catalyst2', 1), targets: [...coke.targets, { item: 'Flax', rate: 10 }] }
+    const linked = linkToSupply(standard, 1, 'Catalyst2')
+    expect(linked.targets[1]).toEqual({ item: 'Flax', rate: 10, unit: 'supply', consumes: 'Catalyst2' })
+    expect(fc(linked).result.targets[1].made).toBeCloseTo(750)
+    expect(convertOverflowTarget(linked, 1, 750).targets[1]).toEqual({ item: 'Flax', rate: 750 })
   })
 
   it('makes none from a supply the plan leaves uncapped', () => {

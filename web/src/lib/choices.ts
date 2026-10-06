@@ -280,6 +280,16 @@ export const linkToOverflow = (plan: Plan, index: number, consumes: string): Pla
 })
 
 /**
+ * Makes a target a supply target, using what the plan's other rows leave of the bus's capped supply
+ * of `consumes`: the planner sizes it from then on. Making it a standard target again keeps what it
+ * makes then.
+ */
+export const linkToSupply = (plan: Plan, index: number, consumes: string): Plan => ({
+  ...plan,
+  targets: plan.targets.map((t, i) => (i === index ? { ...t, unit: 'supply', consumes } : t)),
+})
+
+/**
  * Makes an overflow or supply target an ordinary one, making what it makes now (`rate` per minute;
  * when it makes none, a new target's 10 per minute).
  */

@@ -38,6 +38,7 @@ import {
   setBusSupply,
   convertOverflowTarget,
   linkToOverflow,
+  linkToSupply,
   migrateCatalysts,
   migrateFeedback,
   moveTarget,
@@ -284,6 +285,8 @@ export function PlannerPage({
           onConvert={() => onUpdatePlan((p) => convertOverflowTarget(p, i, resolvedByRow[i]?.rate ?? 0))}
           overflowing={overflowing}
           onUseOverflow={(consumes) => onUpdatePlan((p) => linkToOverflow(p, i, consumes))}
+          capped={capped}
+          onUseSupply={(consumes) => onUpdatePlan((p) => linkToSupply(p, i, consumes))}
         />
       ),
       move: plan.targets.length > 1 && (
@@ -334,6 +337,8 @@ export function PlannerPage({
   const money = useMemo(() => moneyLedger(plan, result, ledger), [plan, result, ledger])
   // Items the plan overflows (including what overflow targets take), which a target can switch to using.
   const overflowing = money.outputs.filter((o) => o.sources.some((s) => s.target === null)).map((o) => o.item)
+  // Items the bus carries a set amount of, which a target can switch to using what's left of.
+  const capped = ledger.flatMap((l) => (l.cap !== null ? [{ item: l.item, cap: l.cap, left: Math.max(0, l.cap - l.bus) }] : []))
   // Overflow the plan feeds back in place of the bus or into its money isn't overflow: it gets used.
   const fed = useMemo(() => fedOverflow(money), [money])
 
@@ -1412,6 +1417,8 @@ function TargetNotes({
   onConvert,
   overflowing,
   onUseOverflow,
+  capped,
+  onUseSupply,
 }: {
   target: PlanTarget
   resolved: ResolvedTarget | undefined
@@ -1430,8 +1437,15 @@ function TargetNotes({
   overflowing: string[]
   /** Makes a standard target use the plan's overflow of an item. */
   onUseOverflow: (consumes: string) => void
+  /** Items the bus carries a set amount of (and what the plan leaves of it), which a standard target can switch to using. */
+  capped: { item: string; cap: number; left: number }[]
+  /** Makes a standard target use what the plan leaves of the bus's supply of an item. */
+  onUseSupply: (consumes: string) => void
 }) {
   if (!target.item) return <span className="leaf-note">Pick what to make</span>
+  // What a standard target can switch to using instead of a set amount (not its own item).
+  const overflow = overflowing.filter((item) => item !== target.item)
+  const supply = capped.filter((c) => c.item !== target.item)
   const unit = target.unit ?? 'items'
   const perMachine = resolved?.perMachine ?? null
   return (
@@ -1449,22 +1463,37 @@ function TargetNotes({
       ) : unit === 'supply' && target.consumes ? (
         <SupplyTargetNote consumes={target.consumes} use={resolved?.supply} onShowTarget={onShowTarget} onConvert={onConvert} />
       ) : (
-        overflowing.some((item) => item !== target.item) && (
+        (overflow.length > 0 || supply.length > 0) && (
           <select
             className="overflow-link"
             value=""
-            onChange={(e) => e.target.value && onUseOverflow(e.target.value)}
-            aria-label="Use the plan's overflow instead"
-            title="Make as many as the plan's overflow of an item makes, instead of a set amount"
+            onChange={(e) => {
+              const [from, item] = e.target.value.split('|')
+              if (from === 'overflow') onUseOverflow(item)
+              else if (from === 'supply') onUseSupply(item)
+            }}
+            aria-label="Size it by an overflow or the bus's supply instead"
+            title="Make as many as the plan's overflow of an item, or what it leaves of the bus's supply of one, makes, instead of a set amount"
           >
-            <option value="">↪ Use overflow of…</option>
-            {overflowing
-              .filter((item) => item !== target.item)
-              .map((item) => (
-                <option key={item} value={item}>
-                  {itemName(item)}
-                </option>
-              ))}
+            <option value="">↪ Size it by…</option>
+            {overflow.length > 0 && (
+              <optgroup label="Overflow of">
+                {overflow.map((item) => (
+                  <option key={item} value={`overflow|${item}`}>
+                    {itemName(item)}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+            {supply.length > 0 && (
+              <optgroup label="What's left on the bus of">
+                {supply.map((c) => (
+                  <option key={c.item} value={`supply|${c.item}`}>
+                    {itemName(c.item)} ({fmt(c.left)} of {fmt(c.cap)}/min left)
+                  </option>
+                ))}
+              </optgroup>
+            )}
           </select>
         )
       )}
