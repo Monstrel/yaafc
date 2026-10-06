@@ -319,8 +319,9 @@ function nurseryProcesses(ctx: ProcessContext): Process[] {
 
 // ---- Paradox Crucible: any item → Oblivion Essence ----
 // Native code (UParadoxFacilityComponent), not in the data tables. The crucible takes one belt entry
-// (a single item, or a whole coin stack), holds count × BaseCost of value, and turns it into one
-// Oblivion Essence in clamp(1500 / value, 0.5, 1500) seconds, burning 1200 P/s while it works.
+// (a single item, or a whole coin stack), holds count × CauldronCost of value (not BaseCost: Sage
+// Seeds take 8.6 s in game, 1500 / 175), and turns it into one Oblivion Essence in
+// clamp(1500 / value, 0.5, 1500) seconds, burning 1200 P/s while it works.
 // Oblivion ↔ Vitality are ordinary recipes (5 s each).
 export const OBLIVION = 'Mors'
 export const VITALITY = 'Vitae'
@@ -335,7 +336,7 @@ export const paradoxId = (item: string) => `paradox:${item}`
 
 /** Items the crucible can refine into Oblivion Essence: anything with a value that travels on a belt. */
 export const paradoxInputs = items.filter(
-  (i) => !i.hidden && !i.liquid && i.baseCost > 0 && i.key !== OBLIVION && i.key !== VITALITY,
+  (i) => !i.hidden && !i.liquid && i.cauldronCost > 0 && i.key !== OBLIVION && i.key !== VITALITY,
 )
 
 /**
@@ -343,7 +344,7 @@ export const paradoxInputs = items.filter(
  * come `coinStack` to an entry: full stacks, unless a Bank Portal feeds smaller ones.
  */
 export function paradoxSeconds(item: string, coinStack?: number): number {
-  const value = (itemsByKey.get(item)?.baseCost ?? 0) * itemsPerSlot(item, coinStack)
+  const value = (itemsByKey.get(item)?.cauldronCost ?? 0) * itemsPerSlot(item, coinStack)
   if (value <= 0) return PARADOX_MAX_SECONDS
   return Math.min(PARADOX_MAX_SECONDS, Math.max(PARADOX_MIN_SECONDS, PARADOX_VALUE_SECONDS / value))
 }

@@ -1937,14 +1937,21 @@ describe('Paradox Crucible (any item → Oblivion Essence)', () => {
   const mods = modifiers({})
   const catalog = buildCatalog({ saved: [], machines: {}, mods, fertilizer: 'BasicFertilizer' })
 
-  it('takes 1500 / value seconds per essence, clamped to 0.5–1500 s', () => {
-    expect(paradoxSeconds('SageSeed')).toBeCloseTo(1500 / 360)
+  it('takes 1500 / CauldronCost seconds per essence, clamped to 0.5–1500 s', () => {
+    expect(paradoxSeconds('SageSeed')).toBeCloseTo(1500 / 175) // 8.6 s in game, not BaseCost's 4.2 s
     expect(paradoxSeconds('WoodBoard')).toBe(1500) // value 1
     expect(paradoxSeconds('PhilosopherStone')).toBe(0.5)
   })
 
+  it('speeds up with Factory Efficiency, as in game (Sage Seeds at level 3: 4.9 s, 12.2/min)', () => {
+    const p = catalog.byId.get('paradox:SageSeed')!
+    const fast = modifiers({ FactorySpeed: 3 })
+    expect(p.seconds / fast.factorySpeed).toBeCloseTo(4.9, 1)
+    expect(craftsPerMachine(p, fast)).toBeCloseTo(12.25, 1)
+  })
+
   it('refines a whole coin stack at once', () => {
-    const copper = itemsByKey.get('CopperCoin')!.baseCost
+    const copper = itemsByKey.get('CopperCoin')!.cauldronCost
     expect(paradoxSeconds('CopperCoin')).toBeCloseTo(1500 / (50 * copper))
     const p = catalog.byId.get('paradox:CopperCoin')!
     expect(p.inputs.find((s) => s.item === 'CopperCoin')!.count).toBe(50)
@@ -1965,7 +1972,7 @@ describe('Paradox Crucible (any item → Oblivion Essence)', () => {
     for (const b of result.balances) expect(b.deficit).toBe(0)
     const refine = result.runs.find((r) => r.process.id === 'paradox:SageSeed')!
     expect(refine.craftsPerMinute).toBeCloseTo(6)
-    expect(refine.machines).toBeCloseTo(6 / (60 / (1500 / 360)))
+    expect(refine.machines).toBeCloseTo(6 / (60 / (1500 / 175)))
   })
 
   it('follows the chosen input down the tree', () => {
