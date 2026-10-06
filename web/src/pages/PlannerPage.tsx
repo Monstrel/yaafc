@@ -718,6 +718,9 @@ function BusPanel({
     : 0
   const fedBack = money.outputs.filter((o) => o.sources.some((s) => isFed(o, s)))
   const out = money.outputs.filter((o) => o.toBus > 0 || o.sources.some((s) => !isFed(o, s)))
+  // Items the plan's own fed-back output wholly covers take nothing from the bus: the fed-back
+  // strip shows them. A cap the user set keeps its line, so it isn't hidden away.
+  const drawing = ledgers.filter((l) => l.bus > 0 || l.short > 0 || l.covered === 0 || l.cap !== null)
   return (
     <section className="panel ledger">
       <h2>Bus</h2>
@@ -727,9 +730,9 @@ function BusPanel({
           <h3>In from the bus</h3>
           <div className="bus-inputs">
             {defaults}
-            {ledgers.length > 0 && (
+            {drawing.length > 0 && (
               <ul className="bus-outputs">
-                {ledgers.map((l) => (
+                {drawing.map((l) => (
                   <ItemIn
                     key={l.item}
                     ledger={l}
