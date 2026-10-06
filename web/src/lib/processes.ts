@@ -446,11 +446,18 @@ function bankProcess(input: Coin, output: Coin, stack: number, mods: Modifiers):
 export const PURCHASING_PORTAL = 'Portal_AlchGuild'
 export const buyId = (item: string) => `buy:${item}`
 export const spendId = (coin: string) => `spend:${coin}`
-/** The coin the plan pays with unless it picks another. */
-export const DEFAULT_COIN = 'SilverCoin'
-
 /** Items the Purchasing Portal sells (liquids would need a pipe portal the game doesn't offer yet). */
 const sold = items.filter((i) => i.buyPrice != null && !i.liquid)
+
+/**
+ * The coin a plan pays with unless it picks another: the smallest that buys everything portals sell
+ * by its research tier at full speed (a belt entry of it pays for a whole item). No item is that
+ * cheap in copper; silver lasts until the 50-gold World Tree Seed comes in, at tier VIII.
+ */
+export function defaultCoin(tier: number): string {
+  const dearest = Math.max(0, ...sold.filter((i) => buyTier(i.key) <= tier).map((i) => i.buyPrice!))
+  return ([...COINS].reverse().find((c) => COIN_STACK * c.copper >= dearest) ?? COINS[0]).coin
+}
 
 const decimals = (x: number) => x.toLocaleString(undefined, { maximumFractionDigits: 2 })
 
@@ -704,7 +711,7 @@ export function buildCatalog(ctx: ProcessContext): ProcessCatalog {
     ...paradoxInputs.map((i) => paradoxProcess(i)),
     ...bankPairs.map(({ input, output }) => bankProcess(input, output, DEFAULT_BANK_STACK, ctx.mods)),
     ...BOILER_SETTINGS.map(boilerProcess),
-    ...sold.map((i) => buyProcess(i, DEFAULT_COIN, ctx.mods)),
+    ...sold.map((i) => buyProcess(i, defaultCoin(ctx.tier ?? MAX_TIER), ctx.mods)),
     ...COINS.map(spendProcess),
     ...fuelProcesses(ctx.mods),
     ...fertilizerProcesses(ctx.mods),
@@ -769,7 +776,7 @@ export function defaultProducer(catalog: ProcessCatalog, item: string, asTarget 
     const list = catalog.byProduct.get(item) ?? []
     return (list.find(open) ?? list[0])?.id ?? 'import'
   }
-  if (item === MONEY) return spendId(DEFAULT_COIN)
+  if (item === MONEY) return spendId(defaultCoin(catalog.tier))
   const rank = (all: Process[]) => {
     const options = all.filter((p) => p.product === item && p.kind !== 'buy')
     return (

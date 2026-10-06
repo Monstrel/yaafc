@@ -22,6 +22,7 @@ import {
   buildCatalog,
   defaultProducer,
   STEAM_HEAT_ID,
+  defaultCoin,
   paradoxSeconds,
   processTitle,
   savedRecipeProcess,
@@ -277,11 +278,11 @@ describe('production tree', () => {
     const wood = root.children.find((c) => c.item === 'Wood')!
     expect(wood).toMatchObject({ kind: 'produce', producer: 'buy:Wood' })
     expect(wood.rate).toBeCloseTo(0.3)
-    expect(wood.machines).toBeCloseTo(0.3 / 60) // a Log per belt slot: 50 silver pays for 250
+    expect(wood.machines).toBeCloseTo(0.3 / 60) // a Log per belt slot
     const [money] = wood.children
-    expect(money).toMatchObject({ item: MONEY, producer: 'spend:SilverCoin' })
-    expect(money.children[0]).toMatchObject({ item: 'SilverCoin', kind: 'bus' })
-    expect(money.children[0].fromBus).toBeCloseTo((0.3 * 200) / 1000) // 200 copper a Log
+    expect(money).toMatchObject({ item: MONEY, producer: 'spend:GoldCoin' }) // every tier: gold buys it all at full speed
+    expect(money.children[0]).toMatchObject({ item: 'GoldCoin', kind: 'bus' })
+    expect(money.children[0].fromBus).toBeCloseTo((0.3 * 200) / 100_000) // 200 copper a Log
   })
 
   it('stops at cycles instead of recursing forever', () => {
@@ -1793,7 +1794,7 @@ describe('the bus: money in, items out', () => {
     expect(money.purchases.length).toBeGreaterThan(0)
     expect(money.purchases.every((l) => l.price === itemsByKey.get(l.item)!.buyPrice)).toBe(true)
     expect(money.need).toBeCloseTo(money.purchases.reduce((t, l) => t + l.count * l.price!, 0))
-    expect(money.coins.map((l) => l.item)).toEqual(['SilverCoin'])
+    expect(money.coins.map((l) => l.item)).toEqual(['GoldCoin'])
     expect(result.runs.some((r) => r.process.kind === 'buy')).toBe(true)
     expect(money.cost).toBe(money.need)
   })
@@ -1830,7 +1831,14 @@ describe('the bus: money in, items out', () => {
 
 describe('Purchasing Portal (coins → an item)', () => {
   const mods = modifiers({})
-  const catalog = buildCatalog({ saved: [], machines: {}, mods, fertilizer: null })
+  // Tier VII: silver still buys everything portals sell at full speed, so the plan pays in silver.
+  const catalog = buildCatalog({ saved: [], machines: {}, mods, fertilizer: null, tier: 7 })
+
+  it('pays by default with the smallest coin that buys everything the research tier sells at full speed', () => {
+    expect([1, 4, 7, 8, 9].map(defaultCoin)).toEqual(['SilverCoin', 'SilverCoin', 'SilverCoin', 'GoldCoin', 'GoldCoin'])
+    expect(defaultProducer(catalog, MONEY)).toBe('spend:SilverCoin')
+    expect(defaultProducer(buildCatalog({ saved: [], machines: {}, mods, fertilizer: null, tier: 8 }), MONEY)).toBe('spend:GoldCoin')
+  })
   const ore = catalog.byId.get('buy:IronOre')!
   const paidIn = (coin: string, m = mods) => craftsPerMachine(catalog.variant(ore, { coin }), m)
 
