@@ -1,7 +1,8 @@
-type Destination = 'cauldron' | 'saved' | 'planner'
+import { PageLink } from '../components/PageLink'
+import type { Page } from '../lib/router'
 
 interface Props {
-  onNavigate: (tab: Destination) => void
+  onNavigate: (page: Page) => void
 }
 
 export function HomePage({ onNavigate }: Props) {
@@ -24,7 +25,9 @@ export function HomePage({ onNavigate }: Props) {
             target and list every mix that makes it. Mark ingredients as preferred or avoided to narrow the results.
             Star a recipe to save it.
           </p>
-          <button onClick={() => onNavigate('cauldron')}>Open Cauldron</button>
+          <PageLink page="cauldron" className="button" onNavigate={onNavigate}>
+            Open Cauldron
+          </PageLink>
         </article>
         <article className="panel mode-normal">
           <h3>Saved recipes</h3>
@@ -32,7 +35,9 @@ export function HomePage({ onNavigate }: Props) {
             Your starred mixes, in a table. Name them and keep notes; each one becomes a producer you can pick in the
             planner.
           </p>
-          <button onClick={() => onNavigate('saved')}>Open Saved recipes</button>
+          <PageLink page="saved" className="button" onNavigate={onNavigate}>
+            Open Saved recipes
+          </PageLink>
         </article>
         <article className="panel mode-normal">
           <h3>Planner</h3>
@@ -41,7 +46,9 @@ export function HomePage({ onNavigate }: Props) {
             each step needs, shown as a foldable tree. Pick how each item is produced. If a chain can&apos;t be met, the
             planner reports the shortfall where it happens.
           </p>
-          <button onClick={() => onNavigate('planner')}>Open Planner</button>
+          <PageLink page="planner" className="button" onNavigate={onNavigate}>
+            Open Planner
+          </PageLink>
         </article>
       </section>
 

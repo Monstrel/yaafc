@@ -19,5 +19,17 @@ export default defineConfig({
         this.emitFile({ type: 'asset', fileName: 'version.json', source: JSON.stringify({ build: buildId }) })
       },
     },
+    {
+      // GitHub Pages serves /planner from planner.html, so each page's address opens the app.
+      name: 'page-html',
+      apply: 'build',
+      enforce: 'post',
+      generateBundle(_, bundle) {
+        const index = bundle['index.html']
+        if (index?.type !== 'asset') return
+        for (const page of ['cauldron', 'saved', 'planner'])
+          this.emitFile({ type: 'asset', fileName: `${page}.html`, source: index.source })
+      },
+    },
   ],
 })

@@ -20,15 +20,18 @@ import { mergeBackup } from './lib/importPlans'
 import { oneOf, sanitizeMyDefaults, sanitizePlans, sanitizeProgress, sanitizeSavedRecipes, sanitizeString } from './lib/sanitize'
 import type { MyDefaults, Plan, Progress, SavedRecipe } from './lib/types'
 import { useUpdateAvailable } from './lib/updateCheck'
+import { PAGES, usePage, type Page } from './lib/router'
+import { PageLink } from './components/PageLink'
 import { CauldronPage } from './pages/CauldronPage'
 import { HomePage } from './pages/HomePage'
 import { PlannerPage } from './pages/PlannerPage'
 import { SavedPage } from './pages/SavedPage'
 
-type Tab = 'home' | 'cauldron' | 'saved' | 'planner'
-
 export default function App() {
-  const [tab, setTab] = usePersistentState<Tab>('tab', 'home', oneOf('home', 'cauldron', 'saved', 'planner'))
+  // The page visited last, which the bare site address opens on.
+  const [lastPage, setLastPage] = usePersistentState<Page>('tab', 'home', oneOf(...PAGES))
+  const [tab, setTab] = usePage(lastPage)
+  useEffect(() => setLastPage(tab), [tab, setLastPage])
   const [saved, setSaved] = usePersistentState<SavedRecipe[]>('saved-recipes', [], (v) => sanitizeSavedRecipes(v, newId))
   const [plans, setPlans] = usePersistentState<Plan[]>('plans', () => [emptyPlan('My factory')], (v) => sanitizePlans(v, newId))
   const [activePlanId, setActivePlanId] = usePersistentState<string>('active-plan', '', sanitizeString)
@@ -123,19 +126,19 @@ export default function App() {
           </span>
           <h1>Yet Another Alchemy Factory Calculator</h1>
         </div>
-        <nav className="tabs" role="tablist">
-          <button role="tab" aria-selected={tab === 'home'} onClick={() => setTab('home')}>
+        <nav className="tabs">
+          <PageLink page="home" current={tab === 'home'} onNavigate={setTab}>
             Home
-          </button>
-          <button role="tab" aria-selected={tab === 'cauldron'} onClick={() => setTab('cauldron')}>
+          </PageLink>
+          <PageLink page="cauldron" current={tab === 'cauldron'} onNavigate={setTab}>
             Cauldron
-          </button>
-          <button role="tab" aria-selected={tab === 'saved'} onClick={() => setTab('saved')}>
+          </PageLink>
+          <PageLink page="saved" current={tab === 'saved'} onNavigate={setTab}>
             Saved recipes <span className="pill">{saved.length}</span>
-          </button>
-          <button role="tab" aria-selected={tab === 'planner'} onClick={() => setTab('planner')}>
+          </PageLink>
+          <PageLink page="planner" current={tab === 'planner'} onNavigate={setTab}>
             Planner
-          </button>
+          </PageLink>
         </nav>
         <div className="header-actions">
           <button onClick={downloadBackup} title="Download saved recipes, plans and your default recipes">
