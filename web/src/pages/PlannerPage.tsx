@@ -64,6 +64,7 @@ import { buildingNameFor, machineNameFor, noun } from '../lib/plural'
 import { BOILER_HEAT, BUS, IMPORT, planProducer } from '../lib/unfold'
 import { dropUnits, setUnits, unitScales } from '../lib/units'
 import type { TreeNode } from '../lib/tree'
+import { usePersistentState } from '../lib/store'
 import { blankTarget, type MyDefaults, type Plan, type PlanTarget, type Progress, type Separation } from '../lib/types'
 import { PLANNER_UPGRADES, maxLevel, upgradeLevel, type Modifiers } from '../lib/upgrades'
 
@@ -221,6 +222,10 @@ export function PlannerPage({
       return { id, n: (s?.n ?? 0) + 1, of: ids }
     })
   /** The target just added, whose item picker opens. */
+  // Whether the upgrades and defaults column shows beside the plan (two-column layout only).
+  const [sideOpen, setSideOpen] = usePersistentState<boolean>('planner-side', true, (v) => (typeof v === 'boolean' ? v : undefined), {
+    perTab: true,
+  })
   const [added, setAdded] = useState<{ plan: string; index: number } | null>(null)
   const addTarget = () => {
     // A plan with only its blank target uses that one: show it instead of adding another.
@@ -354,29 +359,17 @@ export function PlannerPage({
 
   return (
     <div className="page planner">
-      <div className="plan-bar panel">
-        <select value={plan.id} onChange={(e) => onSelectPlan(e.target.value)} aria-label="Plan">
-          {plans.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
-        <input
-          className="plan-name"
-          value={plan.name}
-          onChange={(e) => onUpdatePlan((p) => ({ ...p, name: e.target.value }))}
-          aria-label="Plan name"
-        />
-        <button onClick={onNewPlan}>New</button>
-        <button onClick={onDuplicatePlan}>Duplicate</button>
-        <button className="danger" onClick={onDeletePlan} disabled={plans.length <= 1}>
-          Delete
-        </button>
-      </div>
-
-      <div className="planner-layout">
-        <aside className="planner-side">
+      <div className={sideOpen ? 'planner-layout' : 'planner-layout side-closed'}>
+        <aside className="planner-side" id="planner-side">
+          <button
+            className="icon-button side-toggle"
+            onClick={() => setSideOpen((o) => !o)}
+            aria-controls="planner-side"
+            aria-expanded={sideOpen}
+            title={sideOpen ? 'Hide upgrades and defaults' : 'Show upgrades and defaults'}
+          >
+            <SidebarIcon open={sideOpen} />
+          </button>
           <section className="panel">
             <h2>Upgrades</h2>
             <p className="hint">Your game&apos;s progress: shared by every plan.</p>
@@ -419,6 +412,27 @@ export function PlannerPage({
         </aside>
 
         <main className="planner-main">
+          <div className="plan-bar panel">
+            <select value={plan.id} onChange={(e) => onSelectPlan(e.target.value)} aria-label="Plan">
+              {plans.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            <input
+              className="plan-name"
+              value={plan.name}
+              onChange={(e) => onUpdatePlan((p) => ({ ...p, name: e.target.value }))}
+              aria-label="Plan name"
+            />
+            <button onClick={onNewPlan}>New</button>
+            <button onClick={onDuplicatePlan}>Duplicate</button>
+            <button className="danger" onClick={onDeletePlan} disabled={plans.length <= 1}>
+              Delete
+            </button>
+          </div>
+
           {result.status !== 'ok' && <div className="panel warning">Could not solve this plan: {result.message}</div>}
 
           {!model.result ? (
@@ -1737,6 +1751,26 @@ function ResearchTier({ tier: planTier, onChange }: { tier: number; onChange: (t
         }}
       />
     </label>
+  )
+}
+
+/** A window with its left column drawn, filled while that column shows. */
+function SidebarIcon({ open }: { open: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      width="16"
+      height="16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      aria-hidden
+      style={{ verticalAlign: '-3px' }}
+    >
+      <rect x="1.75" y="2.75" width="12.5" height="10.5" rx="1.5" />
+      <path d="M6 2.75v10.5" />
+      {open && <rect x="1.75" y="2.75" width="4.25" height="10.5" rx="1.5" fill="currentColor" stroke="none" />}
+    </svg>
   )
 }
 

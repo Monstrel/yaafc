@@ -1050,6 +1050,31 @@ td.under {
   .planner-layout {
     grid-template-columns: minmax(0, 1fr);
   }
+
+  /* The plan comes first; the global upgrades and defaults follow it. */
+  .planner-side {
+    order: 1;
+  }
+
+  /* Both columns always show here, so there is nothing to hide. */
+  .side-toggle {
+    display: none;
+  }
+}
+
+@media (min-width: 901px) {
+  /* Closed, the sidebar keeps only its toggle. */
+  .planner-layout.side-closed {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .side-closed .planner-side > :not(.side-toggle) {
+    display: none;
+  }
+}
+
+.side-toggle {
+  align-self: flex-start;
 }
 
 .planner-side,
