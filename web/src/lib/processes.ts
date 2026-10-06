@@ -462,13 +462,14 @@ export function defaultCoin(tier: number): string {
 
 const decimals = (x: number) => x.toLocaleString(undefined, { maximumFractionDigits: 2 })
 
-function buyProcess(i: Item, coin: string, mods: Modifiers): Process {
+/** Buying an item, paid in `coin` arriving `stack` to a belt entry (full stacks, unless a Bank Portal feeds smaller ones). */
+function buyProcess(i: Item, coin: string, mods: Modifiers, stack = COIN_STACK): Process {
   const machine = machinesByKey.get(PURCHASING_PORTAL) ?? null
   const price = i.buyPrice!
-  const perEntry = COIN_STACK * (coinValue(coin) ?? 1)
+  const perEntry = stack * (coinValue(coin) ?? 1)
   // Belt entries of coins one purchase takes: below one, the output belt sets the pace.
   const entries = price / perEntry
-  const coins = itemNameFor(coin, COIN_STACK)
+  const coins = itemNameFor(coin, stack)
   return {
     id: buyId(i.key),
     kind: 'buy',
@@ -483,8 +484,8 @@ function buyProcess(i: Item, coin: string, mods: Modifiers): Process {
     alternate: false,
     notes: [
       entries > 1
-        ? `Paid in ${coins}: each belt entry of ${COIN_STACK} pays for ${decimals(1 / entries)} of one, so the coins set its pace`
-        : `Paid in ${coins}: each belt entry of ${COIN_STACK} pays for ${decimals(1 / entries)}, so its output belt sets its pace`,
+        ? `Paid in ${coins}: each belt entry of ${stack} pays for ${decimals(1 / entries)} of one, so the coins set its pace`
+        : `Paid in ${coins}: each belt entry of ${stack} pays for ${decimals(1 / entries)}, so its output belt sets its pace`,
     ],
     catalysts: [],
     acceptsCatalysts: false,
@@ -492,6 +493,7 @@ function buyProcess(i: Item, coin: string, mods: Modifiers): Process {
     acceptsHeight: false,
     tier: Math.max(machine ? machineTier(machine.key) : 1, buyTier(i.key)),
     coin,
+    ...(stack < COIN_STACK && { inputStacks: { [coin]: stack } }),
   }
 }
 
@@ -636,6 +638,8 @@ export interface RunChange {
   stack?: number
   fertilizer?: string
   coin?: string
+  /** Coins per belt entry a Purchasing Portal is paid in, where a Bank Portal feeds smaller stacks than 50. */
+  coinStack?: number
   /** Coins per input belt entry, per ingredient fed smaller stacks than 50 (empty: none). */
   inputStacks?: Record<string, number>
 }
@@ -669,8 +673,6 @@ export function buildCatalog(ctx: ProcessContext): ProcessCatalog {
   const nurseries = new Map(seeds.filter(grows).map((s) => [`nursery:${s.seed}`, s]))
   const portals = new Map(sold.map((i) => [buyId(i.key), i]))
   const rerun = (p: Process, change: RunChange) => {
-    const bought = portals.get(p.id)
-    if (bought) return !change.coin || change.coin === p.coin ? p : buyProcess(bought, change.coin, ctx.mods)
     const bank = banks.get(p.id)
     if (bank) {
       const stack = clampBankStack(change.stack ?? p.stack ?? DEFAULT_BANK_STACK)
@@ -701,6 +703,13 @@ export function buildCatalog(ctx: ProcessContext): ProcessCatalog {
     return Object.keys(fed).length ? { ...base, inputStacks: fed } : { ...base, inputStacks: undefined }
   }
   const variant = (p: Process, change: RunChange) => {
+    // A portal's coin stacks come from the coin row under it, not its own ingredients.
+    const bought = portals.get(p.id)
+    if (bought) {
+      const coin = change.coin ?? p.coin!
+      const stack = change.coinStack ?? (coin === p.coin ? p.inputStacks?.[coin] : undefined) ?? COIN_STACK
+      return coin === p.coin && stack === (p.inputStacks?.[coin] ?? COIN_STACK) ? p : buyProcess(bought, coin, ctx.mods, stack)
+    }
     const stacks = change.inputStacks ?? p.inputStacks
     const run = rerun(p, change)
     return stacks || run.inputStacks ? fedStacks(run, stacks ?? {}) : run

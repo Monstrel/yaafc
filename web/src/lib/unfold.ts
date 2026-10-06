@@ -396,6 +396,12 @@ export function unfold(plan: Plan, catalog: ProcessCatalog): PlanShape {
     for (const s of n.process!.inputs) n.children.push(child(s.item, n))
     const fed = fedStacks(n.children)
     if (fed) n.process = catalog.variant(n.process!, { inputStacks: fed })
+    // A Purchasing Portal paid with coins a Bank Portal row below outputs in smaller stacks runs slower.
+    if (n.process!.kind === 'buy') {
+      const paid = n.children.find((c) => c.item === MONEY)?.children ?? []
+      const stack = fedStacks(paid)?.[n.process!.coin!]
+      if (stack) n.process = catalog.variant(n.process!, { coinStack: stack })
+    }
     if (!frame) return
     // A gathered row's own ingredients can be gathered here too, adding rows as they go.
     for (;;) {

@@ -1890,6 +1890,17 @@ describe('Purchasing Portal (coins → an item)', () => {
     expect(ownPicks(picked, catalog, MONEY)).toEqual([`0/IronOre/${MONEY}`])
   })
 
+  it('slows when a Bank Portal below feeds it smaller coin stacks', () => {
+    const copper = plan({ targets: [{ item: 'IronOre', rate: 10 }], producers: { [MONEY]: 'spend:CopperCoin' } })
+    const coins = `0/IronOre/${MONEY}/CopperCoin`
+    const banked = chooseProducer(copper, catalog, { item: 'CopperCoin', producer: 'bank:SilverCoin:CopperCoin', row: coins })
+    const full = solvePlan(banked, catalog, mods).tree[0]
+    expect(full.machines).toBeCloseTo(10 / 2.5) // full stacks of 50: 2.5 ore a minute each
+    const small = solvePlan(setRowStack(banked, coins, 10), catalog, mods).tree[0]
+    expect(small.run!.process.inputStacks).toEqual({ CopperCoin: 10 })
+    expect(small.machines).toBeCloseTo(10 / 0.5) // stacks of 10: 120 entries an ore
+  })
+
   it('shows what the plan buys once per item, whatever coins pay for it', () => {
     const two = plan({
       targets: [
@@ -1958,6 +1969,25 @@ describe("the bus's capped supply", () => {
     expect(linked.targets[1]).toEqual({ item: 'Flax', rate: 10, unit: 'supply', consumes: 'Catalyst2' })
     expect(fc(linked).result.targets[1].made).toBeCloseTo(750)
     expect(convertOverflowTarget(linked, 1, 750).targets[1]).toEqual({ item: 'Flax', rate: 750 })
+  })
+
+  it('leaves rows built separately as they are without the target, though they can serve it', () => {
+    // Coke built once for two Steel targets, its Advanced Athanors loading Fertile Catalyst from the bus.
+    const steel = plan({
+      targets: [
+        { item: 'SteelIngot', rate: 10 },
+        { item: 'SteelIngot', rate: 10 },
+      ],
+      producers: { [NUTRIENTS]: 'fert:Catalyst2' },
+      separate: [{ item: 'Coke' }],
+      rowCatalysts: { 'separate/Coke': ['Catalyst2'] },
+      branches: { 'separate/Coke/Catalyst2': { producer: 'bus' } },
+      busSupply: { Catalyst2: 5 },
+    })
+    const coke = (p: Plan) => fc(p).result.tree.find((n) => n.id === 'separate/Coke')!
+    const flax = addSupplyTarget(steel, 'Flax', 'Catalyst2')
+    expect(coke(flax)).toMatchObject({ rate: coke(steel).rate, overflow: coke(steel).overflow, machines: coke(steel).machines })
+    expect(fc(flax).result.targets[2].made).toBeGreaterThan(0)
   })
 
   it('makes none from a supply the plan leaves uncapped', () => {

@@ -265,9 +265,17 @@ function solveFed(plan: Plan, catalog: ProcessCatalog, mods: Modifiers, floors: 
   return result
 }
 
+/** How each row (by id) runs without the plan's overflow and supply targets. */
+interface Baseline {
+  /** Crafts per minute. */
+  crafts: Map<string, number>
+  /** Items per minute of its own item it makes that nothing uses. */
+  overflow: Map<string, number>
+}
+
 /**
- * Crafts per minute of each row (by id) with the plan's overflow targets taking nothing: ordinary
- * targets of nothing, so the rest of the plan is laid out and solved as it is without them.
+ * How each row runs with the plan's overflow and supply targets taking nothing: ordinary targets of
+ * nothing, so the rest of the plan is laid out and solved as it is without them.
  */
 function baselineCrafts(
   plan: Plan,
@@ -275,18 +283,20 @@ function baselineCrafts(
   mods: Modifiers,
   absorbing: Map<string, Absorbing>,
   floors: Map<string, number>,
-): Map<string, number> {
+): Baseline {
   const without = {
     ...plan,
     targets: plan.targets.map((t) => (consumedBy(t) || suppliedBy(t) ? { item: t.item, rate: 0 } : t)),
   }
   const crafts = new Map<string, number>()
+  const overflow = new Map<string, number>()
   const visit = (n: TreeNode) => {
     if (n.run) crafts.set(n.id, n.run.craftsPerMinute)
+    overflow.set(n.id, n.overflow)
     n.children.forEach(visit)
   }
   solveRound(without, catalog, mods, absorbing, floors).tree.forEach(visit)
-  return crafts
+  return { crafts, overflow }
 }
 
 /** The root row of a row's tree. */
@@ -472,7 +482,18 @@ function solveRound(
   const flows: { name: string; from: PlanNode; to: PlanNode }[] = []
 
   // Rows held to their crafts: rounded up, or as they are without the plan's overflow targets.
-  const fixedOf = (n: PlanNode) => (!inTaker.has(n) && isTargetRow(rootOf(n).id) ? held?.get(n.id) : undefined)
+  const fixedOf = (n: PlanNode) => (!inTaker.has(n) && isTargetRow(rootOf(n).id) ? held?.crafts.get(n.id) : undefined)
+  // Rows built separately serve the overflow and supply targets too, so they can't be held to their
+  // crafts; but they overflow no more than they do without them (else running one harder could still
+  // soak up the overflow or supply).
+  if (held)
+    for (const n of supplies) {
+      const k = index.get(n)!
+      if (n.kind !== 'make' || inTaker.has(n) || fixedOf(n) !== undefined || !columns[`s:${k}`]) continue
+      equalities[`sc:${k}`] = held.overflow.get(n.id) ?? 0
+      columns[`s:${k}`][`sc:${k}`] = 1
+      columns[`scs:${k}`] = { [`sc:${k}`]: 1, cost: 0 }
+    }
   const heldToCrafts = (n: PlanNode) => floors.has(n.id) || fixedOf(n) !== undefined
   const sameRun = (n: PlanNode, c: PlanNode) => c.kind === 'make' && c.process!.id === n.process!.id
   // Rows whose by-products can go to rows running something else (see `e:` below).
