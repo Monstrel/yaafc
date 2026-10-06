@@ -21,12 +21,14 @@ export interface PlanTarget {
    * 'items' = items per minute (default); 'machines' = that many of the producer's machines' output;
    * 'net' = items per minute left over after the plan's rows take what they need of a fed-back item
    * in place of the bus (the planner sizes the build); 'overflow' = as many as the overflow of
-   * `consumes` makes (the planner sizes the build, and `rate` is unused).
+   * `consumes` makes; 'supply' = as many as what's left of the bus's capped supply of `consumes`
+   * makes (for both, the planner sizes the build, and `rate` is unused).
    */
-  unit?: 'items' | 'machines' | 'net' | 'overflow'
+  unit?: 'items' | 'machines' | 'net' | 'overflow' | 'supply'
   /**
    * For an 'overflow' target: the item whose overflow (what the rest of the plan makes and nothing
-   * uses) its rows of that item take, instead of making or buying it.
+   * uses) its rows of that item take, instead of making or buying it. For a 'supply' target: the
+   * item its rows take from the bus, using what the plan's other rows leave of its supply.
    */
   consumes?: string
   /**
@@ -102,6 +104,11 @@ export interface Plan {
   units?: Record<string, Unitizing>
   /** Tree row ids the player has marked built in their game: a checklist, it changes nothing the plan makes. */
   built?: string[]
+  /**
+   * Items per minute the bus carries of an item, where it's limited: the plan's rows taking it from
+   * the bus share that, and fall short past it. Absent = as much as they take.
+   */
+  busSupply?: Record<string, number>
 }
 
 /** A row built in units: `count` copies of a smaller line, each making its share. */

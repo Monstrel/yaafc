@@ -43,6 +43,8 @@ import {
   clearBranchChoice,
   addProvider,
   addOverflowTarget,
+  addSupplyTarget,
+  setBusSupply,
   convertOverflowTarget,
   linkToOverflow,
   migrateCatalysts,
@@ -1900,6 +1902,67 @@ describe('Purchasing Portal (coins → an item)', () => {
     expect(money.purchases).toEqual([{ item: 'IronOre', count: expect.closeTo(15), price: 1200 }])
     expect(money.coins.map((l) => l.item).sort()).toEqual(['CopperCoin', 'SilverCoin'])
     expect(money.need).toBeCloseTo(15 * 1200)
+  })
+})
+
+describe("the bus's capped supply", () => {
+  const mods = modifiers({})
+  const catalog = buildCatalog({ saved: [], machines: { 'recipe:Coke': 'AdvancedAthanor' }, mods, fertilizer: 'Catalyst2' })
+  // Coke on Advanced Athanors with Fertile Catalyst from the bus: 0.25/min of it.
+  const coke = plan({
+    targets: [{ item: 'Coke', rate: 60 }],
+    producers: { [NUTRIENTS]: 'fert:Catalyst2' },
+    rowCatalysts: { '0/Coke': ['Catalyst2'] },
+    branches: { '0/Coke/Catalyst2': { producer: 'bus' } },
+  })
+  const fc = (p: Plan) => {
+    const result = solvePlan(p, catalog, mods)
+    expectBalanced(result)
+    return { result, line: ledgers(p, result).find((l) => l.item === 'Catalyst2')!, balance: result.balances.find((b) => b.item === 'Catalyst2')! }
+  }
+
+  it('lets rows take up to what the bus carries, and falls short past it', () => {
+    const open = fc(coke)
+    expect(open.line).toMatchObject({ bus: expect.closeTo(0.25), cap: null })
+    const { result, line, balance } = fc(setBusSupply(coke, 'Catalyst2', 0.1))
+    expect(line).toMatchObject({ bus: expect.closeTo(0.1), cap: 0.1 })
+    expect(balance.deficit).toBeCloseTo(0.15)
+    expect(result.tree[0].children.find((c) => c.item === 'Catalyst2')).toMatchObject({ fromBus: expect.closeTo(0.1), shortfall: expect.closeTo(0.15) })
+    // Plenty on the bus: as if uncapped.
+    expect(fc(setBusSupply(coke, 'Catalyst2', 5)).balance.deficit).toBe(0)
+    expect(setBusSupply(setBusSupply(coke, 'Catalyst2', 5), 'Catalyst2', undefined)).toEqual(coke)
+  })
+
+  it('sizes a supply target to what the other rows leave, without changing them', () => {
+    // Flax nurseries spread Fertile Catalyst: 24 nutrients a plant, 24,000 a catalyst.
+    const capped = addSupplyTarget(setBusSupply(coke, 'Catalyst2', 1), 'Flax', 'Catalyst2')
+    expect(capped.targets[1]).toEqual({ item: 'Flax', rate: 0, unit: 'supply', consumes: 'Catalyst2' })
+    const { result, line, balance } = fc(capped)
+    expect(balance.deficit).toBe(0)
+    expect(line.bus).toBeCloseTo(1)
+    expect(result.targets[1].made).toBeCloseTo((1 - 0.25) / 0.001)
+    expect(result.targets[1].supply).toMatchObject({ item: 'Catalyst2', capped: true, uses: true, taken: expect.closeTo(0.75), unused: 0, takenBy: null })
+    const alone = solvePlan(coke, catalog, mods)
+    expect(result.tree[0].machines).toBeCloseTo(alone.tree[0].machines)
+    // A second one takes none: the first takes all that's left.
+    const second = fc(addSupplyTarget(capped, 'Flax', 'Catalyst2')).result.targets[2]
+    expect(second).toMatchObject({ made: 0, supply: { takenBy: 1 } })
+    // Made a standard target, it keeps what it makes.
+    expect(convertOverflowTarget(capped, 1, 750).targets[1]).toEqual({ item: 'Flax', rate: 750 })
+  })
+
+  it('makes none from a supply the plan leaves uncapped', () => {
+    const open = addSupplyTarget(coke, 'Flax', 'Catalyst2')
+    const { result } = fc(open)
+    expect(result.targets[1]).toMatchObject({ made: 0, supply: { capped: false, uses: true } })
+  })
+
+  it('reads and forgets caps like the plan\'s other settings', () => {
+    const capped = addSupplyTarget(setBusSupply(coke, 'Catalyst2', 1), 'Flax', 'Catalyst2')
+    expect(sanitizePlans([capped], () => 'x')![0]).toEqual(capped)
+    expect(sanitizePlans([{ ...capped, busSupply: { Catalyst2: -1 } }], () => 'x')![0].busSupply).toBeUndefined()
+    expect(pruneChoices(capped, catalog)).toBeNull()
+    expect(pruneChoices({ ...capped, targets: [] }, catalog)!.busSupply).toBeUndefined()
   })
 })
 

@@ -47,7 +47,7 @@ function distinctIds<T extends { id: string }>(items: T[], newId: () => string):
   })
 }
 
-const UNITS = new Set(['items', 'machines', 'net', 'overflow'])
+const UNITS = new Set(['items', 'machines', 'net', 'overflow', 'supply'])
 
 function target(v: unknown): PlanTarget | undefined {
   if (!isObj(v)) return undefined
@@ -56,9 +56,10 @@ function target(v: unknown): PlanTarget | undefined {
   if (!item || rate === undefined || rate < 0) return undefined
   const consumes = str(v.consumes) || undefined
   let unit = UNITS.has(v.unit as string) ? (v.unit as PlanTarget['unit']) : undefined
-  // An overflow target with nothing to consume is an ordinary one.
-  if (unit === 'overflow' && !consumes) unit = undefined
-  return defined({ item, rate, unit, consumes: unit === 'overflow' ? consumes : undefined, feedback: bool(v.feedback) })
+  // An overflow or supply target with nothing to consume is an ordinary one.
+  const sized = unit === 'overflow' || unit === 'supply'
+  if (sized && !consumes) unit = undefined
+  return defined({ item, rate, unit, consumes: sized ? consumes : undefined, feedback: bool(v.feedback) })
 }
 
 function branch(v: unknown): BranchChoice | undefined {
@@ -91,6 +92,10 @@ function unitizing(v: unknown): Unitizing | undefined {
 
 function plan(v: unknown, newId: () => string): Plan | undefined {
   if (!isObj(v)) return undefined
+  const caps = record(v.busSupply, (x) => {
+    const n = num(x)
+    return n !== undefined && n >= 0 ? n : undefined
+  })
   const feedback = isObj(v.feedback) ? defined({ fuel: bool(v.feedback.fuel), fertilizer: bool(v.feedback.fertilizer) }) : undefined
   return defined({
     id: str(v.id) || newId(),
@@ -112,6 +117,7 @@ function plan(v: unknown, newId: () => string): Plan | undefined {
     roundUp: strings(v.roundUp),
     units: record(v.units, unitizing),
     built: strings(v.built),
+    busSupply: caps && Object.keys(caps).length ? caps : undefined,
   })
 }
 

@@ -242,6 +242,26 @@ export const addProvider = (plan: Plan, item: string): Plan => ({
 })
 
 /**
+ * Caps what the bus carries of an item (items per minute; undefined lifts the cap): the plan's
+ * rows taking it from the bus share that, falling short past it.
+ */
+export function setBusSupply(plan: Plan, item: string, cap: number | undefined): Plan {
+  const { [item]: _, ...rest } = plan.busSupply ?? {}
+  const busSupply = cap === undefined || !(cap >= 0) ? rest : { ...rest, [item]: cap }
+  return { ...plan, busSupply: Object.keys(busSupply).length ? busSupply : undefined }
+}
+
+/**
+ * Adds a target of `item` that uses what the plan's other rows leave of the bus's capped supply of
+ * `consumes`, at the end of the list: the planner makes as many as that comes to. Removing it puts
+ * the plan back as it was.
+ */
+export const addSupplyTarget = (plan: Plan, item: string, consumes: string): Plan => ({
+  ...plan,
+  targets: [...plan.targets, { item, rate: 0, unit: 'supply', consumes }],
+})
+
+/**
  * Adds a target of `item` that uses the plan's overflow of `consumes`, at the end of the list: the
  * planner makes as many as that overflow comes to. Removing it puts the plan back as it was.
  */
@@ -260,13 +280,13 @@ export const linkToOverflow = (plan: Plan, index: number, consumes: string): Pla
 })
 
 /**
- * Makes an overflow target an ordinary one, making what it makes now (`rate` per minute; when it
- * makes none, a new target's 10 per minute).
+ * Makes an overflow or supply target an ordinary one, making what it makes now (`rate` per minute;
+ * when it makes none, a new target's 10 per minute).
  */
 export const convertOverflowTarget = (plan: Plan, index: number, rate: number): Plan => ({
   ...plan,
   targets: plan.targets.map((t, i) => {
-    if (i !== index || t.unit !== 'overflow') return t
+    if (i !== index || (t.unit !== 'overflow' && t.unit !== 'supply')) return t
     const { consumes: _, unit: __, ...rest } = t
     return { ...rest, rate: rate > 0 ? Math.round(rate * 1000) / 1000 : 10 }
   }),
@@ -560,7 +580,10 @@ export function pruneChoices(plan: Plan, catalog: ProcessCatalog): Plan | null {
   // Only machines get built: marks stay with rows that run some.
   const built = plan.built?.filter((id) => running.has(id))
   const d = built?.length !== plan.built?.length
-  const dropped = [p, m, c, h, k, b, units].some((x) => x.dropped) || s || r || f || u || d
+  // Caps on the bus's supply stay while the plan takes the item from the bus.
+  const drawn = new Set(nodes.flatMap((n) => (n.kind === 'bus' ? [n.item] : [])))
+  const caps = keep(plan.busSupply, (item) => drawn.has(item))
+  const dropped = [p, m, c, h, k, b, units, caps].some((x) => x.dropped) || s || r || f || u || d
   if (!dropped) return null
   return {
     ...plan,
@@ -576,5 +599,6 @@ export function pruneChoices(plan: Plan, catalog: ProcessCatalog): Plan | null {
     roundUp: roundUp?.length ? roundUp : undefined,
     units: units.record && Object.keys(units.record).length ? units.record : undefined,
     built: built?.length ? built : undefined,
+    busSupply: caps.record && Object.keys(caps.record).length ? caps.record : undefined,
   }
 }

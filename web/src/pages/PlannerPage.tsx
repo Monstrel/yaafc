@@ -34,6 +34,8 @@ import {
   keepDefaultInPlan,
   addProvider,
   addOverflowTarget,
+  addSupplyTarget,
+  setBusSupply,
   convertOverflowTarget,
   linkToOverflow,
   migrateCatalysts,
@@ -54,7 +56,7 @@ import {
   setRowStack,
   type ProducerPick,
 } from '../lib/choices'
-import type { OverflowUse, PlanResult, ResolvedTarget } from '../lib/solver'
+import type { OverflowUse, PlanResult, ResolvedTarget, SupplyUse } from '../lib/solver'
 import { separationsOf } from '../lib/separate'
 import { canSeparateShared, mergeSingleUses, separateShared, setSeparation } from '../lib/separateAll'
 import { buildingNameFor, machineNameFor, noun } from '../lib/plural'
@@ -475,7 +477,7 @@ export function PlannerPage({
               {deficits.length > 0 && (
                 <div className="panel warning">
                   <strong>Can't be met.</strong> The chosen recipes can't supply these items (usually a loop that consumes as much
-                  as it makes). Pick a different recipe for them or buy them:
+                  as it makes, or more than the bus carries of them). Pick a different recipe for them, or raise what the bus carries:
                   <ul>
                     {deficits.map((d) => (
                       <li key={d.item}>
@@ -550,6 +552,11 @@ export function PlannerPage({
                 }}
                 onUseOverflow={(item, consumes) => {
                   onUpdatePlan((p) => addOverflowTarget(p, item, consumes))
+                  showTarget(plan.targets.length)
+                }}
+                onCap={(item, cap) => onUpdatePlan((p) => setBusSupply(p, item, cap))}
+                onUseSupply={(item, consumes) => {
+                  onUpdatePlan((p) => addSupplyTarget(p, item, consumes))
                   showTarget(plan.targets.length)
                 }}
                 onShowTarget={showTarget}
@@ -660,6 +667,8 @@ function BusPanel({
   overflowFrom,
   onFeedback,
   onProvide,
+  onCap,
+  onUseSupply,
   onUseOverflow,
   onShowTarget,
   onShowRow,
@@ -674,6 +683,10 @@ function BusPanel({
   /** Feeds a source back (the plan uses it) or not (it goes out to the bus). */
   onFeedback: (item: string, target: number | null, on: boolean) => void
   onProvide: (item: string) => void
+  /** Caps what the bus carries of an item (undefined: as much as the plan takes). */
+  onCap: (item: string, cap: number | undefined) => void
+  /** Adds a supply target making `item` from what the plan leaves of the bus's supply of `consumes`. */
+  onUseSupply: (item: string, consumes: string) => void
   /** Adds an overflow target making `item` from the overflow of `consumes`. */
   onUseOverflow: (item: string, consumes: string) => void
   /** Shows a target's row in the production tree. */
@@ -706,7 +719,15 @@ function BusPanel({
             {ledgers.length > 0 && (
               <ul className="bus-outputs">
                 {ledgers.map((l) => (
-                  <ItemIn key={l.item} ledger={l} onProvide={onProvide} onShowTarget={onShowTarget} onShowRow={onShowRow} />
+                  <ItemIn
+                    key={l.item}
+                    ledger={l}
+                    onProvide={onProvide}
+                    onCap={onCap}
+                    onUseSupply={onUseSupply}
+                    onShowTarget={onShowTarget}
+                    onShowRow={onShowRow}
+                  />
                 ))}
               </ul>
             )}
@@ -893,21 +914,30 @@ function PlanDefaults({
 
 /**
  * An item the plan's rows take from the bus: how much, what for (burned, spread or used), and what
- * the plan's own fed-back output covers; a way to make it in the plan instead.
+ * the plan's own fed-back output covers; a way to make it in the plan instead. The bus may carry
+ * only so much of it (a cap): past that the rows fall short, and a target can use what they leave.
  */
 function ItemIn({
   ledger,
   onProvide,
+  onCap,
+  onUseSupply,
   onShowTarget,
   onShowRow,
 }: {
   ledger: ItemLedger
   onProvide: (item: string) => void
+  /** Caps what the bus carries of the item (undefined: as much as the plan takes). */
+  onCap: (item: string, cap: number | undefined) => void
+  /** Adds a target making `item` from what the plan leaves of this item's capped supply. */
+  onUseSupply: (item: string, consumes: string) => void
   onShowTarget: (index: number) => void
   onShowRow: (ids: string[]) => void
 }) {
   const uses = (Object.entries(ledger.uses) as [DrawUse, number][]).filter(([, n]) => n > 0)
   const rows = ledger.rows.length
+  const left = ledger.cap !== null ? Math.max(0, ledger.cap - ledger.bus) : 0
+  const [using, setUsing] = useState(false)
   return (
     <li className="bus-output">
       <div className="bus-output-head">
@@ -954,7 +984,45 @@ function ItemIn({
             </button>
           )}
         </li>
+        {ledger.absorbedBy === null && (
+          <li>
+            <label className="ledger-what bus-cap" title="What the bus carries of it: the plan's rows share that and fall short past it. Empty: as much as they take.">
+              <span className="hint-inline">bus carries</span>
+              <input
+                type="number"
+                min={0}
+                step="any"
+                placeholder="any"
+                value={ledger.cap ?? ''}
+                onChange={(e) => onCap(ledger.item, e.target.value === '' ? undefined : Math.max(0, Number(e.target.value)))}
+                aria-label={`What the bus carries of ${itemName(ledger.item)}, per minute`}
+              />
+              <span className="hint-inline">/min{ledger.cap !== null && left > 0 && ` · ${fmt(left)} left`}</span>
+            </label>
+            {ledger.cap !== null && left > 0 && (
+              <button
+                className="move-button"
+                title="Add a target sized to use what the plan leaves of it"
+                aria-expanded={using}
+                onClick={() => setUsing((u) => !u)}
+              >
+                Use the rest…
+              </button>
+            )}
+          </li>
+        )}
       </ul>
+      {using && (
+        <OverflowTargetForm
+          item={ledger.item}
+          supply
+          onAdd={(item) => {
+            onUseSupply(item, ledger.item)
+            setUsing(false)
+          }}
+          onCancel={() => setUsing(false)}
+        />
+      )}
       {ledger.short > 0 && (
         <p className="rate negative">
           {fmt(ledger.short)}/min can&apos;t be covered: the net target&apos;s own chain uses more than it gives
@@ -1255,9 +1323,12 @@ function TargetAmount({
   const unit = target.unit ?? 'items'
   const perMachine = resolved?.perMachine ?? null
   const made = resolved?.made ?? 0
-  if (unit === 'overflow')
+  if (unit === 'overflow' || unit === 'supply')
     return (
-      <div className="target-amount" title="As many as the overflow it takes makes">
+      <div
+        className="target-amount"
+        title={unit === 'overflow' ? 'As many as the overflow it takes makes' : "As many as what it takes of the bus's supply makes"}
+      >
         <strong>{fmt(made)}</strong> /min
       </div>
     )
@@ -1375,6 +1446,8 @@ function TargetNotes({
       )}
       {unit === 'overflow' && target.consumes ? (
         <OverflowTargetNote consumes={target.consumes} use={resolved?.overflow} onShowTarget={onShowTarget} onConvert={onConvert} />
+      ) : unit === 'supply' && target.consumes ? (
+        <SupplyTargetNote consumes={target.consumes} use={resolved?.supply} onShowTarget={onShowTarget} onConvert={onConvert} />
       ) : (
         overflowing.some((item) => item !== target.item) && (
           <select
@@ -1410,6 +1483,58 @@ function TargetNotes({
  * What an overflow target takes, or why it takes nothing: its recipes don't use the item, a target
  * above takes it all, or nothing overflows. It can become an ordinary target at any time.
  */
+/**
+ * What a supply target takes of the bus's capped supply, or why it takes nothing: the bus's supply
+ * isn't capped, its recipes don't take the item from the bus, or a target above takes it all. It can
+ * become an ordinary target at any time.
+ */
+function SupplyTargetNote({
+  consumes,
+  use,
+  onShowTarget,
+  onConvert,
+}: {
+  consumes: string
+  use: SupplyUse | undefined
+  onShowTarget: (index: number) => void
+  onConvert: () => void
+}) {
+  const name = itemName(consumes)
+  return (
+    <>
+      <div className="note-line">
+        ↪ uses what&apos;s left of the bus&apos;s <ItemLabel item={consumes} size={16} />
+        {use && use.taken > 0 && <span className="hint-inline"> · {fmt(use.taken)}/min</span>}
+      </div>
+      {use && !use.uses ? (
+        <div className="note-line warn-text">
+          ⚠ Its recipes don&apos;t take {name} from the bus: pick ones that do in the rows below, or it makes none.
+        </div>
+      ) : use && !use.capped ? (
+        <div className="note-line warn-text">
+          ⚠ The bus&apos;s {name} has no cap: set what it carries on its line in the bus panel, or it makes none.
+        </div>
+      ) : use?.takenBy != null ? (
+        <div className="note-line warn-text">
+          ⚠ <TargetLink index={use.takenBy} onShow={onShowTarget} /> above takes all that&apos;s left.
+        </div>
+      ) : use && use.unused > 0 ? (
+        <div className="note-line warn-text">⚠ Can&apos;t use {fmt(use.unused)}/min of it without leaving something short.</div>
+      ) : (
+        use?.taken === 0 && <div className="note-line warn-text">⚠ The plan&apos;s other rows take all of it.</div>
+      )}
+      <button
+        type="button"
+        className="compact-button"
+        title="Keep making what it makes now as an ordinary target, whatever the supply does"
+        onClick={onConvert}
+      >
+        Make it a standard target
+      </button>
+    </>
+  )
+}
+
 function OverflowTargetNote({
   consumes,
   use,

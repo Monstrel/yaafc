@@ -2757,6 +2757,21 @@ tr.unit-totals td.num {
   gap: 8px;
 }
 
+/* What the bus carries of an item: a small box, empty for as much as the plan takes. */
+.bus-cap {
+  gap: 6px;
+}
+
+.bus-cap .hint-inline {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 0;
+}
+
+.bus-cap input {
+  width: 6em;
+}
+
 /* What the coins buy: indented under them. */
 .money-purchase {
   padding-left: 12px;

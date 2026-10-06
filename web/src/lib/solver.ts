@@ -7,7 +7,7 @@ import { runKey, type Process, type ProcessCatalog } from './processes'
 import { NO_FLOWS, buildTree, onOverflow, type ByproductRoute, type RowFlows, type TreeNode } from './tree'
 import type { Plan } from './types'
 import { absorbers, supplyAhead } from './ledger'
-import { consumedBy, isTargetRow, unfold, type PlanNode, type PlanShape } from './unfold'
+import { consumedBy, isTargetRow, suppliedBy, unfold, type PlanNode, type PlanShape } from './unfold'
 import type { Modifiers } from './upgrades'
 
 export interface ProcessRun {
@@ -45,6 +45,23 @@ export interface ResolvedTarget {
   machineName: string | null
   /** For an overflow target: the overflow it takes. */
   overflow?: OverflowUse
+  /** For a supply target: what it takes of the bus's supply. */
+  supply?: SupplyUse
+}
+
+/** What a supply target takes of the bus's capped supply of an item. */
+export interface SupplyUse {
+  item: string
+  /** The plan caps the bus's supply of it (else there's no amount to size the target by: it makes none). */
+  capped: boolean
+  /** Its rows take the item from the bus (else it can take none). */
+  uses: boolean
+  /** Items per minute of the supply it takes. */
+  taken: number
+  /** Items per minute of the supply nothing takes. */
+  unused: number
+  /** The supply target above it (index in the plan's targets) that takes it all instead, if any. */
+  takenBy: number | null
 }
 
 /** What an overflow target takes of the plan's overflow of an item. */
@@ -138,6 +155,10 @@ const SHORTFALL_ROW = 'shortfall'
 // less than any shortfall: falling short somewhere never stands in for leaving overflow unused (a
 // shortfall in a runaway loop would make it look like it settles).
 const UNUSED_OVERFLOW_COST = 1
+// A capped supply nothing takes costs more than what using it does (its row's crafts and the bus),
+// so a supply target takes all it can. Shortfalls are settled first (see the two passes below), so
+// leaving one never stands in for using the supply.
+const UNUSED_SUPPLY_COST = 1000
 
 /** Items per minute of `item` one machine running process `p` makes (output-belt cap included). */
 export function outputPerMachine(p: Process, item: string, mods: Modifiers): number | null {
@@ -154,8 +175,8 @@ function resolveTargets(plan: Plan, shape: PlanShape, mods: Modifiers): Resolved
       const p = shape.targetRows[i]?.process
       const perMachine = p ? outputPerMachine(p, t.item, mods) : null
       const amount = t.rate || 0
-      // An overflow target's rate comes from the solve.
-      const rate = t.unit === 'machines' ? amount * (perMachine ?? 0) : consumedBy(t) ? 0 : amount
+      // An overflow or supply target's rate comes from the solve.
+      const rate = t.unit === 'machines' ? amount * (perMachine ?? 0) : consumedBy(t) || suppliedBy(t) ? 0 : amount
       return {
         item: t.item,
         rate,
@@ -257,7 +278,7 @@ function baselineCrafts(
 ): Map<string, number> {
   const without = {
     ...plan,
-    targets: plan.targets.map((t) => (consumedBy(t) ? { item: t.item, rate: 0 } : t)),
+    targets: plan.targets.map((t) => (consumedBy(t) || suppliedBy(t) ? { item: t.item, rate: 0 } : t)),
   }
   const crafts = new Map<string, number>()
   const visit = (n: TreeNode) => {
@@ -355,9 +376,29 @@ function solveRound(
     const item = consumedBy(plan.targets[planIndex[i]])!
     if (leaves.length && !takerOf.has(item)) takerOf.set(item, i)
   }
-  // Overflow targets take what the rest of the plan overflows as it is without them: its targets'
-  // rows run as they would (running one harder could soak up the overflow into a surplus of its own).
-  const held = takerOf.size ? baselineCrafts(plan, catalog, mods, absorbing, floors) : null
+  // Supply targets (by index among the targets with an item), their rows of the item they take from
+  // the bus, and per capped item the one taking what's left of it: the first in order that uses it.
+  const caps = new Map(Object.entries(plan.busSupply ?? {}))
+  const supplyRows = new Map<number, PlanNode[]>()
+  targets.forEach((_, i) => {
+    const row = shape.targetRows[i]
+    if (suppliedBy(plan.targets[planIndex[i]]) && row && isTargetRow(row.id)) supplyRows.set(i, [])
+  })
+  for (const n of shape.nodes) {
+    const i = shape.targetRows.indexOf(rootOf(n))
+    if (!supplyRows.has(i)) continue
+    inTaker.add(n)
+    if (n.kind === 'bus' && n.item === suppliedBy(plan.targets[planIndex[i]])) supplyRows.get(i)!.push(n)
+  }
+  const supplyTaker = new Map<string, number>()
+  for (const [i, rows] of supplyRows) {
+    const item = suppliedBy(plan.targets[planIndex[i]])!
+    if (rows.length && caps.has(item) && !supplyTaker.has(item)) supplyTaker.set(item, i)
+  }
+  // Overflow and supply targets take what the rest of the plan overflows or leaves as it is without
+  // them: its targets' rows run as they would (running one harder could soak up the overflow or
+  // supply into a surplus of its own).
+  const held = takerOf.size || supplyTaker.size ? baselineCrafts(plan, catalog, mods, absorbing, floors) : null
 
   const equalities: Record<string, number> = {}
   const columns: Record<string, Record<string, number>> = {}
@@ -381,25 +422,36 @@ function solveRound(
     columns[`fb:${item}`] = { [bal(row)]: -1, [`g:${item}`]: 1, cost: 0 }
   }
 
+  // The bus's capped supplies (where the plan doesn't make the item in their place): rows taking
+  // one share what the bus carries, falling short past it, and a supply target takes what's left.
+  const capped = new Map([...caps].filter(([item]) => !pooled.has(item)))
+  for (const [item, cap] of capped) {
+    equalities[`bc:${item}`] = cap
+    columns[`bu:${item}`] = { [`bc:${item}`]: 1, cost: supplyTaker.has(item) ? UNUSED_SUPPLY_COST : 0 }
+  }
+  for (const [item, i] of supplyTaker) if (capped.has(item)) columns[`ts:${i}`] = { [bal(shape.targetRows[i])]: -1, cost: 0 }
+  const deficitCost = (n: PlanNode) => Math.max(MIN_DEFICIT_COST, DEFICIT_COST * DEFICIT_DEPTH_FACTOR ** n.depth)
+
   const supplies = shape.nodes.filter(isSupply)
   for (const s of supplies) {
     const k = index.get(s)!
     equalities[`b:${k}`] = 0
     // An overflow target's rows of its item get only the overflow taken, and its other rows make no
-    // more than it needs. A row making an item an overflow target takes overflows into its pool.
-    if (s.kind !== 'overflow' && (!inTaker.has(s) || floors.has(s.id)))
+    // more than it needs. A row making an item an overflow target takes overflows into its pool. A
+    // row taking a capped item from the bus takes no more than it needs (the rest is for the others).
+    if (s.kind !== 'overflow' && !(s.kind === 'bus' && capped.has(s.item)) && (!inTaker.has(s) || floors.has(s.id)))
       columns[`s:${k}`] = {
         [`b:${k}`]: -1,
         ...(s.kind === 'make' && takerOf.has(s.item) && { [`o:${s.item}`]: 1 }),
         cost: SURPLUS_COST,
       }
     if (s.kind === 'bus' && pooled.has(s.item)) columns[`i:${k}`] = { [`b:${k}`]: 1, [`g:${s.item}`]: -1, cost: 0 }
-    else if (s.kind === 'bus') columns[`i:${k}`] = { [`b:${k}`]: 1, cost: IMPORT_COST }
+    else if (s.kind === 'bus' && capped.has(s.item)) {
+      columns[`i:${k}`] = { [`b:${k}`]: 1, [`bc:${s.item}`]: 1, cost: IMPORT_COST }
+      columns[`d:${k}`] = { [`b:${k}`]: 1, cost: deficitCost(s) }
+    } else if (s.kind === 'bus') columns[`i:${k}`] = { [`b:${k}`]: 1, cost: IMPORT_COST }
     else if (s.kind === 'overflow') continue
-    else {
-      const cost = Math.max(MIN_DEFICIT_COST, DEFICIT_COST * DEFICIT_DEPTH_FACTOR ** s.depth)
-      columns[`d:${k}`] = { [`b:${k}`]: 1, cost }
-    }
+    else columns[`d:${k}`] = { [`b:${k}`]: 1, cost: deficitCost(s) }
   }
   targets.forEach((t, i) => {
     const row = shape.targetRows[i]
@@ -579,6 +631,22 @@ function solveRound(
       runaway: by === i && runaway.has(item),
     }
   }
+  // A supply target makes what what's left of the bus's supply comes to.
+  for (const [i, rows] of supplyRows) {
+    const item = suppliedBy(plan.targets[planIndex[i]])!
+    const by = supplyTaker.get(item)
+    const taken = rows.reduce((t, n) => t + v(`i:${index.get(n)}`), 0)
+    const left = v(`bu:${item}`)
+    targets[i].rate = targets[i].made = by === i ? v(`ts:${i}`) : 0
+    targets[i].supply = {
+      item,
+      capped: capped.has(item),
+      uses: rows.length > 0,
+      taken: by === i ? taken : 0,
+      unused: by === i ? cleaned(left, RELATIVE_NOISE * Math.max(1, left + taken)) : 0,
+      takenBy: by !== undefined && by !== i && rows.length > 0 ? planIndex[by] : null,
+    }
+  }
   const own = new Map<PlanNode, number>()
   targets.forEach((t, i) => {
     const row = shape.targetRows[i]
@@ -636,13 +704,15 @@ function solveRound(
     const fromByproduct = draws.reduce((sum, d) => sum + d.amount, 0)
     const missing = need - made - fromByproduct
     const short = missing > tol ? missing : 0
+    // Rows taking an item from the bus get what it carries; past a capped supply, they fall short.
+    const drew = n.kind !== 'bus' ? 0 : capped.has(n.item) ? Math.min(short, cleaned(v(`i:${index.get(n)}`), tol)) : short
     rowFlows.set(n, {
       rate: need,
       crafts: x,
       fromByproduct,
       byproductSources: draws.map((d) => ({ id: d.from.id, label: d.from.process!.label })),
-      fromBus: n.kind === 'bus' ? short : 0,
-      shortfall: n.kind === 'bus' ? 0 : short,
+      fromBus: drew,
+      shortfall: short - drew > tol ? short - drew : 0,
       overflow: cleaned(v(`s:${index.get(n)}`), tol),
       byproductRoutes: n.kind === 'make' ? routes(n, x) : {},
     })

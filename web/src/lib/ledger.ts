@@ -37,6 +37,8 @@ export interface ItemLedger {
   absorbedBy: number | null
   /** Items per minute still taken from the bus. */
   bus: number
+  /** Items per minute the bus carries of it, where the plan caps it; null for as much as the plan takes. */
+  cap: number | null
   /** Items per minute nothing covers (a net-surplus target whose own chain uses more than it gives). */
   short: number
 }
@@ -119,6 +121,7 @@ export function ledgers(plan: Plan, result: PlanResult): ItemLedger[] {
         made: sources.reduce((t, s) => t + (s.fedBack ? s.amount : 0), 0),
         absorbedBy,
         bus: absorbedBy === null ? remaining : 0,
+        cap: plan.busSupply?.[item] ?? null,
         short: absorbedBy === null ? 0 : remaining,
       }
     })

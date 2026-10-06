@@ -69,6 +69,9 @@ export interface PlanShape {
 /** The item an overflow target takes the overflow of, or null for any other target. */
 export const consumedBy = (t: PlanTarget) => (t.unit === 'overflow' && t.consumes ? t.consumes : null)
 
+/** The item a supply target takes what's left of the bus's supply of, or null for any other target. */
+export const suppliedBy = (t: PlanTarget) => (t.unit === 'supply' && t.consumes ? t.consumes : null)
+
 export interface ResolvedChoice {
   /** Process id, 'import' or 'bus'. */
   producer: string
@@ -311,6 +314,8 @@ export function unfold(plan: Plan, catalog: ProcessCatalog): PlanShape {
   const pending: PlanNode[] = []
   /** The item whose overflow the target being laid out takes, when it's an overflow target. */
   let linked: string | null = null
+  /** The item the target being laid out takes from the bus's supply, when it's a supply target. */
+  let linkedBus: string | null = null
 
   const create = (item: string, id: string, depth: number, parent: PlanNode | undefined, fields: Partial<PlanNode>) => {
     const n: PlanNode = {
@@ -367,6 +372,7 @@ export function unfold(plan: Plan, catalog: ProcessCatalog): PlanShape {
     const id = `${parent.id}/${item}`
     const depth = parent.depth + 1
     if (item === linked) return create(item, id, depth, parent, { kind: 'overflow', reuse: false, reuseChosen: false })
+    if (item === linkedBus) return create(item, id, depth, parent, { kind: 'bus', reuse: false, reuseChosen: false })
     const choice = resolveChoice(plan, catalog, item, id)
     if (!choice.process) return leaf(item, id, depth, parent, choice)
     for (let a: PlanNode | undefined = parent; a; a = a.parent)
@@ -407,13 +413,15 @@ export function unfold(plan: Plan, catalog: ProcessCatalog): PlanShape {
   const roots: PlanNode[] = []
   const targetRows: PlanNode[] = []
   const consumes = new Map<PlanNode, string>()
+  const supplied = new Map<PlanNode, string>()
   plan.targets
     .filter((t) => t.item)
     .forEach((t, i) => {
       const from = consumedBy(t)
-      // An overflow target makes only what its overflow comes to, so it never gathers other uses
-      // of its item: those go to a row of their own.
-      const sep = from ? undefined : top.get(t.item)
+      const fromBus = suppliedBy(t)
+      // An overflow or supply target makes only what its overflow or supply comes to, so it never
+      // gathers other uses of its item: those go to a row of their own.
+      const sep = from || fromBus ? undefined : top.get(t.item)
       const shared = sep && topRows.get(t.item)
       if (shared) {
         targetRows.push(shared)
@@ -431,14 +439,17 @@ export function unfold(plan: Plan, catalog: ProcessCatalog): PlanShape {
         : leaf(t.item, id, 0, undefined, choice)
       if (sep) topRows.set(t.item, n.kind === 'make' ? n : null)
       if (from) consumes.set(n, from)
+      if (fromBus) supplied.set(n, fromBus)
       roots.push(n)
       targetRows.push(n)
     })
   for (const n of [...roots]) {
     linked = consumes.get(n) ?? null
+    linkedBus = supplied.get(n) ?? null
     if (n.kind === 'make') expand(n)
   }
   linked = null
+  linkedBus = null
   // Expanding a separate build can turn up more of them; `pending` grows as we go.
   for (let i = 0; i < pending.length; i++) {
     expand(pending[i])
