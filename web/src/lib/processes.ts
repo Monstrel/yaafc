@@ -450,13 +450,14 @@ export const spendId = (coin: string) => `spend:${coin}`
 const sold = items.filter((i) => i.buyPrice != null && !i.liquid)
 
 /**
- * The coin a plan pays with unless it picks another: the smallest that buys everything portals sell
- * by its research tier at full speed (a belt entry of it pays for a whole item). No item is that
- * cheap in copper; silver lasts until the 50-gold World Tree Seed comes in, at tier VIII.
+ * The coin a plan pays with unless it picks another: the largest any price is written in among the
+ * goods portals sell by its research tier, as players move their bus to bigger coins when prices
+ * do. Copper to tier IV, silver from the Grand Portal Sigil (16 silver) at V, gold from the World
+ * Tree Seed (50 gold) at VIII. Raw materials last long enough that copper's slow portals keep up.
  */
 export function defaultCoin(tier: number): string {
-  const dearest = Math.max(0, ...sold.filter((i) => buyTier(i.key) <= tier).map((i) => i.buyPrice!))
-  return ([...COINS].reverse().find((c) => COIN_STACK * c.copper >= dearest) ?? COINS[0]).coin
+  const written = new Set(sold.filter((i) => buyTier(i.key) <= tier).map((i) => i.buyCoin))
+  return COINS.find((c) => written.has(c.coin))?.coin ?? 'CopperCoin'
 }
 
 const decimals = (x: number) => x.toLocaleString(undefined, { maximumFractionDigits: 2 })

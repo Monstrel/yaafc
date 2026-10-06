@@ -25,6 +25,8 @@ export interface Item {
   nutrientSpeed: number
   /** Copper per item at a purchasing portal; null if portals don't sell it. */
   buyPrice: number | null
+  /** The coin the portal's price is written in ('200 copper', '16 silver'); null if portals don't sell it. */
+  buyCoin: string | null
   /** Copper per item the shop pays at base prices; null if the shop won't buy it (raw materials, intermediates, fuels). */
   sellPrice: number | null
 }

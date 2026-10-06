@@ -53,6 +53,7 @@ static class Exporter
                 ["nutrientValue"] = row["NutrientValue"],
                 ["nutrientSpeed"] = row["NutrientSpeed"],
                 ["buyPrice"] = PortalPrice(row),
+                ["buyCoin"] = PortalCoin(row),
                 ["sellPrice"] = ShopPrice(row),
             });
         }
@@ -384,6 +385,17 @@ static class Exporter
         var value = row["CostValue"]!;
         var copper = value["X"]!.Value<double>() * CopperPerGold + value["Y"]!.Value<double>() * CopperPerSilver + value["Z"]!.Value<double>();
         return copper > 0 ? copper : JValue.CreateNull();
+    }
+
+    /// <summary>
+    /// The coin a portal's price is written in, as the game shows it: the largest part of StockCost
+    /// that isn't zero (Logs cost 200 copper, Iron Ore 1 silver 200 copper). Null if not sold.
+    /// </summary>
+    static JToken PortalCoin(JObject row)
+    {
+        if (!row["AllowPortalSupply"]!.Value<bool>()) return JValue.CreateNull();
+        var stock = row["StockCost"]!;
+        return stock["X"]!.Value<int>() > 0 ? "GoldCoin" : stock["Y"]!.Value<int>() > 0 ? "SilverCoin" : stock["Z"]!.Value<int>() > 0 ? "CopperCoin" : JValue.CreateNull();
     }
 
     static string? Enum(JToken? value) => value?.ToString().Split("::").Last();

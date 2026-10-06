@@ -1834,8 +1834,10 @@ describe('Purchasing Portal (coins → an item)', () => {
   // Tier VII: silver still buys everything portals sell at full speed, so the plan pays in silver.
   const catalog = buildCatalog({ saved: [], machines: {}, mods, fertilizer: null, tier: 7 })
 
-  it('pays by default with the smallest coin that buys everything the research tier sells at full speed', () => {
-    expect([1, 4, 7, 8, 9].map(defaultCoin)).toEqual(['SilverCoin', 'SilverCoin', 'SilverCoin', 'GoldCoin', 'GoldCoin'])
+  it('pays by default with the largest coin prices are written in at the research tier', () => {
+    expect([1, 4, 5, 7, 8, 9].map(defaultCoin)).toEqual(['CopperCoin', 'CopperCoin', 'SilverCoin', 'SilverCoin', 'GoldCoin', 'GoldCoin'])
+    expect(itemsByKey.get('IronOre')!.buyCoin).toBe('CopperCoin') // 1,200 copper
+    expect(itemsByKey.get('WorldTreeSeed')!.buyCoin).toBe('GoldCoin')
     expect(defaultProducer(catalog, MONEY)).toBe('spend:SilverCoin')
     expect(defaultProducer(buildCatalog({ saved: [], machines: {}, mods, fertilizer: null, tier: 8 }), MONEY)).toBe('spend:GoldCoin')
   })
