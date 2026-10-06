@@ -14,45 +14,66 @@ export interface ProducerPick {
   /** Tree row picked on; absent (or `everywhere`) = the plan-wide producer. */
   row?: string
   everywhere?: boolean
-  /**
-   * Picked from a menu offering by-product reuse: picking a producer there means making all of the
-   * item with it (false); picking reuse itself (true) goes back to taking by-products first.
-   */
-  reuse?: boolean
 }
 
 const without = <T>(rows: Record<string, T> | undefined, drop: (id: string) => boolean) =>
   rows && Object.fromEntries(Object.entries(rows).filter(([id]) => !drop(id)))
 
 /**
+ * Rows' picks with their producer and machine dropped where `drop` says, keeping any reuse setting:
+ * taking by-products first is chosen apart from the producer that makes the rest.
+ */
+function withoutProducer(branches: Plan['branches'], drop: (id: string) => boolean): Plan['branches'] {
+  return (
+    branches &&
+    Object.fromEntries(
+      Object.entries(branches).flatMap(([id, pick]) =>
+        !drop(id) ? [[id, pick]] : pick.reuse === undefined ? [] : [[id, { producer: '', reuse: pick.reuse }]],
+      ),
+    )
+  )
+}
+
+/** Rows' picks with their reuse setting dropped where `drop` says, keeping the producer. */
+function withoutReuse(branches: Plan['branches'], drop: (id: string) => boolean): Plan['branches'] {
+  return (
+    branches &&
+    Object.fromEntries(
+      Object.entries(branches).flatMap(([id, pick]) => {
+        if (!drop(id)) return [[id, pick]]
+        const { reuse: _, ...rest } = pick
+        return rest.producer ? [[id, rest]] : []
+      }),
+    )
+  )
+}
+
+/**
  * Applies a producer pick. On a row it covers that row's branch: the row and every row of its
  * item below it, replacing picks made further down. A pick matching what the row would inherit
  * anyway isn't stored. Everywhere, it becomes the plan-wide producer and clears the item's
- * branch picks.
+ * branch picks. Whether rows take by-products first stays as it was: the producer makes the rest.
  */
 export function chooseProducer(plan: Plan, catalog: ProcessCatalog, pick: ProducerPick): Plan {
-  const { item, producer, machine, row, reuse } = pick
-  if (reuse) return chooseReuse(plan, item, pick.everywhere ? undefined : row)
+  const { item, producer, machine, row } = pick
   if (!row || pick.everywhere)
     return {
       ...plan,
       producers: { ...plan.producers, [item]: producer },
       machines: machine ? { ...plan.machines, [producer]: machine } : plan.machines,
-      branches: without(plan.branches, (id) => rowItem(id) === item),
-      ...(reuse === false && { noReuse: withItem(plan.noReuse, item, true) }),
+      branches: withoutProducer(plan.branches, (id) => rowItem(id) === item),
     }
   const next = {
     ...plan,
-    branches: without(plan.branches, (id) => (id === row || id.startsWith(`${row}/`)) && rowItem(id) === item),
+    branches: withoutProducer(plan.branches, (id) => (id === row || id.startsWith(`${row}/`)) && rowItem(id) === item),
   }
   const inherited = resolveChoice(next, catalog, item, row)
   const chosen = catalog.byId.get(producer)
   const onMachine = machine && chosen?.machineOptions.some((m) => m.key === machine) ? machine : chosen?.machine?.key
-  const sameReuse = reuse === undefined || reusesByproducts(next, item, row) === reuse
-  if (inherited.producer === producer && inherited.process?.machine?.key === onMachine && sameReuse) return next
+  if (inherited.producer === producer && inherited.process?.machine?.key === onMachine) return next
   return {
     ...next,
-    branches: { ...next.branches, [row]: { producer, ...(machine && { machine }), ...(reuse === false && { reuse }) } },
+    branches: { ...next.branches, [row]: { ...next.branches?.[row], producer, ...(machine && { machine }) } },
   }
 }
 
@@ -64,22 +85,25 @@ function withItem(list: string[] | undefined, item: string, on: boolean): string
 }
 
 /**
- * Takes other rows' by-products of `item` first: everywhere, dropping the item's branch picks, or
- * on a row's branch, picked, so it also takes them from rows that make their own (whatever producer
- * it inherits makes the rest).
+ * Whether rows of `item` take other rows' by-products of it first, their producer making the rest
+ * (off: it makes all of it, keeping to itself). Everywhere, it's the plan-wide setting and clears
+ * the item's branch settings; on a row it covers the row's branch, and on, it also takes them from
+ * rows that make their own. Producers stay as they were.
  */
-function chooseReuse(plan: Plan, item: string, row: string | undefined): Plan {
+export function chooseReuse(plan: Plan, item: string, on: boolean, row?: string): Plan {
   if (!row)
     return {
       ...plan,
-      noReuse: withItem(plan.noReuse, item, false),
-      branches: without(plan.branches, (id) => rowItem(id) === item),
+      noReuse: withItem(plan.noReuse, item, !on),
+      branches: withoutReuse(plan.branches, (id) => rowItem(id) === item),
     }
   const next = {
     ...plan,
-    branches: without(plan.branches, (id) => (id === row || id.startsWith(`${row}/`)) && rowItem(id) === item),
+    branches: withoutReuse(plan.branches, (id) => (id === row || id.startsWith(`${row}/`)) && rowItem(id) === item),
   }
-  return { ...next, branches: { ...next.branches, [row]: { producer: '', reuse: true } } }
+  // Off where it's off anyway: nothing to store.
+  if (!on && !reusesByproducts(next, item, row)) return next
+  return { ...next, branches: { ...next.branches, [row]: { producer: '', ...next.branches?.[row], reuse: on } } }
 }
 
 const sameSet = (a: string[], b: string[]) => a.length === b.length && a.every((k) => b.includes(k))
@@ -458,9 +482,9 @@ const sameSetup = (catalog: ProcessCatalog, a: MyDefault, b: MyDefault) =>
   (a.height ?? 0) === (b.height ?? 0) &&
   (a.stack ?? DEFAULT_BANK_STACK) === (b.stack ?? DEFAULT_BANK_STACK)
 
-/** Drops a row's own pick, so it follows the rows above it (or the plan) again. */
+/** Drops a row's own producer pick, so it follows the rows above it (or the plan) again; reuse stays as set. */
 export function clearBranchChoice(plan: Plan, row: string): Plan {
-  return { ...plan, branches: without(plan.branches, (id) => id === row) }
+  return { ...plan, branches: withoutProducer(plan.branches, (id) => id === row) }
 }
 
 /**

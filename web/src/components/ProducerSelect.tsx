@@ -61,12 +61,14 @@ export interface BranchScope {
 
 /** A tree row that can take other rows' by-products of its item. */
 export interface ReuseOption {
-  /** The row takes them first (the default); else it makes all of the item with its producer. */
+  /** The row takes them first (the default), its producer making the rest; else it makes all of it. */
   on: boolean
   /** By-products cover the whole row: nothing of its own runs. */
   covered: boolean
   /** The rows the by-products come from. */
   sources: string
+  /** Turns taking them first on or off, on this branch or every row of the item; the producer stays. */
+  onChange: (on: boolean, everywhere: boolean) => void
 }
 
 /** Menu value of a process on a given machine. */
@@ -96,8 +98,7 @@ export function ProducerSelect({
   /** The producer in use ('import' or a process id) and its process on the machine it runs on. */
   current: { producer: string; process?: Process }
   catalog: ProcessCatalog
-  /** `reuse`: true to go back to reusing by-products; false when a producer replaces them. */
-  onChange: (producer: string, machine?: string, everywhere?: boolean, reuse?: boolean) => void
+  onChange: (producer: string, machine?: string, everywhere?: boolean) => void
   compact?: boolean
   /** Shown as a link (icon and name, underlined) rather than a button, inside a line of text. */
   link?: boolean
@@ -106,7 +107,7 @@ export function ProducerSelect({
   oneLine?: boolean
   /** On a tree row: picks cover the row's branch, or every row of the item when asked. */
   branch?: BranchScope
-  /** On a row that can take by-products: reusing them is offered first, and is the default. */
+  /** On a row that can take by-products: a switch for taking them first, the producer making the rest. */
   reuse?: ReuseOption
 }) {
   const all = catalog.byProduct.get(item) ?? []
@@ -126,7 +127,6 @@ export function ProducerSelect({
     return tier > catalog.tier ? tier : undefined
   }
   const entries: Choice[] = [
-    ...(reuse ? [{ value: REUSE }] : []),
     ...options.flatMap((p) =>
       p.machineOptions.length > 1
         ? p.machineOptions.map((m) => ({
@@ -151,9 +151,9 @@ export function ProducerSelect({
     process: currentProcess,
     needs: currentProcess && needs({ value: producerValue, process: currentProcess }),
   }
-  // Reusing by-products is the menu's pick; the button shows it when they cover the whole row,
-  // else the producer making the rest.
-  const value = reuse?.on ? REUSE : producerValue
+  // The button shows reusing by-products when they cover the whole row, else the producer making
+  // the rest (or all of it).
+  const value = producerValue
   const selected: Choice = reuse?.on && reuse.covered ? { value: REUSE } : producing
   // Ingredients the current producer also uses in the same amount: dimmed in the other options, so
   // what switching would change stands out.
@@ -203,16 +203,13 @@ export function ProducerSelect({
   const choose = (c: Choice) => {
     pop.current?.hidePopover()
     if (c.value === value) return
-    // While reusing, a producer picked instead makes all of the item: no by-products taken.
-    const makeAll = reuse?.on ? false : undefined
-    if (c.value === REUSE) onChange(current, undefined, everywhere, true)
-    else if (c.value === CRUCIBLE) onChange(crucibleDefault!.id, undefined, everywhere, makeAll)
-    else onChange(c.process?.id ?? c.value, c.machine, everywhere, makeAll)
+    if (c.value === CRUCIBLE) onChange(crucibleDefault!.id, undefined, everywhere)
+    else onChange(c.process?.id ?? c.value, c.machine, everywhere)
   }
 
   // Arrow keys move between options (and back up to the search box).
   const onKeyDown = (e: KeyboardEvent) => {
-    const list = [...(pop.current?.querySelectorAll<HTMLElement>('[role=option]') ?? [])]
+    const list = [...(pop.current?.querySelectorAll<HTMLElement>('[role=option], [role=switch]') ?? [])]
     const at = list.indexOf(document.activeElement as HTMLElement)
     const inSearch = e.target instanceof HTMLInputElement
     const next =
@@ -335,6 +332,31 @@ export function ProducerSelect({
                 )}
               </div>
             )}
+            {reuse && !q && (
+              <>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={reuse.on}
+                  className="recipe-option reuse-switch"
+                  onClick={() => reuse.onChange(!reuse.on, everywhere)}
+                >
+                  <ChoiceIcon choice={{ value: REUSE }} size={32} />
+                  <span className="recipe-body">
+                    <span className="recipe-head">
+                      <span className="recipe-title">Reuse by-products first</span>
+                    </span>
+                    <span className="recipe-preview muted">
+                      {reuse.sources ? `From ${reuse.sources}` : "Other rows' by-products of this item, when there are any"}
+                    </span>
+                  </span>
+                  <span className="switch-track" aria-hidden />
+                </button>
+                <div className="recipe-group-label">
+                  {reuse.on ? (reuse.covered ? 'Makes the rest, when they fall short' : 'Makes the rest') : 'Makes all of it'}
+                </div>
+              </>
+            )}
             <div role="listbox" aria-label={`Producer for ${itemName(item)}`}>
               {shown.map((c) =>
                 oneLine ? (
@@ -376,14 +398,7 @@ export function ProducerSelect({
                         <ChoiceTags choice={c} item={item} machine />
                         <ChoiceMeta choice={c} />
                       </span>
-                      {c.value === REUSE ? (
-                        <span className="recipe-preview muted">
-                          {reuse?.sources ? `From ${reuse.sources}` : "Other rows' by-products of this item, when there are any"}
-                          {reuse?.on && !reuse.covered && `; ${choiceTitle(producing)} makes the rest`}
-                        </span>
-                      ) : (
-                        <ChoicePreview choice={c} item={item} shared={c.value === value ? NONE : shared} />
-                      )}
+                      <ChoicePreview choice={c} item={item} shared={c.value === value ? NONE : shared} />
                     </span>
                   </button>
                 ),
@@ -418,7 +433,6 @@ function choiceDescription(c: Choice, item: string): string {
   const p = c.process
   if (c.value === IMPORT)
     return c.coin ? 'Take coins off the bus' : c.price != null ? 'Buy at a Purchasing Portal' : 'Import: not sold at portals'
-  if (c.value === REUSE) return "Reuse other rows' by-products first"
   if (!p) return choiceTitle(c)
   if (c.value === CRUCIBLE) return `${choiceTitle(c)}: refine any item`
   return `${processLabel(p, item)}: ${describe(materials(p))} → ${describe(p.outputs)}`

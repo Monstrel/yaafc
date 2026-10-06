@@ -65,6 +65,10 @@ export interface TreeNode {
   /** For a `separate` leaf: the row that builds it, and the item that row sits under (none at the top). */
   groupId?: string
   groupAnchor?: string
+  /** Shown only: a line above the row `reusedBy` for the part of it other rows' by-products cover. */
+  reusedBy?: string
+  /** Shown only: other rows' by-products cover part of the row, on a line of their own above it; `rate` leaves them out. */
+  reusedApart?: boolean
 }
 
 /** Where one by-product of a row goes: rows of its item that take it, and what's left over. */

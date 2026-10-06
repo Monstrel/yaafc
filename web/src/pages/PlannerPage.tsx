@@ -32,6 +32,7 @@ import { processTitle, type ProcessCatalog } from '../lib/processes'
 import type { PlanModel } from '../lib/planModel'
 import {
   chooseProducer,
+  chooseReuse,
   clearBranchChoice,
   keepDefaultInPlan,
   addProvider,
@@ -140,6 +141,7 @@ export function PlannerPage({
 
   const setProducer = (pick: ProducerPick) => onUpdatePlan((p) => chooseProducer(p, catalog, pick))
   const resetProducer = (row: string) => onUpdatePlan((p) => clearBranchChoice(p, row))
+  const setReuse = (item: string, on: boolean, row?: string) => onUpdatePlan((p) => chooseReuse(p, item, on, row))
   /** Fuel or fertilizer: picked for the whole plan. */
   const planWide = (item: string, link?: boolean) => {
     const producer = planProducer(plan, catalog, item)
@@ -549,6 +551,7 @@ export function PlannerPage({
                   catalog={catalog}
                   onProducer={setProducer}
                   onResetProducer={resetProducer}
+                  onReuse={setReuse}
                   onRemember={remember}
                   onForget={unsave}
                   onCatalysts={setCatalysts}

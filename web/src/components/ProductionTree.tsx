@@ -27,6 +27,8 @@ interface Props {
   onProducer: (pick: ProducerPick) => void
   /** Drops a row's own producer pick. */
   onResetProducer: (row: string) => void
+  /** Whether rows of an item take by-products first: on a row's branch, or everywhere (no row). */
+  onReuse: (item: string, on: boolean, row?: string) => void
   /** Loads catalysts into one row's machines. */
   /** Loads catalysts into a row ('inherited': what it loads without its own setting). */
   onCatalysts: (row: string, catalysts: string[], inherited: string[]) => void
@@ -103,6 +105,7 @@ export function ProductionTree({
   catalog,
   onProducer,
   onResetProducer,
+  onReuse,
   onCatalysts,
   onHeight,
   onStack,
@@ -551,6 +554,7 @@ export function ProductionTree({
                   rows={rowsOf.get(line.node.item) ?? 1}
                   onProducer={onProducer}
                   onResetProducer={onResetProducer}
+                  onReuse={onReuse}
                   onCatalysts={onCatalysts}
                   onHeight={onHeight}
                   onStack={onStack}
@@ -559,10 +563,12 @@ export function ProductionTree({
                   savable={savable.has(line.node.id)}
                   onSeparateMenu={openMenu}
                   rounded={rounded.has(line.node.id)}
-                  copies={shownCopies(line.node.id)}
+                  copies={shownCopies(line.node.reusedBy ?? line.node.id)}
                   unit={units.own.get(line.node.id)}
-                  allCopies={units.copies.get(line.node.id) ?? 1}
-                  totals={inRevealed(line.node.id) && (units.copies.get(line.node.id) ?? 1) > 1}
+                  allCopies={units.copies.get(line.node.reusedBy ?? line.node.id) ?? 1}
+                  totals={
+                    inRevealed(line.node.reusedBy ?? line.node.id) && (units.copies.get(line.node.reusedBy ?? line.node.id) ?? 1) > 1
+                  }
                   pinned={pinned === line.node.id}
                   onReveal={reveal}
                   fed={fed}
@@ -773,6 +779,7 @@ function TreeRow({
   rows,
   onProducer,
   onResetProducer,
+  onReuse,
   onCatalysts,
   onHeight,
   onStack,
@@ -819,6 +826,7 @@ function TreeRow({
   rows: number
   onProducer: (pick: ProducerPick) => void
   onResetProducer: (row: string) => void
+  onReuse: (item: string, on: boolean, row?: string) => void
   /** Loads catalysts into one row's machines. */
   /** Loads catalysts into a row ('inherited': what it loads without its own setting). */
   onCatalysts: (row: string, catalysts: string[], inherited: string[]) => void
@@ -911,9 +919,8 @@ function TreeRow({
   const details = [...(p?.notes ?? [])]
   if (belts?.outputCappedAt != null && node.kind === 'produce')
     details.push(`Output capped by its belt at ${fmt(belts.outputCappedAt)}/min per machine`)
-  // Rows taking by-products, or set not to, choose between reusing them and making all of the item.
-  // Rows taking by-products, set not to, or offered some by rows making their own choose between
-  // reusing them and making all of the item.
+  // Rows taking by-products, set not to, or offered some by rows making their own can switch taking
+  // them first on or off; the producer makes the rest either way.
   const separately = separateByproducts.get(node.item)
   const reuse: ReuseOption | undefined =
     node.fromByproduct > 0 || !node.reuse || node.reuseChosen || separately
@@ -924,6 +931,7 @@ function TreeRow({
             node.fromByproduct > 0
               ? node.byproductSources.map((s) => s.label).join(', ')
               : (separately?.map((s) => `${s} (made separately)`).join(', ') ?? ''),
+          onChange: (on, everywhere) => onReuse(node.item, on, everywhere ? undefined : node.id),
         }
       : undefined
   // Belts it takes to carry this row's items (liquids go by pipe).
@@ -1058,7 +1066,9 @@ function TreeRow({
         )}
       </td>
       <td>
-        {node.kind === 'loop' ? (
+        {node.reusedBy ? (
+          <span className="leaf-note">♻ by-product of {sources}</span>
+        ) : node.kind === 'loop' ? (
           <span className="leaf-note">↺ made further up this branch (loop)</span>
         ) : node.kind === 'separate' ? (
           <span className="leaf-note">
@@ -1083,8 +1093,8 @@ function TreeRow({
                 item={node.item}
                 current={{ producer: node.producer, process: node.run?.process }}
                 catalog={catalog}
-                onChange={(producer, machine, everywhere, reuse) =>
-                  onProducer({ item: node.item, producer, machine, row: node.id, everywhere, reuse })
+                onChange={(producer, machine, everywhere) =>
+                  onProducer({ item: node.item, producer, machine, row: node.id, everywhere })
                 }
                 branch={{ rows, own: node.ownChoice, mine: node.mine, onReset: () => onResetProducer(node.id) }}
                 reuse={reuse}
@@ -1184,7 +1194,7 @@ function TreeRow({
               </label>
             )}
             {node.kind === 'byproduct' && <div className="note-line">♻ by-product of {sources}</div>}
-            {node.kind !== 'byproduct' && node.fromByproduct > 0 && (
+            {node.kind !== 'byproduct' && node.fromByproduct > 0 && !node.reusedApart && (
               <div className="note-line">
                 ♻ {fmt(node.fromByproduct)}/min from by-product of {sources}
               </div>
@@ -1204,7 +1214,8 @@ function TreeRow({
                     {(b.to.length > 1 || b.overflow > 0) && `${fmt(t.amount)} `}
                     {link(
                       node,
-                      (n) => n.id === t.id,
+                      // The line for the by-products, where the row taking them shows one.
+                      (n) => n.reusedBy === t.id || (n.id === t.id && !n.reusedApart),
                       destinationName(t.id, topName),
                       `Show the ${itemsByKey.get(b.item)?.name ?? b.item} row it feeds`,
                     )}
@@ -1581,19 +1592,49 @@ const pendingId = (index: number) => `target/${index}`
  * The tree as shown: one row per target, in the plan's order (a bare one for a target the tree
  * has no row for yet). Items built at the top of the plan join the target as a "with" group, or,
  * with several targets, an "All targets" row holding the targets and the group. Also the row each
- * target sits in.
+ * target sits in. Rows partly covered by by-products show them on a line of their own.
  */
 function viewOf(tree: TreeNode[], rootIds: (string | null)[]): { view: TreeNode[]; slotRows: string[] } {
-  const roots = new Map(tree.map((n) => [n.id, n]))
+  const roots = new Map(tree.map((n) => [n.id, withReused(n)]))
   // Rows of targets that have since moved or gone wait for the next solve.
   const targets = rootIds.map((id, i) => (id && roots.get(id)) || blankRow(pendingId(i)))
   const slotRows = targets.map((n) => n.id)
-  const groups = tree.filter((n) => n.id.startsWith('separate/'))
+  const groups = tree.filter((n) => n.id.startsWith('separate/')).map(withReused)
   if (!groups.length) return { view: targets, slotRows }
   const made = targets.filter((n) => n.item)
   if (made.length === 1)
     return { view: targets.map((n) => (n === made[0] ? { ...n, children: [...n.children, ...groups] } : n)), slotRows }
   return { view: [blankRow(PLAN_ROOT, [...targets, ...groups])], slotRows }
+}
+
+/** Line id suffix for the by-products covering part of a row. */
+const REUSED_LINE = '#reused'
+
+/**
+ * A row with each ingredient partly covered by other rows' by-products shown as the two feeds its
+ * machines get: the by-products, on a line of their own, then what the ingredient's row makes (or
+ * buys) itself. A row gathering an item built separately stays whole.
+ */
+function withReused(n: TreeNode): TreeNode {
+  const partly = (c: TreeNode) =>
+    (c.kind === 'produce' || c.kind === 'purchase') && !c.consolidated && c.fromByproduct > 1e-9 && c.rate - c.fromByproduct > 1e-9
+  return {
+    ...n,
+    children: n.children.flatMap((child) => {
+      const c = withReused(child)
+      if (!partly(c)) return [c]
+      const line: TreeNode = {
+        ...blankRow(`${c.id}${REUSED_LINE}`),
+        item: c.item,
+        kind: 'byproduct',
+        rate: c.fromByproduct,
+        fromByproduct: c.fromByproduct,
+        byproductSources: c.byproductSources,
+        reusedBy: c.id,
+      }
+      return [line, { ...c, rate: c.rate - c.fromByproduct, reusedApart: true }]
+    }),
+  }
 }
 
 /** A row standing for something other than an item: all targets, or a target with no item. */

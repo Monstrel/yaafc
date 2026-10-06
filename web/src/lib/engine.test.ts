@@ -36,6 +36,7 @@ import { solvePlan, type PlanResult } from './solver'
 import { onOverflow, type TreeNode } from './tree'
 import {
   chooseProducer,
+  chooseReuse,
   clearBranchChoice,
   addProvider,
   addOverflowTarget,
@@ -312,7 +313,11 @@ describe('production tree', () => {
     expect(defaultProducer(catalog, 'CopperPowder')).toBe('import') // never run just for a failed craft
 
     // Made separately: its own Athanors run Copper Powder for their failed crafts, nothing reused.
-    const own = chooseProducer(base, catalog, { item: 'CopperPowder', producer: 'recipe:CopperPowder2', row: reused.id, reuse: false })
+    const own = chooseProducer(chooseReuse(base, 'CopperPowder', false, reused.id), catalog, {
+      item: 'CopperPowder',
+      producer: 'recipe:CopperPowder2',
+      row: reused.id,
+    })
     const made = impureRow(own)
     expect(made.reuse).toBe(false)
     expect(made.fromByproduct).toBe(0)
@@ -331,19 +336,59 @@ describe('production tree', () => {
     expect(copper.byproducts.find((b) => b.item === 'CopperPowder')!.overflow).toBeGreaterThan(0)
 
     // Picking reuse on the Copper Ingot side takes them after all.
-    const linked = chooseProducer(own, catalog, { item: 'CopperPowder2', producer: '', row: copper.id, reuse: true })
+    const linked = chooseReuse(own, 'CopperPowder2', true, copper.id)
     expect(copperRow(linked).reuseChosen).toBe(true)
     expect(copperRow(linked).fromByproduct).toBeCloseTo(37.5)
 
-    // Reuse again on the Bronze side: back to the plan as it was, the picked side reusing too.
-    const back = chooseProducer(own, catalog, { item: 'CopperPowder', producer: '', row: reused.id, reuse: true })
-    expect(back.branches).toEqual({ [reused.id]: { producer: '', reuse: true } })
-    expect(impureRow(back).fromByproduct).toBeCloseTo(reused.fromByproduct)
+    // Reuse again on the Bronze side: the by-products are taken again, its Athanors making the rest.
+    const back = chooseReuse(own, 'CopperPowder', true, reused.id)
+    expect(back.branches).toEqual({ [reused.id]: { producer: 'recipe:CopperPowder2', reuse: true } })
+    // Its rest would run the same Athanors the Copper Ingot chain does: those make all of it.
+    expect(impureRow(back).kind).toBe('byproduct')
+    expect(impureRow(back).fromByproduct).toBeCloseTo(50)
     // Everywhere: every row of the item makes its own, and back.
-    const all = chooseProducer(base, catalog, { item: 'CopperPowder', producer: 'import', everywhere: true, reuse: false })
+    const all = chooseReuse(base, 'CopperPowder', false)
     expect(all.noReuse).toEqual(['CopperPowder'])
     expect(impureRow(all).reuse).toBe(false)
-    expect(chooseProducer(all, catalog, { item: 'CopperPowder', producer: '', everywhere: true, reuse: true }).noReuse).toBeUndefined()
+    expect(chooseReuse(all, 'CopperPowder', true).noReuse).toBeUndefined()
+  })
+
+  it('picks what makes the rest apart from taking by-products first', () => {
+    // Growth Potion (from Reddit): crushing Rock Salt for the Salt makes Sand on the side, which goes
+    // into the Clay; Stone ground on Enhanced Grinders makes the rest.
+    const base = plan({ targets: [{ item: 'GrowthPotion', rate: 2 }], producers: { Salt: 'recipe:Salt_Alt' } })
+    const row = '0/GrowthPotion/ClayPowder/Clay/Sand'
+    const sand = (p: Plan) => {
+      const r = solvePlan(p, catalog, mods)
+      expectBalanced(r)
+      return rowsById(r.tree).get(row)!
+    }
+    const reused = sand(base).fromByproduct
+    expect(reused).toBeGreaterThan(0)
+
+    const enhanced = chooseProducer(base, catalog, { item: 'Sand', producer: 'recipe:Sand', machine: 'EnhancedGrinder', row })
+    const rest = sand(enhanced)
+    expect(rest.reuse).toBe(true)
+    expect(rest.fromByproduct).toBeCloseTo(reused)
+    expect(rest.run!.process.machine!.key).toBe('EnhancedGrinder')
+    expect(rest.run!.outputs[0].count).toBeCloseTo(rest.rate - reused)
+
+    // Off and on again: all of it on Enhanced Grinders, then back to the rest.
+    const off = chooseReuse(enhanced, 'Sand', false, row)
+    expect(sand(off).fromByproduct).toBe(0)
+    expect(sand(off).run!.process.machine!.key).toBe('EnhancedGrinder')
+    expect(sand(off).run!.outputs[0].count).toBeCloseTo(rest.rate)
+    const on = chooseReuse(off, 'Sand', true, row)
+    expect(sand(on).fromByproduct).toBeCloseTo(reused)
+    expect(sand(on).run!.process.machine!.key).toBe('EnhancedGrinder')
+
+    // Clearing the producer pick, or picking one for every row, leaves taking by-products as set.
+    expect(clearBranchChoice(off, row).branches).toEqual({ [row]: { producer: '', reuse: false } })
+    const everywhere = chooseProducer(off, catalog, { item: 'Sand', producer: 'recipe:Sand', machine: 'Grinder', everywhere: true })
+    expect(sand(everywhere).reuse).toBe(false)
+    expect(sand(everywhere).run!.process.machine!.key).toBe('Grinder')
+    // Off where it's off anyway stores nothing.
+    expect(chooseReuse(chooseReuse(base, 'Sand', false), 'Sand', false, row).branches ?? {}).toEqual({})
   })
 
   it('reuses only the by-products there are, never running their source harder for more', () => {
