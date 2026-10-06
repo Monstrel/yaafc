@@ -3,13 +3,12 @@ import { craftsPerMachine } from './machineRate'
 import { runKey } from './processes'
 import type { ProcessRun } from './solver'
 import type { Separation } from './types'
-import { BUS, IMPORT, type PlanNode } from './unfold'
+import { BUS, type PlanNode } from './unfold'
 import type { Modifiers } from './upgrades'
 
 export type TreeNodeKind =
   | 'produce' // made by machines running for this item
   | 'byproduct' // covered by side output of machines running for something else
-  | 'purchase' // bought at a purchasing portal
   | 'bus' // taken from the factory bus
   | 'loop' // already produced further up this branch (cycle)
   | 'separate' // built separately: its machines are under the row `groupId`
@@ -23,7 +22,7 @@ export interface TreeNode {
   /** Items per minute this row supplies: what the row above uses, plus anything gathered or looped back to it. */
   rate: number
   run?: ProcessRun
-  /** Process id the row uses, 'import' or 'bus', or '' for rows supplied elsewhere (loops, separate builds). */
+  /** Process id the row uses, or 'bus', or '' for rows supplied elsewhere (loops, separate builds). */
   producer: string
   /** The producer was picked for this row's branch, not inherited from above or the plan. */
   ownChoice: boolean
@@ -53,8 +52,6 @@ export interface TreeNode {
   fromByproduct: number
   /** Rows whose side output covers `fromByproduct`, largest share first. */
   byproductSources: { id: string; label: string }[]
-  /** Part of the rate bought, per minute. */
-  purchased: number
   /** Part of the rate taken from the bus, per minute. */
   fromBus: number
   /** Part of the rate nothing can supply, per minute. */
@@ -95,7 +92,6 @@ export interface RowFlows {
   crafts: number
   fromByproduct: number
   byproductSources: { id: string; label: string }[]
-  purchased: number
   fromBus: number
   shortfall: number
   /** Part of the row's own item made or brought in that nothing uses. */
@@ -109,7 +105,6 @@ export const NO_FLOWS: RowFlows = {
   crafts: 0,
   fromByproduct: 0,
   byproductSources: [],
-  purchased: 0,
   fromBus: 0,
   shortfall: 0,
   overflow: 0,
@@ -126,7 +121,7 @@ export function buildTree(roots: PlanNode[], flows: Map<PlanNode, RowFlows>, mod
       id: n.id,
       item: n.item,
       rate: f.rate,
-      producer: n.kind === 'import' ? IMPORT : n.kind === 'bus' ? BUS : (n.process?.id ?? ''),
+      producer: n.kind === 'bus' ? BUS : (n.process?.id ?? ''),
       ownChoice: n.ownChoice,
       mine: n.mine,
       defaultCatalysts: n.defaultCatalysts,
@@ -141,7 +136,6 @@ export function buildTree(roots: PlanNode[], flows: Map<PlanNode, RowFlows>, mod
       byproducts: [],
       fromByproduct: f.fromByproduct,
       byproductSources: f.byproductSources,
-      purchased: f.purchased,
       fromBus: f.fromBus,
       shortfall: f.shortfall,
       children: [],
@@ -155,8 +149,6 @@ export function buildTree(roots: PlanNode[], flows: Map<PlanNode, RowFlows>, mod
         return { ...base, kind: 'overflow' }
       case 'separate':
         return { ...base, kind: 'separate', groupId: n.ref!.id, groupAnchor: n.groupAnchor }
-      case 'import':
-        return { ...base, kind: f.fromByproduct > 0 && f.purchased === 0 ? 'byproduct' : 'purchase' }
     }
     const p = n.process!
     const crafts = f.crafts

@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
 import { fmt, fmtSeconds } from '../lib/format'
-import { HEAT, buildingsByKey, buyTier, coinValue, iconUrl, itemName, itemsByKey, tierIcon, tierName, type Item, type Stack } from '../lib/gameData'
+import { HEAT, coinValue, iconUrl, itemName, itemsByKey, tierIcon, tierName, type Item, type Stack } from '../lib/gameData'
 import { itemNameFor } from '../lib/plural'
 import {
   DEFAULT_PARADOX_INPUT,
@@ -15,14 +15,10 @@ import { ItemPicker } from './ItemPicker'
 import { Money } from './Money'
 
 const CRUCIBLE = 'crucible'
-/** Buying at a Purchase Portal. */
-const IMPORT = 'import'
 /** Taking the item from the bus. */
 const BUS = 'bus'
 /** Menu value of reusing other rows' by-products. */
 const REUSE = 'reuse'
-/** Building shown for buying an item at a portal. */
-const BUY_PORTAL = 'Portal_AlchGuild'
 /** Menus with more options than this get a search box (fuels, many saved mixes). */
 const SEARCH_FROM = 10
 const NONE = new Set<string>()
@@ -34,8 +30,8 @@ const stackKey = (s: Stack) => `${s.item}×${s.count}`
 const describe = (stacks: Stack[]) => stacks.map((s) => `${fmt(s.count)} ${itemNameFor(s.item, s.count)}`).join(' + ')
 
 /**
- * One menu entry: a process on one of its machines, the Paradox Crucible (input picked alongside),
- * buying the item at a portal, or taking it from the bus.
+ * One menu entry: a process on one of its machines (buying at a Purchasing Portal among them), the
+ * Paradox Crucible (input picked alongside), or taking the item from the bus.
  */
 interface Choice {
   value: string
@@ -43,8 +39,6 @@ interface Choice {
   process?: Process
   /** Machine to set with the process, when it can run on several. */
   machine?: string
-  /** Buying: copper per item at a portal. */
-  price?: number
   /** Taking coins off the bus: copper per coin. */
   coin?: number
   /** Research tier the entry needs, when the plan hasn't reached it. */
@@ -78,8 +72,8 @@ export interface ReuseOption {
 const onMachineValue = (id: string, machine: string) => `${id}@${machine}`
 
 /**
- * Chooses which process makes an item (game recipe, nursery, saved ★ cauldron recipe), or whether
- * it's bought or taken from the bus,
+ * Chooses which process makes an item (game recipe, nursery, saved ★ cauldron recipe, buying it at
+ * a Purchasing Portal), or whether it's taken from the bus,
  * and the machine that runs it: a recipe several machines can run is offered once per machine.
  * A button showing the machine opens a menu previewing each option's ingredients and products;
  * ingredients the current choice also uses are dimmed so the differences stand out.
@@ -131,7 +125,7 @@ export function ProducerSelect({
    * it yet; locked ingredients show on their own rows.
    */
   const needs = (c: Choice) => {
-    const tier = c.process ? c.process.tier : c.value === IMPORT ? buyTier(item) : 1
+    const tier = c.process ? c.process.tier : 1
     return tier > catalog.tier ? tier : undefined
   }
   const entries: Choice[] = [
@@ -145,7 +139,7 @@ export function ProducerSelect({
         : [{ value: p.id, process: p }],
     ),
     ...(crucible.size > 0 ? [{ value: CRUCIBLE, process: onCrucible ? currentProcess : crucibleDefault }] : []),
-    ...(noImport ? [] : outside(item)),
+    ...(noImport ? [] : [{ value: BUS, coin: coinValue(item) ?? undefined }]),
   ]
   // What the plan's research tier can't run yet goes last.
   const choices = entries.map((c) => ({ ...c, needs: needs(c) })).sort((a, b) => Number(!!a.needs) - Number(!!b.needs))
@@ -430,15 +424,8 @@ export function ProducerSelect({
   )
 }
 
-/** Ways of bringing an item in from outside the plan: buying it where portals sell it, or taking it from the bus. */
-function outside(item: string): Choice[] {
-  const price = itemsByKey.get(item)?.buyPrice
-  return [...(price != null ? [{ value: IMPORT, price }] : []), { value: BUS, coin: coinValue(item) ?? undefined }]
-}
-
 function choiceTitle(c: Choice): string {
   if (c.value === REUSE) return 'Reuse by-products'
-  if (c.value === IMPORT) return 'Buy'
   if (c.value === BUS) return 'From the bus'
   if (c.value === CRUCIBLE) return 'Paradox Crucible'
   return c.process ? processTitle(c.process) : c.value
@@ -446,7 +433,6 @@ function choiceTitle(c: Choice): string {
 
 function choiceDescription(c: Choice, item: string): string {
   const p = c.process
-  if (c.value === IMPORT) return 'Buy at a Purchasing Portal'
   if (c.value === BUS) return c.coin ? 'Take coins off the bus' : 'Take it from the bus: made outside this plan'
   if (!p) return choiceTitle(c)
   if (c.value === CRUCIBLE) return `${choiceTitle(c)}: refine any item`
@@ -465,9 +451,9 @@ function ChoiceIcon({ choice, size }: { choice: Choice; size: number }) {
         ♻
       </span>
     )
-  if (p && (p.kind === 'fuel' || p.kind === 'fertilizer')) return <ItemIcon item={inputOf(p)} size={size} />
+  if (p && (p.kind === 'fuel' || p.kind === 'fertilizer' || p.kind === 'spend')) return <ItemIcon item={inputOf(p)} size={size} />
   if (choice.value === BUS) return <ImportIcon size={size} />
-  const icon = choice.value === IMPORT ? buildingsByKey.get(BUY_PORTAL)?.icon : p?.machine?.icon
+  const icon = p?.machine?.icon
   const src = iconUrl(icon)
   const img = src ? (
     <img className="item-icon" src={src} width={size} height={size} alt="" />
@@ -567,10 +553,10 @@ function ChoicePreview({ choice, item, shared }: { choice: Choice; item: string;
     ) : (
       <span className="recipe-preview muted">Made outside this plan, brought in on the bus</span>
     )
-  if (choice.value === IMPORT)
+  if (p?.kind === 'buy')
     return (
       <span className="recipe-preview">
-        <Money copper={choice.price ?? 0} suffix=" each at a Purchasing Portal" />
+        <Money copper={p.inputs[0]?.count ?? 0} suffix=" each" />
       </span>
     )
   if (choice.value === CRUCIBLE) return <span className="recipe-preview muted">Refines any item; pick the input alongside</span>

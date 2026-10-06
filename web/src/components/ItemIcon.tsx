@@ -1,8 +1,8 @@
-import { HEAT, NUTRIENTS, iconUrl, itemName, itemsByKey } from '../lib/gameData'
+import { HEAT, MONEY, NUTRIENTS, iconUrl, itemName, itemsByKey } from '../lib/gameData'
 import { fmt } from '../lib/format'
 import { itemNameFor } from '../lib/plural'
 
-const PSEUDO_GLYPH: Record<string, string> = { [HEAT]: '🔥', [NUTRIENTS]: '🌱' }
+const PSEUDO_GLYPH: Record<string, string> = { [HEAT]: '🔥', [NUTRIENTS]: '🌱', [MONEY]: '🪙' }
 
 export function ItemIcon({ item, size = 24 }: { item: string; size?: number }) {
   const glyph = PSEUDO_GLYPH[item]

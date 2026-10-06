@@ -4,6 +4,7 @@ import { cauldronStats, evaluateAdvanced, evaluateNormal, findRecipes } from './
 import {
   HEAT,
   MAX_TIER,
+  MONEY,
   NUTRIENTS,
   buyTier,
   cauldronIngredients,
@@ -83,7 +84,7 @@ function plan(partial: Partial<Plan>): Plan {
 function expectBalanced(result: PlanResult) {
   expect(result.status).toBe('ok')
   for (const b of result.balances) {
-    const net = b.produced - b.consumed + b.imported + b.fromBus + b.deficit - b.surplus
+    const net = b.produced - b.consumed + b.fromBus + b.deficit - b.surplus
     const scale = Math.max(1, b.produced, b.consumed)
     expect(Math.abs(net - b.target) / scale).toBeLessThan(1e-6)
   }
@@ -168,7 +169,7 @@ describe('planner solver', () => {
     const board = result.balances.find((b) => b.item === 'WoodBoard')!
     expect(board.produced).toBeCloseTo(60)
     expect(result.balances.every((b) => b.deficit === 0)).toBe(true)
-    expect(result.balances.find((b) => b.item === 'Wood')!.imported).toBeGreaterThan(0)
+    expect(result.runs.find((r) => r.process.id === 'buy:Wood')!.craftsPerMinute).toBeGreaterThan(0) // Logs, at a Purchasing Portal
   })
 
   it('works back from the target to fractional machine counts, scaled by Factory Efficiency', () => {
@@ -211,7 +212,7 @@ describe('planner solver', () => {
     expect(result.runs.some((r) => r.process.id === 'recipe:AdvancedFertilizer')).toBe(false)
     const fert = result.balances.find((b) => b.item === 'AdvancedFertilizer')!
     expect(fert.fromBus).toBeGreaterThan(0)
-    expect(fert.imported).toBe(0) // the bus isn't bought: it costs nothing here
+    expect(result.runs.some((r) => r.process.kind === 'buy' && r.process.product === 'AdvancedFertilizer')).toBe(false) // the bus isn't bought: it costs nothing here
   })
 
   describe('a loop where a saved cauldron recipe makes its own fertilizer', () => {
@@ -268,14 +269,19 @@ describe('production tree', () => {
     }
   }
 
-  it('splits machines by branch and ends in purchased leaves', () => {
+  it('splits machines by branch and ends in purchases, paid with coins off the bus', () => {
     const targets = [{ item: 'WoodBoard', rate: 60 }]
     const [root] = solvePlan(plan({ targets }), catalog, mods).tree
     expect(root.kind).toBe('produce')
     expect(root.machines).toBeCloseTo(2)
     const wood = root.children.find((c) => c.item === 'Wood')!
-    expect(wood.kind).toBe('purchase')
+    expect(wood).toMatchObject({ kind: 'produce', producer: 'buy:Wood' })
     expect(wood.rate).toBeCloseTo(0.3)
+    expect(wood.machines).toBeCloseTo(0.3 / 60) // a Log per belt slot: 50 silver pays for 250
+    const [money] = wood.children
+    expect(money).toMatchObject({ item: MONEY, producer: 'spend:SilverCoin' })
+    expect(money.children[0]).toMatchObject({ item: 'SilverCoin', kind: 'bus' })
+    expect(money.children[0].fromBus).toBeCloseTo((0.3 * 200) / 1000) // 200 copper a Log
   })
 
   it('stops at cycles instead of recursing forever', () => {
@@ -452,10 +458,10 @@ describe('production tree', () => {
     })
 
     it('ignores items no machine makes for the plan', () => {
-      const bought = result.tree.flatMap(all).find((n) => n.kind === 'purchase')!
+      const bought = result.tree.flatMap(all).find((n) => n.kind === 'bus')!
       const nodes = solve([{ item: bought.item }]).tree.flatMap(all)
       expect(nodes.some((n) => n.consolidated)).toBe(false)
-      expect(nodes.some((n) => n.item === bought.item && n.kind === 'purchase')).toBe(true)
+      expect(nodes.some((n) => n.item === bought.item && n.kind === 'bus')).toBe(true)
       expect(keptSeparations([{ item: bought.item }])).toEqual([])
     })
 
@@ -891,7 +897,7 @@ describe('multi-output machines', () => {
   it('offers the nursery as the producer of its side product', () => {
     expect(catalog.byProduct.get('GentianNectar')!.some((p) => p.id === 'nursery:GentianSeed')).toBe(true)
     expectBalanced(result)
-    expect(result.balances.find((b) => b.item === 'GentianNectar')!.imported).toBe(0)
+    expect(result.balances.find((b) => b.item === 'GentianNectar')!.fromBus).toBe(0)
   })
 
   it('shows the side product as covered by the by-product, counting nursery machines once', () => {
@@ -1513,7 +1519,7 @@ describe('taking items from the bus', () => {
   it('reads plans that bought what portals never sold as taking it from the bus', () => {
     const p = plan({ targets: [{ item: 'FairyDust', rate: 5 }], producers: { FairyDust: 'import' } })
     expect(resolveChoice(p, catalog, 'FairyDust', '0/FairyDust').producer).toBe('bus')
-    expect(solvePlan(p, catalog, mods).balances.find((b) => b.item === 'FairyDust')).toMatchObject({ fromBus: 5, imported: 0 })
+    expect(solvePlan(p, catalog, mods).balances.find((b) => b.item === 'FairyDust')).toMatchObject({ fromBus: 5 })
   })
 
   describe('Fertile Catalyst both loaded into Advanced Athanors and spread on nurseries', () => {
@@ -1783,8 +1789,12 @@ describe('the bus: money in, items out', () => {
     expect(out(money, 'Bandage')).toMatchObject({ toBus: 10, price: 350, feeds: [] })
     expect(out(money, 'WoodBoard')).toMatchObject({ toBus: 60, price: null, feeds: [] }) // the shop won't buy it; the plan doesn't burn it
     expect(money.value).toBeCloseTo(3500)
-    const bought = result.balances.filter((b) => b.imported > 0)
-    expect(money.need).toBeCloseTo(bought.reduce((t, b) => t + b.imported * itemsByKey.get(b.item)!.buyPrice!, 0))
+    // The portals are paid in coins off the bus: the money in is what the plan buys.
+    expect(money.purchases.length).toBeGreaterThan(0)
+    expect(money.purchases.every((l) => l.price === itemsByKey.get(l.item)!.buyPrice)).toBe(true)
+    expect(money.need).toBeCloseTo(money.purchases.reduce((t, l) => t + l.count * l.price!, 0))
+    expect(money.coins.map((l) => l.item)).toEqual(['SilverCoin'])
+    expect(result.runs.some((r) => r.process.kind === 'buy')).toBe(true)
     expect(money.cost).toBe(money.need)
   })
 
@@ -1815,6 +1825,60 @@ describe('the bus: money in, items out', () => {
     expect(fed.covered).toBeCloseTo(Math.min(fed.need, 5000))
     expect(fed.cost).toBeCloseTo(fed.need - fed.covered)
     expect(out(fed, 'SilverCoin').used.money).toBeCloseTo(fed.covered / 1000)
+  })
+})
+
+describe('Purchasing Portal (coins → an item)', () => {
+  const mods = modifiers({})
+  const catalog = buildCatalog({ saved: [], machines: {}, mods, fertilizer: null })
+  const ore = catalog.byId.get('buy:IronOre')!
+  const paidIn = (coin: string, m = mods) => craftsPerMachine(catalog.variant(ore, { coin }), m)
+
+  it('buys one item per belt slot, unless the coins it is paid in come slower', () => {
+    expect(ore).toMatchObject({ kind: 'buy', product: 'IronOre', coin: 'SilverCoin', inputs: [{ item: MONEY, count: 1200 }] })
+    expect(paidIn('SilverCoin')).toBeCloseTo(60) // 50 silver pay for 41 ore: the output belt sets the pace
+    expect(paidIn('GoldCoin')).toBeCloseTo(60)
+    expect(paidIn('CopperCoin')).toBeCloseTo(60 * (50 / 1200)) // 24 entries of 50 copper per ore
+  })
+
+  it('runs at belt speed, whatever the Factory Efficiency', () => {
+    const fast = modifiers({ FactorySpeed: 4, Conveyer: 2 })
+    const c = buildCatalog({ saved: [], machines: {}, mods: fast, fertilizer: null })
+    expect(craftsPerMachine(c.byId.get('buy:IronOre')!, fast)).toBeCloseTo(fast.beltSpeed)
+  })
+
+  it('pays with the plan\'s coin unless a row picks another, and reads old plans\' "import" as buying', () => {
+    const iron = plan({ targets: [{ item: 'IronOre', rate: 10 }], producers: { IronOre: 'import' } })
+    const all = (n: TreeNode): TreeNode[] => [n, ...n.children.flatMap(all)]
+    const coins = (p: Plan) =>
+      solvePlan(p, catalog, mods)
+        .tree.flatMap(all)
+        .filter((n) => n.kind === 'bus')
+        .map((n) => [n.item, n.fromBus])
+    const silver = solvePlan(iron, catalog, mods)
+    expect(silver.tree[0]).toMatchObject({ producer: 'buy:IronOre' })
+    expect(coins(iron)).toEqual([['SilverCoin', expect.closeTo(12)]]) // 10 × 1,200 copper
+    const copper = setPlanDefault(iron, MONEY, 'spend:CopperCoin')
+    expect(coins(copper)).toEqual([['CopperCoin', expect.closeTo(12000)]])
+    expect(solvePlan(copper, catalog, mods).tree[0].machines).toBeCloseTo(10 / 2.5)
+    const picked = chooseProducer(copper, catalog, { item: MONEY, producer: 'spend:GoldCoin', row: `0/IronOre/${MONEY}` })
+    expect(coins(picked)).toEqual([['GoldCoin', expect.closeTo(0.12)]])
+    expect(ownPicks(picked, catalog, MONEY)).toEqual([`0/IronOre/${MONEY}`])
+  })
+
+  it('shows what the plan buys once per item, whatever coins pay for it', () => {
+    const two = plan({
+      targets: [
+        { item: 'IronOre', rate: 10 },
+        { item: 'IronOre', rate: 5 },
+      ],
+      branches: { [`1/IronOre/${MONEY}`]: { producer: 'spend:CopperCoin' } },
+    })
+    const result = solvePlan(two, catalog, mods)
+    const money = moneyLedger(two, result, ledgers(two, result))
+    expect(money.purchases).toEqual([{ item: 'IronOre', count: expect.closeTo(15), price: 1200 }])
+    expect(money.coins.map((l) => l.item).sort()).toEqual(['CopperCoin', 'SilverCoin'])
+    expect(money.need).toBeCloseTo(15 * 1200)
   })
 })
 

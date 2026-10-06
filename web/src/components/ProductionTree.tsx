@@ -1,5 +1,5 @@
 import { type CSSProperties, type ReactNode, useEffect, useId, useMemo, useRef, useState } from 'react'
-import { CATALYSTS, HEAT, NUTRIENTS, STEAM, coinValue, heightMultiplier, itemName, itemsByKey } from '../lib/gameData'
+import { CATALYSTS, HEAT, MONEY, NUTRIENTS, STEAM, coinValue, heightMultiplier, itemName, itemsByKey } from '../lib/gameData'
 import { fmt, fmtMachines, wholeMachines } from '../lib/format'
 import { buildingNameFor, machineNameFor, noun } from '../lib/plural'
 import { sanitizeStrings } from '../lib/sanitize'
@@ -945,11 +945,10 @@ function TreeRow({
     : 0
   const canChoose = !!node.producer && ((catalog.byProduct.get(node.item)?.length ?? 0) > 0 || !!reuse)
   const coin = coinValue(node.item)
-  const price = itemsByKey.get(node.item)?.buyPrice
   const name = itemName(node.item)
-  // A fuel or fertilizer row, under the row whose Heat or Nutrients it supplies (folded into it).
+  // A fuel, fertilizer or coin row, under the row whose Heat, Nutrients or Money it supplies (folded into it).
   const above = parentId(node.id)
-  const burned = above === null ? null : rowItem(above) === HEAT ? 'burned' : rowItem(above) === NUTRIENTS ? 'spread' : null
+  const burned = above === null ? null : FOLDED_VERB[rowItem(above)] ?? null
   const anchorName = node.separation?.anchor && itemsByKey.get(node.separation.anchor)?.name
   const sources = node.byproductSources.map((s, i) => (
     <span key={s.id}>
@@ -1109,8 +1108,8 @@ function TreeRow({
               />
             )}
             {burned && (
-              <span className="leaf-note" title={burned === 'burned' ? 'Burned for the heat of the machines above' : 'Spread on the nurseries above'}>
-                {burned === 'burned' ? '🔥 burned' : '🌱 spread'}
+              <span className="leaf-note" title={burned.title}>
+                {burned.glyph} {burned.done}
               </span>
             )}
             {node.kind === 'bus' &&
@@ -1129,7 +1128,7 @@ function TreeRow({
             )}
             {node.folded?.map((f) => (
               <div key={f.id} className="note-line fuel-pick">
-                {f.item === HEAT ? '🔥 burns' : '🌱 spreads'}
+                {FOLDED_VERB[f.item].glyph} {FOLDED_VERB[f.item].does}
                 <ProducerSelect
                   item={f.item}
                   current={{ producer: f.producer, process: f.run?.process }}
@@ -1159,12 +1158,6 @@ function TreeRow({
                   `Show the branches that use ${name}`,
                 )}
               </div>
-            )}
-            {node.kind === 'purchase' && price != null && (
-              <span className="leaf-note">
-                {canChoose ? '' : 'Bought · '}
-                <Money copper={node.purchased * price} suffix="/min" />
-              </span>
             )}
             {p?.acceptsCatalysts && node.kind === 'produce' && (
               <div className="catalysts" role="group" aria-label="Catalysts">
@@ -1238,9 +1231,6 @@ function TreeRow({
               <div className="note-line">
                 ♻ {fmt(node.fromByproduct)}/min from by-product of {sources}
               </div>
-            )}
-            {node.kind === 'produce' && node.purchased > 0 && (
-              <div className="note-line">{fmt(node.purchased)}/min bought</div>
             )}
             {node.overflow > 0 && node.kind === 'produce' && (
               <OverflowNote item={node.item} amount={node.overflow} fed={fed} {...picking(node.item)} />
@@ -1650,8 +1640,15 @@ function viewOf(tree: TreeNode[], rootIds: (string | null)[]): { view: TreeNode[
 /** Line id suffix for the by-products covering part of a row. */
 const REUSED_LINE = '#reused'
 
-/** Heat and Nutrients rows: shown as a pick on the row they heat or feed, not rows of their own. */
-const isFolded = (n: TreeNode) => n.item === HEAT || n.item === NUTRIENTS
+/** Heat, Nutrients and Money rows: shown as a pick on the row they heat, feed or pay for, not rows of their own. */
+const isFolded = (n: TreeNode) => n.item === HEAT || n.item === NUTRIENTS || n.item === MONEY
+
+/** How a folded row reads: on the row it's folded into, and on the fuel, fertilizer or coin row below it. */
+const FOLDED_VERB: Record<string, { glyph: string; does: string; done: string; title: string }> = {
+  [HEAT]: { glyph: '🔥', does: 'burns', done: 'burned', title: 'Burned for the heat of the machines above' },
+  [NUTRIENTS]: { glyph: '🌱', does: 'spreads', done: 'spread', title: 'Spread on the nurseries above' },
+  [MONEY]: { glyph: '🪙', does: 'pays with', done: 'spent', title: 'Paid into the Purchasing Portals above' },
+}
 
 /**
  * A row as shown. Its Heat and Nutrients rows fold into it: what it burns or spreads is picked on
@@ -1662,7 +1659,7 @@ const isFolded = (n: TreeNode) => n.item === HEAT || n.item === NUTRIENTS
  */
 function withReused(n: TreeNode): TreeNode {
   const partly = (c: TreeNode) =>
-    (c.kind === 'produce' || c.kind === 'purchase' || c.kind === 'bus') &&
+    (c.kind === 'produce' || c.kind === 'bus') &&
     !c.consolidated &&
     c.fromByproduct > 1e-9 &&
     c.rate - c.fromByproduct > 1e-9
@@ -1701,7 +1698,6 @@ function blankRow(id: string, children: TreeNode[] = []): TreeNode {
     byproducts: [],
     fromByproduct: 0,
     byproductSources: [],
-    purchased: 0,
     fromBus: 0,
     shortfall: 0,
     producer: '',
@@ -1945,7 +1941,6 @@ function shareOf(n: TreeNode, copies: number): TreeNode {
     nutrients: n.nutrients * k,
     overflow: n.overflow * k,
     fromByproduct: n.fromByproduct * k,
-    purchased: n.purchased * k,
     fromBus: n.fromBus * k,
     shortfall: n.shortfall * k,
     byproducts: n.byproducts.map((b) => ({

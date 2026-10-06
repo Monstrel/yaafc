@@ -45,18 +45,18 @@ export interface OutputRow {
 }
 
 /**
- * The plan's money, per minute, at base prices. It goes in as coins: what the Purchase Portals spend
- * on the items they buy, and coins its recipes take. Coins the plan makes and feeds back cover part
- * of that (overflow first, then targets in order). Everything else the plan delivers goes out to the
+ * The plan's money, per minute, at base prices. It goes in as coins taken from the bus: what its
+ * Purchasing Portals are paid in, and coins its recipes take. Coins the plan makes and feeds back
+ * cover part of that at face value (overflow first, then targets in order). Everything else the plan delivers goes out to the
  * bus, worth what the shop pays for it before profit upgrades (coins at face value). How much
  * customers actually buy isn't modeled.
  */
 export interface MoneyLedger {
-  /** Bought at Purchase Portals. */
+  /** Bought at Purchasing Portals, paid for with some of `coins`. */
   purchases: MoneyLine[]
-  /** Coins taken in by the plan's recipes. */
+  /** Coins the plan takes from the bus. */
   coins: MoneyLine[]
-  /** Copper the plan's purchases and coins take, before its own coins cover any. */
+  /** Copper those coins are worth, before its own coins cover any. */
   need: number
   /** Part of `need` its own fed-back coins cover. */
   covered: number
@@ -71,13 +71,20 @@ export interface MoneyLedger {
 export function moneyLedger(plan: Plan, result: PlanResult, ledgers: ItemLedger[]): MoneyLedger {
   const purchases: MoneyLine[] = []
   const coins: MoneyLine[] = []
+  // One line per item bought, however many runs (paid in different coins) buy it.
+  for (const r of result.runs) {
+    if (r.process.kind !== 'buy' || r.craftsPerMinute <= 0) continue
+    const item = r.process.product
+    const line = purchases.find((l) => l.item === item)
+    if (line) line.count += r.craftsPerMinute
+    else purchases.push({ item, count: r.craftsPerMinute, price: itemsByKey.get(item)?.buyPrice ?? null })
+  }
   for (const b of result.balances) {
-    if (b.imported > 0) purchases.push({ item: b.item, count: b.imported, price: itemsByKey.get(b.item)?.buyPrice ?? null })
     const face = coinValue(b.item)
     if (face !== null && b.fromBus > 0) coins.push({ item: b.item, count: b.fromBus, price: face })
   }
   const total = (lines: MoneyLine[]) => lines.reduce((t, l) => t + l.count * (l.price ?? 0), 0)
-  const need = total(purchases) + total(coins)
+  const need = total(coins)
 
   // Every source of every output: targets (in order), then overflow, with what overflow targets take
   // of it (they come first: what they leave is fed back or goes out to the bus).

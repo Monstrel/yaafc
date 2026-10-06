@@ -5,6 +5,7 @@ import {
   ATHANOR,
   CATALYSTS,
   HEAT,
+  MONEY,
   heightMultiplier,
   NURSERY,
   NUTRIENTS,
@@ -37,7 +38,17 @@ import { BOILER_SETTINGS, STEAM_HEAT } from './steamBoiler'
 import type { MyDefaults, SavedRecipe } from './types'
 import type { Modifiers } from './upgrades'
 
-export type ProcessKind = 'recipe' | 'cauldron' | 'nursery' | 'paradox' | 'bank' | 'boiler' | 'fuel' | 'fertilizer'
+export type ProcessKind =
+  | 'recipe'
+  | 'cauldron'
+  | 'nursery'
+  | 'paradox'
+  | 'bank'
+  | 'boiler'
+  | 'buy'
+  | 'fuel'
+  | 'fertilizer'
+  | 'spend'
 
 /**
  * One way of turning inputs into outputs, normalised to a single craft.
@@ -86,6 +97,8 @@ export interface Process {
   seed?: string
   /** Fertilizer its Nursery grows on, which sets its speed (not set for World Trees, which grow at their own pace). */
   fertilizer?: string
+  /** Coin its Purchasing Portals are paid in, which sets their pace. */
+  coin?: string
 }
 
 export interface ProcessContext {
@@ -423,6 +436,80 @@ function bankProcess(input: Coin, output: Coin, stack: number, mods: Modifiers):
   }
 }
 
+// ---- Purchasing Portal: money → an item ----
+// Native code (UPortalFacilityComponent, build 25321648), not in the data tables. The portal takes
+// coins of any kind into a buffer, a belt entry at a time while it holds less than the item's
+// price; once it holds the price it pays it, keeping the change, and puts one entry of the item on
+// its belt (a whole bundle, like a Log). No craft time, heat or Factory Efficiency: its belts are
+// its only limit, so the coin it's paid in sets its pace. An entry of 50 copper buys 1/24 of an
+// Iron Ore; one of 50 silver buys 41.
+export const PURCHASING_PORTAL = 'Portal_AlchGuild'
+export const buyId = (item: string) => `buy:${item}`
+export const spendId = (coin: string) => `spend:${coin}`
+/** The coin the plan pays with unless it picks another. */
+export const DEFAULT_COIN = 'SilverCoin'
+
+/** Items the Purchasing Portal sells (liquids would need a pipe portal the game doesn't offer yet). */
+const sold = items.filter((i) => i.buyPrice != null && !i.liquid)
+
+const decimals = (x: number) => x.toLocaleString(undefined, { maximumFractionDigits: 2 })
+
+function buyProcess(i: Item, coin: string, mods: Modifiers): Process {
+  const machine = machinesByKey.get(PURCHASING_PORTAL) ?? null
+  const price = i.buyPrice!
+  const perEntry = COIN_STACK * (coinValue(coin) ?? 1)
+  // Belt entries of coins one purchase takes: below one, the output belt sets the pace.
+  const entries = price / perEntry
+  const coins = itemNameFor(coin, COIN_STACK)
+  return {
+    id: buyId(i.key),
+    kind: 'buy',
+    label: `Buy ${i.name}`,
+    product: i.key,
+    secondary: [],
+    machine,
+    machineOptions: machine ? [machine] : [],
+    seconds: (60 / mods.beltSpeed) * Math.max(1, entries),
+    inputs: [{ item: MONEY, count: price }],
+    outputs: [{ item: i.key, count: 1 }],
+    alternate: false,
+    notes: [
+      entries > 1
+        ? `Paid in ${coins}: each belt entry of ${COIN_STACK} pays for ${decimals(1 / entries)} of one, so the coins set its pace`
+        : `Paid in ${coins}: each belt entry of ${COIN_STACK} pays for ${decimals(1 / entries)}, so its output belt sets its pace`,
+    ],
+    catalysts: [],
+    acceptsCatalysts: false,
+    height: 0,
+    acceptsHeight: false,
+    tier: Math.max(machine ? machineTier(machine.key) : 1, buyTier(i.key)),
+    coin,
+  }
+}
+
+/** Paying with a coin: what it's worth, in copper. */
+function spendProcess(c: Coin): Process {
+  return {
+    id: spendId(c.coin),
+    kind: 'spend',
+    label: `Pay with ${itemNameFor(c.coin, 2)}`,
+    product: MONEY,
+    secondary: [],
+    machine: null,
+    machineOptions: [],
+    seconds: 0,
+    inputs: [{ item: c.coin, count: 1 }],
+    outputs: [{ item: MONEY, count: c.copper }],
+    alternate: false,
+    notes: [],
+    catalysts: [],
+    acceptsCatalysts: false,
+    height: 0,
+    acceptsHeight: false,
+    tier: 1,
+  }
+}
+
 /** Conversions between different coins (re-stacking one coin would feed its own row). */
 const bankPairs = COINS.flatMap((input) => COINS.filter((output) => output !== input).map((output) => ({ input, output })))
 
@@ -531,7 +618,8 @@ export const defaultMachine = (p: Process, tier: number) =>
 
 /**
  * How one row runs a process: its machine, catalysts, the height its machines are built at, the
- * coins its Bank Portals output per entry and the fertilizer its Nurseries grow on.
+ * coins its Bank Portals output per entry, the fertilizer its Nurseries grow on and the coin its
+ * Purchasing Portals are paid in.
  */
 export interface RunChange {
   machine?: string
@@ -539,6 +627,7 @@ export interface RunChange {
   height?: number
   stack?: number
   fertilizer?: string
+  coin?: string
   /** Coins per input belt entry, per ingredient fed smaller stacks than 50 (empty: none). */
   inputStacks?: Record<string, number>
 }
@@ -570,7 +659,10 @@ export function buildCatalog(ctx: ProcessContext): ProcessCatalog {
   const banks = new Map(bankPairs.map((b) => [bankId(b.input.coin, b.output.coin), b]))
   const paradox = new Map(paradoxInputs.map((i) => [paradoxId(i.key), i]))
   const nurseries = new Map(seeds.filter(grows).map((s) => [`nursery:${s.seed}`, s]))
+  const portals = new Map(sold.map((i) => [buyId(i.key), i]))
   const rerun = (p: Process, change: RunChange) => {
+    const bought = portals.get(p.id)
+    if (bought) return !change.coin || change.coin === p.coin ? p : buyProcess(bought, change.coin, ctx.mods)
     const bank = banks.get(p.id)
     if (bank) {
       const stack = clampBankStack(change.stack ?? p.stack ?? DEFAULT_BANK_STACK)
@@ -612,6 +704,8 @@ export function buildCatalog(ctx: ProcessContext): ProcessCatalog {
     ...paradoxInputs.map((i) => paradoxProcess(i)),
     ...bankPairs.map(({ input, output }) => bankProcess(input, output, DEFAULT_BANK_STACK, ctx.mods)),
     ...BOILER_SETTINGS.map(boilerProcess),
+    ...sold.map((i) => buyProcess(i, DEFAULT_COIN, ctx.mods)),
+    ...COINS.map(spendProcess),
     ...fuelProcesses(ctx.mods),
     ...fertilizerProcesses(ctx.mods),
   ]
@@ -659,12 +753,11 @@ export function buildCatalog(ctx: ProcessContext): ProcessCatalog {
  * standard game recipe, else a nursery (preferred over seed plots; the World Tree Nursery over the
  * Miniature World Tree), else the Paradox Crucible (for
  * Oblivion Essence, whose only recipe loops back through Vitality), else an alternate recipe, else
- * a saved cauldron recipe, else a Steam Boiler on High, else bought at a portal, else taken from
- * the bus. Coins are money off the bus: they're taken in at face value, and minted only for a
+ * a saved cauldron recipe, else a Steam Boiler on High, else bought at a Purchasing Portal, else
+ * taken from the bus. Coins are money off the bus: they're taken in at face value, and minted only for a
  * target (`asTarget`).
  */
 export function defaultProducer(catalog: ProcessCatalog, item: string, asTarget = false): string {
-  const outside = itemsByKey.get(item)?.buyPrice != null ? 'import' : 'bus'
   if (coinValue(item) !== null && !asTarget) return 'bus'
   const open = (p: Process | undefined): p is Process => !!p && catalog.reach(p) <= catalog.tier
   // The unlocked solid fuel with the most heat per item (Steam has to be made first).
@@ -676,8 +769,9 @@ export function defaultProducer(catalog: ProcessCatalog, item: string, asTarget 
     const list = catalog.byProduct.get(item) ?? []
     return (list.find(open) ?? list[0])?.id ?? 'import'
   }
+  if (item === MONEY) return spendId(DEFAULT_COIN)
   const rank = (all: Process[]) => {
-    const options = all.filter((p) => p.product === item)
+    const options = all.filter((p) => p.product === item && p.kind !== 'buy')
     return (
       options.find((p) => p.kind === 'recipe' && !p.alternate) ??
       // The Miniature World Tree is a player's pick, never the default.
@@ -696,7 +790,9 @@ export function defaultProducer(catalog: ProcessCatalog, item: string, asTarget 
     )
   }
   const all = catalog.byProduct.get(item) ?? []
-  return (rank(all.filter(open)) ?? rank(all))?.id ?? outside
+  // Bought only when nothing makes it.
+  const buy = all.find((p) => p.kind === 'buy')
+  return (rank(all.filter(open)) ?? rank(all) ?? buy)?.id ?? 'bus'
 }
 
 /**
@@ -711,6 +807,7 @@ export const runKey = (p: Process) =>
     ...(p.acceptsHeight ? [`h${p.height}`] : []),
     ...(p.stack !== undefined ? [`s${p.stack}`] : []),
     ...(p.fertilizer ? [`f${p.fertilizer}`] : []),
+    ...(p.coin ? [`c${p.coin}`] : []),
     ...Object.entries(p.inputStacks ?? {})
       .sort()
       .map(([item, n]) => `${item}@${n}`),
@@ -725,7 +822,7 @@ export const sameRecipe = (a: Process, b: Process) => a.id === b.id && a.machine
  */
 export function processTitle(p: Process): string {
   if (p.kind === 'cauldron') return p.name || `${p.machine?.name ?? 'Cauldron'}: ${itemName(p.product)}`
-  if (p.kind === 'fuel' || p.kind === 'fertilizer') return itemName(p.inputs[0]?.item ?? '')
+  if (p.kind === 'fuel' || p.kind === 'fertilizer' || p.kind === 'spend') return itemName(p.inputs[0]?.item ?? '')
   if (p.kind === 'boiler') return `${p.machine?.name ?? 'Steam Boiler'} · ${p.label.slice(p.label.indexOf('(') + 1, -1)}`
   return p.machine?.name ?? p.label
 }

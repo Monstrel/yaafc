@@ -25,8 +25,6 @@ export interface ItemBalance {
   target: number
   produced: number
   consumed: number
-  /** Bought at Purchase Portals. */
-  imported: number
   /** Taken from the bus, less what the plan's own output covers (a fed-back net-surplus target). */
   fromBus: number
   /** What the plan's rows take from the bus, before its own output covers any. */
@@ -396,7 +394,7 @@ function solveRound(
         cost: SURPLUS_COST,
       }
     if (s.kind === 'bus' && pooled.has(s.item)) columns[`i:${k}`] = { [`b:${k}`]: 1, [`g:${s.item}`]: -1, cost: 0 }
-    else if (s.kind === 'import' || s.kind === 'bus') columns[`i:${k}`] = { [`b:${k}`]: 1, cost: IMPORT_COST }
+    else if (s.kind === 'bus') columns[`i:${k}`] = { [`b:${k}`]: 1, cost: IMPORT_COST }
     else if (s.kind === 'overflow') continue
     else {
       const cost = Math.max(MIN_DEFICIT_COST, DEFICIT_COST * DEFICIT_DEPTH_FACTOR ** s.depth)
@@ -643,9 +641,8 @@ function solveRound(
       crafts: x,
       fromByproduct,
       byproductSources: draws.map((d) => ({ id: d.from.id, label: d.from.process!.label })),
-      purchased: n.kind === 'import' ? short : 0,
       fromBus: n.kind === 'bus' ? short : 0,
-      shortfall: n.kind === 'import' || n.kind === 'bus' ? 0 : short,
+      shortfall: n.kind === 'bus' ? 0 : short,
       overflow: cleaned(v(`s:${index.get(n)}`), tol),
       byproductRoutes: n.kind === 'make' ? routes(n, x) : {},
     })
@@ -669,7 +666,7 @@ function solveRound(
     outputs: p.outputs.map((s) => ({ item: s.item, count: s.count * x })),
   }))
 
-  // Per item: imports, bus draws and shortfalls from the rows, surplus whatever's left, so every
+  // Per item: bus draws and shortfalls from the rows, surplus whatever's left, so every
   // balance is exact (the solver's own slack values are rounded and would leave visible noise on
   // items with huge counts). Draws a net-surplus target covers are made in the plan: what the
   // sources ahead of it supply counts as made (the ledger shows which), and what nothing can cover
@@ -678,7 +675,7 @@ function solveRound(
   const of = (item: string) => {
     let b = balance.get(item)
     if (!b) {
-      b = { item, target: 0, produced: 0, consumed: 0, imported: 0, fromBus: 0, drawn: 0, deficit: 0, surplus: 0 }
+      b = { item, target: 0, produced: 0, consumed: 0, fromBus: 0, drawn: 0, deficit: 0, surplus: 0 }
       balance.set(item, b)
     }
     return b
@@ -695,13 +692,12 @@ function solveRound(
   for (const n of supplies) {
     const f = rowFlows.get(n)!
     const b = of(n.item)
-    b.imported += f.purchased
     b.drawn += f.fromBus
     if (!pooled.has(n.item)) b.fromBus += f.fromBus
     b.deficit += f.shortfall
   }
   for (const b of balance.values()) {
-    let net = b.produced - b.consumed + b.imported + b.fromBus + b.deficit - b.target
+    let net = b.produced - b.consumed + b.fromBus + b.deficit - b.target
     if (Math.abs(net) <= RELATIVE_NOISE * Math.max(1, b.produced, b.consumed)) net = 0
     b.surplus = Math.max(0, net)
   }

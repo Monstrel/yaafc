@@ -10,12 +10,11 @@ import { ledgers, targetFedBack, type DrawUse, type ItemLedger } from '../lib/le
 import {
   HEAT,
   MAX_TIER,
+  MONEY,
   NUTRIENTS,
-  buyTier,
   coinValue,
   iconUrl,
   itemName,
-  itemsByKey,
   machineTier,
   machinesByKey,
   targetItems,
@@ -145,7 +144,7 @@ export function PlannerPage({
    * The fuel or fertilizer (heat or nutrients) rows burn or spread unless their branch picks
    * another. Changing it keeps those picks; the rows making them can follow it too.
    */
-  const planDefault = (item: typeof HEAT | typeof NUTRIENTS) => {
+  const planDefault = (item: typeof HEAT | typeof NUTRIENTS | typeof MONEY) => {
     const producer = planProducer(plan, catalog, item)
     return {
       pick: (
@@ -521,7 +520,7 @@ export function PlannerPage({
                 ledgers={ledger}
                 money={money}
                 defaults={
-                  <PlanDefaults heat={planDefault(HEAT)} nutrients={planDefault(NUTRIENTS)} />
+                  <PlanDefaults heat={planDefault(HEAT)} nutrients={planDefault(NUTRIENTS)} money={planDefault(MONEY)} />
                 }
                 overflowFrom={overflowSources}
                 onFeedback={(item, target, on) =>
@@ -829,18 +828,18 @@ interface DefaultPick {
 }
 
 /**
- * The fuel and fertilizer the plan's machines burn and spread unless their row picks another,
- * shown from the start so a plan can be set up before it needs them. Changing one keeps the rows
+ * The fuel and fertilizer the plan's machines burn and spread, and the coin its Purchasing Portals
+ * are paid in, unless their row picks another, shown from the start so a plan can be set up before it needs them. Changing one keeps the rows
  * picking their own; a link switches them too.
  */
-function PlanDefaults({ heat, nutrients }: { heat: DefaultPick; nutrients: DefaultPick }) {
+function PlanDefaults({ heat, nutrients, money }: { heat: DefaultPick; nutrients: DefaultPick; money: DefaultPick }) {
   const line = (glyph: string, verb: string, d: DefaultPick) => (
     <span className="ledger-what">
       {glyph} {verb} {d.pick}
       {d.own > 0 && (
         <button
           className="tree-link hint-inline"
-          title={`${d.own} ${noun(d.own, 'row')} ${verb === 'burns' ? 'burn' : 'spread'} something else, picked on ${d.own === 1 ? 'its' : 'their'} own: switch them to this too`}
+          title={`${d.own} ${noun(d.own, 'row')} picked something else on ${d.own === 1 ? 'its' : 'their'} own: switch them to this too`}
           onClick={d.onFollow}
         >
           {d.own} {noun(d.own, 'row')} {d.own === 1 ? 'differs' : 'differ'} · use it there too
@@ -849,9 +848,10 @@ function PlanDefaults({ heat, nutrients }: { heat: DefaultPick; nutrients: Defau
     </span>
   )
   return (
-    <div className="bus-defaults" title="What the plan's machines burn and spread unless their row picks another">
+    <div className="bus-defaults" title="What the plan's machines burn, spread and pay with unless their row picks another">
       {line('🔥', 'burns', heat)}
       {line('🌱', 'spreads', nutrients)}
+      {line('🪙', 'pays with', money)}
       <span className="hint-inline">by default</span>
     </div>
   )
@@ -930,9 +930,11 @@ function ItemIn({
   )
 }
 
-/** Money into the plan: what the Purchase Portals spend, coins taken in, and own coins covering some. */
+/**
+ * Money into the plan: the coins it takes from the bus (what its Purchasing Portals are paid in, and
+ * coins its recipes take), what the portals buy with them, and own coins covering some.
+ */
 function MoneyIn({ money }: { money: MoneyLedger }) {
-  const lines = [...money.purchases.map((l) => ({ ...l, coin: false })), ...money.coins.map((l) => ({ ...l, coin: true }))]
   return (
     <div className="bus-input">
       <div className="ledger-head">
@@ -947,25 +949,27 @@ function MoneyIn({ money }: { money: MoneyLedger }) {
           )}
         </span>
       </div>
-      {lines.length === 0 ? (
-        <p className="hint">Nothing to buy.</p>
+      {money.coins.length === 0 ? (
+        <p className="hint">Nothing to pay for.</p>
       ) : (
         <ul className="money-lines">
-          {lines.map((l) => (
+          {money.coins.map((l) => (
             <li key={l.item}>
               <ItemLabel item={l.item} size={16} />
-              <span className="hint-inline">
-                {fmt(l.count)}/min{l.coin ? ' off the bus' : ''}
+              <span className="hint-inline">{fmt(l.count)}/min off the bus</span>
+              <span className="money-cost">
+                <Money copper={l.count * (l.price ?? 0)} suffix="/min" />
               </span>
-              {l.price !== null ? (
-                <span className="money-cost">
-                  <Money copper={l.count * l.price} suffix="/min" />
-                </span>
-              ) : (
-                <span className="tag warn" title="Purchase Portals don't sell this item">
-                  not sold at portals
-                </span>
-              )}
+            </li>
+          ))}
+          {money.purchases.map((l) => (
+            <li key={`buy:${l.item}`} className="money-purchase">
+              <span className="hint-inline">buys</span>
+              <ItemLabel item={l.item} size={16} />
+              <span className="hint-inline">{fmt(l.count)}/min</span>
+              <span className="money-cost hint-inline">
+                <Money copper={l.count * (l.price ?? 0)} suffix="/min" />
+              </span>
             </li>
           ))}
         </ul>
@@ -1513,11 +1517,10 @@ function beyondTier(tree: TreeNode[], tier: number): { item: string; tier: numbe
   const visit = (n: TreeNode) => {
     const p = n.run?.process
     const made = !!p && (n.kind === 'produce' || n.kind === 'byproduct')
-    const bought = n.kind === 'purchase' && itemsByKey.get(n.item)?.buyPrice != null
-    const needs = made ? p.tier : bought ? buyTier(n.item) : 0
+    const needs = made ? p.tier : 0
     const seen = found.get(n.item)
-    if (needs > tier && (!seen || needs < seen.tier))
-      found.set(n.item, { item: n.item, tier: needs, what: made ? (p.machine?.name ?? p.label) : 'bought at a portal' })
+    if (made && needs > tier && (!seen || needs < seen.tier))
+      found.set(n.item, { item: n.item, tier: needs, what: p.kind === 'buy' ? 'bought at a Purchasing Portal' : (p.machine?.name ?? p.label) })
     n.children.forEach(visit)
   }
   tree.forEach(visit)

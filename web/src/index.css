@@ -2757,6 +2757,11 @@ tr.unit-totals td.num {
   gap: 8px;
 }
 
+/* What the coins buy: indented under them. */
+.money-purchase {
+  padding-left: 12px;
+}
+
 .money-cost {
   margin-left: auto;
 }

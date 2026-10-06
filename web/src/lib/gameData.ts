@@ -174,6 +174,8 @@ export const coinValue = (item: string): number | null => COINS.find((c) => c.co
 /** Pseudo-items used by the solver for heat (P) and plant nutrients. */
 export const HEAT = '@heat'
 export const NUTRIENTS = '@nutrients'
+/** Money, in copper: what Purchasing Portals spend, paid in coins. */
+export const MONEY = '@money'
 
 /** Carries heat through pipes, from Steam Boilers to Steam Heating Pads. */
 export const STEAM = 'Steam'
@@ -181,6 +183,7 @@ export const STEAM = 'Steam'
 export function itemName(key: string): string {
   if (key === HEAT) return 'Heat (P)'
   if (key === NUTRIENTS) return 'Nutrients'
+  if (key === MONEY) return 'Money'
   return itemsByKey.get(key)?.name ?? key
 }
 
@@ -238,7 +241,7 @@ const CRAFT_TYPE_BUILDINGS: Record<string, string[]> = {
 export const heightMultiplier = (height: number) => 1 + Math.min(Math.max(height / 128, 0), 2)
 
 /** Machines unaffected by Factory Efficiency. */
-const NO_FACTORY_SPEED = new Set(['SeedPlot', 'Portal_Bank'])
+const NO_FACTORY_SPEED = new Set(['SeedPlot', 'Portal_Bank', 'Portal_AlchGuild'])
 
 function toMachine(b: Building): Machine {
   const speedComponent = b.components.find((c) => typeof c.GrindingSpeed === 'number')
