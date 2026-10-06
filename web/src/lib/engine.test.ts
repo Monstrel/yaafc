@@ -14,6 +14,7 @@ import {
   licenseFor,
   machineTier,
   research,
+  targetItems,
   upgrades,
 } from './gameData'
 import {
@@ -1441,6 +1442,7 @@ describe('heat and nutrients as rows', () => {
     const result = solvePlan(p, catalog, mods)
     expectBalanced(result)
     const boilers = result.tree[1]
+    expect(targetItems.some((i) => i.key === 'Steam')).toBe(true) // its target row can show it
     expect(boilers).toMatchObject({ item: 'Steam', kind: 'produce', producer: 'boiler:High' })
     expect(boilers.machines).toBeCloseTo(boilers.rate / 9000) // High: 300 Steam every 2 s
     const heat = boilers.children.find((c) => c.item === HEAT)!
