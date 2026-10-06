@@ -64,7 +64,7 @@ import { buildingNameFor, machineNameFor, noun } from '../lib/plural'
 import { BOILER_HEAT, BUS, IMPORT, planProducer } from '../lib/unfold'
 import { dropUnits, setUnits, unitScales } from '../lib/units'
 import type { TreeNode } from '../lib/tree'
-import type { MyDefaults, Plan, PlanTarget, Progress, Separation } from '../lib/types'
+import { blankTarget, type MyDefaults, type Plan, type PlanTarget, type Progress, type Separation } from '../lib/types'
 import { PLANNER_UPGRADES, maxLevel, upgradeLevel, type Modifiers } from '../lib/upgrades'
 
 /** What each planner upgrade series currently does, shown under its name. */
@@ -223,8 +223,10 @@ export function PlannerPage({
   /** The target just added, whose item picker opens. */
   const [added, setAdded] = useState<{ plan: string; index: number } | null>(null)
   const addTarget = () => {
+    // A plan with only its blank target uses that one: show it instead of adding another.
+    if (plan.targets.length === 1 && !plan.targets[0].item) return showTarget(0)
     const index = plan.targets.length
-    onUpdatePlan((p) => ({ ...p, targets: [...p.targets, { item: '', rate: 10 }] }))
+    onUpdatePlan((p) => ({ ...p, targets: [...p.targets, blankTarget()] }))
     setAdded({ plan: plan.id, index })
     showTarget(index)
   }
