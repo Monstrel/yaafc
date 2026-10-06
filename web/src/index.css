@@ -2551,6 +2551,7 @@ tr.unit-totals td.num {
 
 
 .ledger {
+  position: relative;
   container-type: inline-size;
 }
 
@@ -2563,11 +2564,40 @@ tr.unit-totals td.num {
 @container (min-width: 480px) {
   .ledger-columns {
     grid-template-columns: 1fr 1fr;
+    column-gap: 40px;
   }
 
-  .ledger-columns > div + div {
-    padding-left: 20px;
+  /* The line between in and out, running down behind the banners fed back across it. */
+  .bus-flow {
+    position: relative;
+  }
+
+  .bus-flow::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 50%;
     border-left: 1px solid var(--border);
+  }
+
+  /* As wide as the widest banner needs (all the same width, so they stack evenly), centred on the line. */
+  .ledger .bus-fed {
+    display: grid;
+    grid-template-columns: fit-content(100%);
+    justify-content: center;
+  }
+
+  .bus-banner {
+    min-width: 40cqi;
+  }
+
+  .bus-banner .bus-output-head {
+    column-gap: 32px;
+  }
+
+  .ledger .bus-notch {
+    display: block;
   }
 }
 
@@ -2780,6 +2810,82 @@ tr.unit-totals td.num {
   padding-top: 8px;
   border-top: 1px solid var(--border);
   font-size: 13px;
+}
+
+/*
+ * Fed back: banners across the line between out and in, pointing back into the plan, their tails
+ * cut where they leave the outputs. Opaque, so the line between them passes behind.
+ */
+.bus-fed {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+}
+
+.bus-banner {
+  --tip: 16px;
+  position: relative;
+  padding: 6px calc(var(--tip) + 10px);
+  background: color-mix(in srgb, var(--green) 14%, var(--panel));
+  clip-path: polygon(
+    0 50%,
+    var(--tip) 0,
+    100% 0,
+    calc(100% - var(--tip)) 50%,
+    100% 100%,
+    var(--tip) 100%
+  );
+}
+
+.bus-banner .bus-net strong {
+  color: var(--green);
+  font-weight: 600;
+}
+
+.bus-banner .bus-output-sources {
+  padding-left: 26px;
+}
+
+/*
+ * Notches in the panel's bottom edge, under the middle of each column (see BusLine): dipping out
+ * under what comes in, rising in under what goes out. Shown only when the columns sit side by side.
+ */
+.bus-notch {
+  display: none;
+  position: absolute;
+  bottom: -9.5px;
+  width: 32px;
+  height: 18px;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.bus-notch-in {
+  left: calc(25% - 16px);
+}
+
+.bus-notch-out {
+  left: calc(75% - 16px);
+}
+
+.bus-notch path {
+  fill: none;
+  stroke: var(--border);
+  stroke-width: 1;
+  stroke-linejoin: round;
+}
+
+.bus-notch-in .bus-notch-fill {
+  fill: var(--panel);
+  stroke: none;
+}
+
+.bus-notch-out .bus-notch-fill {
+  fill: var(--bg);
+  stroke: none;
 }
 
 /* A second total under the first (EXP under sale value): one rule above both. */

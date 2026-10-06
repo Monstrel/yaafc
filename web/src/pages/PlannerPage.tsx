@@ -27,7 +27,7 @@ import {
 import { altarsFor, altarYield, type AltarYield } from '../lib/altar'
 import { fmt, fmtMachines, fmtSeconds, wholeMachines } from '../lib/format'
 import { buildingCounts, checkLogistics, resourceUsers, type LogisticsCheck, type ResourceUser } from '../lib/logistics'
-import { fedOverflow, moneyLedger, type BusUse, type MoneyLedger, type OutputRow } from '../lib/money'
+import { fedOverflow, moneyLedger, type BusUse, type MoneyLedger, type OutputRow, type OutputSource } from '../lib/money'
 import { processTitle, type ProcessCatalog } from '../lib/processes'
 import type { PlanModel } from '../lib/planModel'
 import {
@@ -685,12 +685,15 @@ function BusPanel({
       }, 0)
     : 0
   const resources = [...ledgers].reverse().filter((l) => l.need > 0 || l.made > 0) // heat first
+  const fedBack = money.outputs.filter((o) => o.sources.some((s) => isFed(o, s)))
+  const out = money.outputs.filter((o) => o.toBus > 0 || o.sources.some((s) => !isFed(o, s)))
   return (
     <section className="panel ledger">
       <h2>Bus</h2>
+      <div className="bus-flow">
       <div className="ledger-columns">
         <div>
-          <h3>Into the plan</h3>
+          <h3>In from the bus</h3>
           <div className="bus-inputs">
             {resources.map((l) => (
               <ResourceIn
@@ -703,11 +706,13 @@ function BusPanel({
         </div>
         <div>
           <h3>Out to the bus</h3>
-          {money.outputs.length === 0 ? (
-            <p className="hint">Nothing: the plan delivers no items.</p>
+          {out.length === 0 ? (
+            <p className="hint">
+              {money.outputs.length === 0 ? 'Nothing: the plan delivers no items.' : 'Nothing: the plan feeds back all it makes.'}
+            </p>
           ) : (
             <ul className="bus-outputs">
-              {money.outputs.map((o) => (
+              {out.map((o) => (
                 <OutputLine
                   key={o.item}
                   row={o}
@@ -743,8 +748,84 @@ function BusPanel({
           )}
         </div>
       </div>
+      {fedBack.length > 0 && (
+        <ul className="bus-fed" aria-label="Fed back into the plan">
+          {fedBack.map((o) => (
+            <FedBanner
+              key={o.item}
+              row={o}
+              overflowFrom={overflowFrom}
+              onFeedback={onFeedback}
+              onShowTarget={onShowTarget}
+              onShowRow={onShowRow}
+            />
+          ))}
+        </ul>
+      )}
+      </div>
+      <BusLine />
       {children}
     </section>
+  )
+}
+
+/** Whether the plan feeds this source back into its heat, fertilizer or money (so it's in a banner, not out). */
+const isFed = (row: OutputRow, s: OutputSource) => s.fedBack && row.feeds.length > 0
+
+/** What a source's own overflow targets take of it and what the plan feeds back of it, per minute. */
+function sourceUse(s: OutputSource) {
+  const fed = Object.values(s.used).reduce((t, n) => t + (n ?? 0), 0)
+  const taken = s.taken.reduce((t, x) => t + x.amount, 0)
+  return { fed, left: s.amount - fed - taken }
+}
+
+/** The rows an item overflows from, as links, when these of its sources include its overflow. */
+function OverflowFrom({ sources, from, onShowRow }: { sources: OutputSource[]; from: OverflowSource[]; onShowRow: (ids: string[]) => void }) {
+  if (!sources.some((s) => s.target === null) || from.length === 0) return null
+  return (
+    <span className="hint-inline">
+      from{' '}
+      {from.map((f, i) => (
+        <span key={f.label}>
+          {i > 0 && ', '}
+          <button
+            className="tree-link"
+            title={`Show ${f.title} in the plan${f.ids.length > 1 ? ` (${f.ids.length} places, click again for the next)` : ''}`}
+            onClick={() => onShowRow(f.ids)}
+          >
+            {f.label}
+          </button>
+        </span>
+      ))}
+    </span>
+  )
+}
+
+/** Overflow targets taking some of a source. */
+function TakenBy({ source, onShowTarget }: { source: OutputSource; onShowTarget: (index: number) => void }) {
+  return source.taken.map((x) => (
+    <span key={x.target} className="fed-text">
+      {fmt(x.amount)}/min taken by <TargetLink index={x.target} onShow={onShowTarget} />
+    </span>
+  ))
+}
+
+/**
+ * Notches in the panel's bottom edge, which stands for the bus: it dips under what comes in from it
+ * and rises under what goes out to it. Each covers its stretch of the border and draws its own.
+ */
+function BusLine() {
+  return (
+    <>
+      <svg className="bus-notch bus-notch-in" viewBox="0 0 32 18" aria-hidden="true">
+        <path className="bus-notch-fill" d="M0 7.5 H32 V9 L16 17 L0 9 Z" />
+        <path d="M0 9 L16 17 L32 9" />
+      </svg>
+      <svg className="bus-notch bus-notch-out" viewBox="0 0 32 18" aria-hidden="true">
+        <path className="bus-notch-fill" d="M0 10.5 H32 V9 L16 1 L0 9 Z" />
+        <path d="M0 9 L16 1 L32 9" />
+      </svg>
+    </>
   )
 }
 
@@ -880,9 +961,10 @@ function MoneyIn({ money }: { money: MoneyLedger }) {
 }
 
 /**
- * One item leaving the plan: what goes out to the bus and what it's worth, what the plan feeds back
- * of it, and its sources (targets and overflow), each movable between the plan and the bus when the
- * item can feed back. Overflow nothing uses is flagged: it backs up the machines making it.
+ * One item leaving the plan: what goes out to the bus and what it's worth, and the sources it goes
+ * out from (targets and overflow), each movable into the plan when the item can feed back; what's
+ * left over of a source the plan feeds back goes out too. Overflow nothing uses is flagged: it backs
+ * up the machines making it.
  */
 function OutputLine({
   row,
@@ -906,32 +988,15 @@ function OutputLine({
   exp: AltarYield | null
   mods: Modifiers | null
 }) {
-  const uses = (Object.entries(row.used) as [BusUse, number][]).filter(([, n]) => n > 0)
-  // Rows overflowing it, when the plan overflows it.
-  const from = row.sources.some((s) => s.target === null) ? (overflowFrom.get(row.item) ?? []) : []
+  // Fed-back sources show here only for what's left over of them: their banner has the rest.
+  const sources = row.sources.filter((s) => !isFed(row, s) || sourceUse(s).left > 1e-9 * s.amount)
   const [using, setUsing] = useState(false)
   return (
     <li className="bus-output">
       <div className="bus-output-head">
         <span className="bus-output-item">
           <ItemLabel item={row.item} size={18} />
-          {from.length > 0 && (
-            <span className="hint-inline">
-              from{' '}
-              {from.map((f, i) => (
-                <span key={f.label}>
-                  {i > 0 && ', '}
-                  <button
-                    className="tree-link"
-                    title={`Show ${f.title} in the plan${f.ids.length > 1 ? ` (${f.ids.length} places, click again for the next)` : ''}`}
-                    onClick={() => onShowRow(f.ids)}
-                  >
-                    {f.label}
-                  </button>
-                </span>
-              ))}
-            </span>
-          )}
+          <OverflowFrom sources={sources} from={overflowFrom.get(row.item) ?? []} onShowRow={onShowRow} />
         </span>
         <span className="bus-net">
           {row.toBus > 0 ? <strong>+{fmt(row.toBus)}/min out</strong> : <span className="hint-inline">none out</span>}
@@ -953,17 +1018,21 @@ function OutputLine({
           )}
         </span>
       </div>
-      {uses.length > 0 && (
-        <div className="bus-output-uses">
-          plan {uses.map(([use, n]) => `${FEED_VERB[use]} ${fmt(n)}/min`).join(' · ')}
-        </div>
-      )}
       <ul className="bus-output-sources">
-        {row.sources.map((s) => {
-          const fed = Object.values(s.used).reduce((t, n) => t + (n ?? 0), 0)
-          const used = fed + s.taken.reduce((t, x) => t + x.amount, 0)
-          const left = s.amount - used
-          const idle = s.target === null && !s.fedBack && left > 1e-9 * s.amount
+        {sources.map((s) => {
+          const { left } = sourceUse(s)
+          if (isFed(row, s))
+            return (
+              <li key={s.target ?? 'overflow'}>
+                <span className="ledger-what">
+                  <span>
+                    {s.target === null ? 'overflow' : <TargetLink index={s.target} onShow={onShowTarget} />} · {fmt(left)}/min
+                    <span className="hint-inline"> left over after the plan {row.feeds.map((f) => FEED_VERB[f]).join(' or ')} it</span>
+                  </span>
+                </span>
+              </li>
+            )
+          const idle = s.target === null && left > 1e-9 * s.amount
           return (
             <li key={s.target ?? 'overflow'}>
               <span className="ledger-what">
@@ -980,33 +1049,17 @@ function OutputLine({
                     ⚠ nothing uses it
                   </button>
                 )}
-                {s.taken.map((x) => (
-                  <span key={x.target} className="fed-text">
-                    {fmt(x.amount)}/min taken by <TargetLink index={x.target} onShow={onShowTarget} />
-                  </span>
-                ))}
-                {s.fedBack && fed > 0 && left > 1e-9 * s.amount && (
-                  <span className="hint-inline">{fmt(left)}/min left over</span>
-                )}
+                <TakenBy source={s} onShowTarget={onShowTarget} />
               </span>
-              {row.feeds.length > 0 &&
-                (s.fedBack ? (
-                  <button
-                    className="move-button"
-                    title="Stop feeding it back: it all goes out to the bus"
-                    onClick={() => onFeedback(row.item, s.target, false)}
-                  >
-                    Send to bus →
-                  </button>
-                ) : (
-                  <button
-                    className="move-button"
-                    title={`Feed it back: the plan ${row.feeds.map((f) => FEED_VERB[f]).join(' or ')} it before taking any from the bus`}
-                    onClick={() => onFeedback(row.item, s.target, true)}
-                  >
-                    ← {feedButton(row.feeds)} in plan
-                  </button>
-                ))}
+              {row.feeds.length > 0 && (
+                <button
+                  className="move-button"
+                  title={`Feed it back: the plan ${row.feeds.map((f) => FEED_VERB[f]).join(' or ')} it before taking any from the bus`}
+                  onClick={() => onFeedback(row.item, s.target, true)}
+                >
+                  ← {feedButton(row.feeds)} in plan
+                </button>
+              )}
             </li>
           )
         })}
@@ -1021,6 +1074,70 @@ function OutputLine({
           onCancel={() => setUsing(false)}
         />
       )}
+    </li>
+  )
+}
+
+/**
+ * An item the plan makes and feeds back into its own heat, fertilizer or money, turned from the
+ * bus back into the plan: what the plan burns, spreads or spends of it, and the sources it feeds
+ * back, each movable out to the bus.
+ */
+function FedBanner({
+  row,
+  overflowFrom,
+  onFeedback,
+  onShowTarget,
+  onShowRow,
+}: {
+  row: OutputRow
+  overflowFrom: Map<string, OverflowSource[]>
+  onFeedback: (item: string, target: number | null, on: boolean) => void
+  onShowTarget: (index: number) => void
+  onShowRow: (ids: string[]) => void
+}) {
+  const uses = (Object.entries(row.used) as [BusUse, number][]).filter(([, n]) => n > 0)
+  const sources = row.sources.filter((s) => isFed(row, s))
+  return (
+    <li className="bus-banner">
+      <div className="bus-output-head">
+        <span className="bus-output-item">
+          <ItemLabel item={row.item} size={18} />
+          <OverflowFrom sources={sources} from={overflowFrom.get(row.item) ?? []} onShowRow={onShowRow} />
+        </span>
+        <span className="bus-net">
+          {uses.length > 0 ? (
+            <strong>plan {uses.map(([use, n]) => `${FEED_VERB[use]} ${fmt(n)}/min`).join(' · ')}</strong>
+          ) : (
+            <span className="hint-inline" title="Fed back, but the plan's need is already covered: it all goes out">
+              none needed
+            </span>
+          )}
+        </span>
+      </div>
+      <ul className="bus-output-sources">
+        {sources.map((s) => {
+          const { fed, left } = sourceUse(s)
+          return (
+            <li key={s.target ?? 'overflow'}>
+              <span className="ledger-what">
+                <span>
+                  {s.target === null ? 'overflow' : <TargetLink index={s.target} onShow={onShowTarget} />} · {fmt(fed)}/min
+                  {left > 1e-9 * s.amount && <span className="hint-inline"> of {fmt(s.amount)}</span>}
+                </span>
+                <TakenBy source={s} onShowTarget={onShowTarget} />
+              </span>
+              <button
+                className="move-button"
+                title="Stop feeding it back: it all goes out to the bus"
+                onClick={() => onFeedback(row.item, s.target, false)}
+              >
+                Send to bus →
+              </button>
+            </li>
+          )
+        })}
+      </ul>
     </li>
   )
 }
