@@ -37,6 +37,8 @@ import { buildingCounts, checkLogistics, checkProcess, resourceUsers } from './l
 import { craftsPerMachine } from './machineRate'
 import { solvePlan, type PlanResult } from './solver'
 import { onOverflow, type TreeNode } from './tree'
+import { heatNetworks } from './heatNetworks'
+import { setNetworkFuel, setNetworkSource } from './heatChoices'
 import {
   chooseProducer,
   chooseReuse,
@@ -71,7 +73,7 @@ import {
 } from './choices'
 import { sanitizeMyDefaults, sanitizePlans } from './sanitize'
 import { dropUnits, setUnits, unitChoices, unitScales, wholePerCopy } from './units'
-import { BOILER_HEAT, resolveChoice } from './unfold'
+import { BOILER_HEAT, BUS, resolveChoice } from './unfold'
 import { separationsOf, withSeparation } from './separate'
 import { canSeparateShared, mergeSingleUses, separateShared, setSeparation } from './separateAll'
 import { buildingNameFor, itemNameFor, noun } from './plural'
@@ -1512,6 +1514,60 @@ describe('heat and nutrients as rows', () => {
     expect(advanced.tree[0].machines).toBeCloseTo(1)
     expect(basic.tree[0].machines).toBeCloseTo(2)
     expect(advanced.tree[0].children[0].children[0]).toMatchObject({ item: 'AdvancedFertilizer', kind: 'bus' })
+  })
+
+  it('groups heated rows into networks: one per fuel off the bus, one per row making it', () => {
+    const steel = plan({ targets: [{ item: 'SteelIngot', rate: 10 }], producers: { [HEAT]: STEAM_HEAT_ID } })
+    const before = solvePlan(steel, catalog, mods)
+    const pads = rows(before).filter((n) => n.item === HEAT)
+    const [bus] = heatNetworks(before.tree)
+    expect(heatNetworks(before.tree)).toHaveLength(1)
+    expect(bus).toMatchObject({ key: 'bus:Steam', fuel: 'Steam', pads: true, source: { kind: 'bus' } })
+    expect(bus.uses).toHaveLength(pads.length)
+    expect(bus.heat).toBeCloseTo(rows(before).reduce((t, n) => t + n.heat, 0))
+    expect(bus.rate * 20).toBeCloseTo(bus.heat * 60) // 20 P per Steam
+    expect(bus.uses[0].trail[0]).toBe(before.tree[0]) // from its target down
+
+    // One row's Steam made in the plan: its own network, whose boilers sit on the boiler fuel's.
+    const steamRow = bus.uses[0].fuelRow.id
+    const result = solvePlan(chooseProducer(steel, catalog, { item: 'Steam', producer: 'boiler:High', row: steamRow }), catalog, mods)
+    const nets = heatNetworks(result.tree)
+    const made = nets.find((n) => n.key === `row:${steamRow}`)!
+    expect(made).toMatchObject({ fuel: 'Steam', pads: true, source: { kind: 'row', row: { id: steamRow, kind: 'produce' } } })
+    expect(made.uses).toHaveLength(1)
+    const boilerFuel = nets.find((n) => n.uses.some((u) => u.row.id === steamRow))!
+    expect(boilerFuel).toMatchObject({ pads: false, source: { kind: 'bus' } })
+    expect(nets.find((n) => n.key === 'bus:Steam')!.uses).toHaveLength(pads.length - 1)
+  })
+
+  it('switches a whole network to one shared boiler bank and back to the bus', () => {
+    const steel = plan({ targets: [{ item: 'SteelIngot', rate: 10 }], producers: { [HEAT]: STEAM_HEAT_ID } })
+    const [bus] = heatNetworks(solvePlan(steel, catalog, mods).tree)
+    const banked = setNetworkSource(steel, catalog, bus, 'boiler:Low')
+    const result = solvePlan(banked, catalog, mods)
+    expectBalanced(result)
+    const nets = heatNetworks(result.tree)
+    const steam = nets.filter((n) => n.fuel === 'Steam')
+    expect(steam).toHaveLength(1)
+    expect(steam[0].uses).toHaveLength(bus.uses.length)
+    expect(steam[0].source).toMatchObject({ kind: 'row', row: { producer: 'boiler:Low', consolidated: true } })
+    expect(steam[0].rate).toBeCloseTo(bus.rate)
+    // Another setting for the bank, then back to the bus: as it was.
+    expect(heatNetworks(solvePlan(setNetworkSource(banked, catalog, steam[0], 'boiler:High'), catalog, mods).tree).find((n) => n.fuel === 'Steam')!.source)
+      .toMatchObject({ kind: 'row', row: { producer: 'boiler:High' } })
+    const back = setNetworkSource(banked, catalog, steam[0], BUS)
+    const again = heatNetworks(solvePlan(back, catalog, mods).tree)
+    expect(again).toHaveLength(1)
+    expect(again[0]).toMatchObject({ key: 'bus:Steam', uses: { length: bus.uses.length } })
+    expect(pruneChoices(back, catalog)?.separate ?? back.separate ?? []).toEqual([])
+  })
+
+  it('switches what a whole network burns', () => {
+    const steel = plan({ targets: [{ item: 'SteelIngot', rate: 10 }], producers: { [HEAT]: STEAM_HEAT_ID } })
+    const [bus] = heatNetworks(solvePlan(steel, catalog, mods).tree)
+    const coal = heatNetworks(solvePlan(setNetworkFuel(steel, catalog, bus, 'fuel:Coal'), catalog, mods).tree)
+    expect(coal).toHaveLength(1)
+    expect(coal[0]).toMatchObject({ key: 'bus:Coal', pads: false, uses: { length: bus.uses.length } })
   })
 })
 

@@ -229,7 +229,7 @@ function gatherInto(plan: Plan, catalog: ProcessCatalog, s: Separation, from?: s
     if (!x) return -1
     return x.id === from ? 0 : x.id === x.to ? 1 : 2
   }
-  return moveRows(
+  const moved = moveRows(
     next,
     (id) => {
       const x = sourceOf(id)
@@ -237,4 +237,11 @@ function gatherInto(plan: Plan, catalog: ProcessCatalog, s: Separation, from?: s
     },
     rank,
   )
+  // A use made only by its own pick (a fuel row: those follow branch picks alone) keeps making it,
+  // or it would fall back to the bus and there'd be nothing to gather.
+  const bare = sources.filter(({ id, to }) => id !== to && !resolveChoice(moved, catalog, s.item, id).process)
+  if (!bare.length) return moved
+  const branches = { ...moved.branches }
+  for (const { id } of bare) branches[id] = { ...branches[id], producer: before.get(id)!.process!.id }
+  return { ...moved, branches }
 }

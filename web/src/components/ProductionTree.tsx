@@ -1,5 +1,5 @@
 import { type CSSProperties, type ReactNode, useEffect, useId, useMemo, useRef, useState } from 'react'
-import { CATALYSTS, HEAT, MONEY, NUTRIENTS, STEAM, coinValue, heightMultiplier, itemName, itemsByKey } from '../lib/gameData'
+import { CATALYSTS, HEAT, MONEY, NUTRIENTS, coinValue, heightMultiplier, itemName, itemsByKey } from '../lib/gameData'
 import { fmt, fmtMachines, wholeMachines } from '../lib/format'
 import { buildingNameFor, machineNameFor, noun } from '../lib/plural'
 import { sanitizeStrings } from '../lib/sanitize'
@@ -7,8 +7,10 @@ import { foldKey, usePersistentState } from '../lib/store'
 import type { BusUse, FedOverflow } from '../lib/money'
 import type { LogisticsCheck } from '../lib/logistics'
 import { COIN_STACK, itemsPerSlot, onBelt } from '../lib/machineRate'
-import { DEFAULT_BANK_STACK, MAX_BANK_STACK, STEAM_HEAT_ID, clampBankStack, type ProcessCatalog } from '../lib/processes'
+import { DEFAULT_BANK_STACK, MAX_BANK_STACK, clampBankStack, type ProcessCatalog } from '../lib/processes'
 import { branchIds, onOverflow, type TreeNode } from '../lib/tree'
+import { heatNetworks, type HeatNetwork } from '../lib/heatNetworks'
+import type { ItemLedger } from '../lib/ledger'
 import { rememberChanges, rowsById, type ProducerPick } from '../lib/choices'
 import { parentId, rowItem } from '../lib/unfold'
 import type { Separation, Unitizing } from '../lib/types'
@@ -17,7 +19,10 @@ import type { Modifiers } from '../lib/upgrades'
 import { ItemIcon, ItemLabel, SeedNote } from './ItemIcon'
 import { Money } from './Money'
 import { OverflowTargetForm } from './OverflowTargetForm'
-import { ProducerSelect, type ReuseOption } from './ProducerSelect'
+import { BusDraw, FoldedPick } from './FuelPick'
+import { HeatView } from './HeatView'
+import { ProducerSelect } from './ProducerSelect'
+import { choosable, reuseOption } from './rowPicks'
 
 interface Props {
   /** Fold state is remembered per plan. */
@@ -72,6 +77,12 @@ interface Props {
   shownTarget: { index: number; n: number } | null
   /** A row to show (unfolded, scrolled to and pulsed); `n` is bumped for every request. */
   shownRow?: { id: string; n: number } | null
+  /** What the plan's rows take from the bus, for the heat view's fuel off it. */
+  ledger: ItemLedger[]
+  /** Picks what every machine on a heat network burns. */
+  onNetworkFuel: (net: HeatNetwork, producer: string, machine?: string) => void
+  /** Picks where a heat network's fuel comes from, for all its machines at once. */
+  onNetworkSource: (net: HeatNetwork, producer: string, machine?: string) => void
 }
 
 /** A target's controls, laid into the tree row that meets it. */
@@ -131,7 +142,13 @@ export function ProductionTree({
   onAddTarget,
   shownTarget,
   shownRow = null,
+  ledger,
+  onNetworkFuel,
+  onNetworkSource,
 }: Props) {
+  // The production tree, or the plan's heat by network: a layer of its own, as in the game.
+  const [layer, setLayer] = useState<'items' | 'heat'>('items')
+  const networks = useMemo(() => heatNetworks(tree), [tree])
   const rounded = useMemo(() => new Set(roundUp), [roundUp])
   // Folded rows survive leaving the planner and reloads (row ids are stable paths).
   const [collapsedIds, setCollapsedIds] = usePersistentState<string[]>(foldKey(planId), [], sanitizeStrings)
@@ -424,6 +441,7 @@ export function ProductionTree({
     const id = (shown && drawnOn.get(shown)) ?? shown
     const ancestors = id ? byId.get(id)?.ancestors : undefined
     if (id && ancestors) {
+      setLayer('items')
       setCollapsed((c) => (ancestors.some((a) => c.has(a)) ? new Set([...c].filter((x) => !ancestors.includes(x))) : c))
       setPulse((p) => ({ id, n: (p?.n ?? 0) + 1 }))
     }
@@ -467,137 +485,172 @@ export function ProductionTree({
         <button className="compact-button primary" onClick={onAddTarget}>
           + Add target
         </button>
-        <ToolbarMenu
-          label="View"
-          items={[
-            { label: 'Expand all', hint: 'show every row', onClick: () => setCollapsed(new Set()) },
-            {
-              label: 'Collapse to targets',
-              hint: 'show just the targets and what’s built at the top of the plan',
-              onClick: () => setCollapsed(new Set(targets.flatMap((n) => branchIds(n.children)))),
-            },
-          ]}
-        />
-        <ToolbarMenu
-          label="Organize"
-          items={[
-            {
-              label: 'Build shared separately',
-              hint: onSeparateShared
-                ? 'gather every item made in more than one row, with the nearest item above all its uses (or at the top of the plan)'
-                : 'nothing is made in more than one row that could be gathered',
-              onClick: onSeparateShared,
-            },
-            {
-              label: 'Merge single uses',
-              hint: onMergeSingles
-                ? 'merge back every item built separately that has only one use'
-                : 'everything built separately has more than one use',
-              onClick: onMergeSingles,
-            },
-          ]}
-        />
-        {checklist.done > 0 && (
-          <ToolbarMenu
-            label={`${checklist.done} of ${checklist.rows} built`}
-            className="built-progress"
-            items={[
-              {
-                label: 'Fold built branches',
-                hint: 'fold every branch built all the way down, leaving what’s still to build',
-                onClick: foldBuilt,
-              },
-              {
-                label: 'Clear all marks',
-                hint: 'mark every row of this plan as not built yet',
-                onClick: () => clearRef.current?.showModal(),
-              },
-            ]}
-          />
+        <div className="layer-toggle" role="tablist" aria-label="Show">
+          <button type="button" role="tab" aria-selected={layer === 'items'} onClick={() => setLayer('items')}>
+            Items
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={layer === 'heat'}
+            title="The plan's heat by network: the machines heated by one fuel from one place"
+            onClick={() => setLayer('heat')}
+          >
+            🔥 Heat
+          </button>
+        </div>
+        {layer === 'items' && (
+          <>
+            <ToolbarMenu
+              label="View"
+              items={[
+                { label: 'Expand all', hint: 'show every row', onClick: () => setCollapsed(new Set()) },
+                {
+                  label: 'Collapse to targets',
+                  hint: 'show just the targets and what’s built at the top of the plan',
+                  onClick: () => setCollapsed(new Set(targets.flatMap((n) => branchIds(n.children)))),
+                },
+              ]}
+            />
+            <ToolbarMenu
+              label="Organize"
+              items={[
+                {
+                  label: 'Build shared separately',
+                  hint: onSeparateShared
+                    ? 'gather every item made in more than one row, with the nearest item above all its uses (or at the top of the plan)'
+                    : 'nothing is made in more than one row that could be gathered',
+                  onClick: onSeparateShared,
+                },
+                {
+                  label: 'Merge single uses',
+                  hint: onMergeSingles
+                    ? 'merge back every item built separately that has only one use'
+                    : 'everything built separately has more than one use',
+                  onClick: onMergeSingles,
+                },
+              ]}
+            />
+            {checklist.done > 0 && (
+              <ToolbarMenu
+                label={`${checklist.done} of ${checklist.rows} built`}
+                className="built-progress"
+                items={[
+                  {
+                    label: 'Fold built branches',
+                    hint: 'fold every branch built all the way down, leaving what’s still to build',
+                    onClick: foldBuilt,
+                  },
+                  {
+                    label: 'Clear all marks',
+                    hint: 'mark every row of this plan as not built yet',
+                    onClick: () => clearRef.current?.showModal(),
+                  },
+                ]}
+              />
+            )}
+          </>
         )}
       </div>
-      <div className="tree-scroll">
-        <table className="production tree">
-          <thead>
-            <tr>
-              <th>Item</th>
-              <th className="num">Rate /min</th>
-              <th>Recipe</th>
-              <th className="num">Machines</th>
-              <th className="num">Heat</th>
-              <th className="row-actions" aria-label="Row actions" />
-            </tr>
-          </thead>
-          <tbody ref={tbody}>
-            {lines.map((line) =>
-              line.kind === 'with' ? (
-                <tr
-                  className={`tree-with in-with band band-start ${line.afterBranch ? 'after-branch' : ''}`}
-                  key={`${line.anchorId}/with`}
-                  style={cardStyle(line.depth)}
-                >
-                  <td colSpan={6}>
-                    <Edges edges={line.edges} />
-                    <div className="tree-with-label" style={{ marginLeft: line.depth * 20 + 4 }}>
-                      with
-                      <span className="hint-inline">
-                        {line.anchorId === PLAN_ROOT
-                          ? 'uses gathered from all targets'
-                          : `uses gathered from below ${itemsByKey.get(line.anchor)?.name}`}
-                      </span>
-                    </div>
-                  </td>
-                </tr>
-              ) : (
-                <TreeRow
-                  key={line.node.id}
-                  topName={topName}
-                  separateByproducts={separateByproducts}
-                  node={line.node}
-                  depth={line.depth}
-                  edges={line.edges}
-                  card={line.card}
-                  afterBranch={line.afterBranch}
-                  open={!collapsed.has(line.node.id)}
-                  onToggle={() => toggle(line.node.id)}
-                  catalog={catalog}
-                  rows={rowsOf.get(line.node.item) ?? 1}
-                  rowsOf={rowsOf}
-                  onProducer={onProducer}
-                  onResetProducer={onResetProducer}
-                  onReuse={onReuse}
-                  onCatalysts={onCatalysts}
-                  onHeight={onHeight}
-                  onStack={onStack}
-                  onMixedFeed={onMixedFeed}
-                  onRemember={onRemember}
-                  onForget={onForget}
-                  savable={savable.has(line.node.id)}
-                  onSeparateMenu={openMenu}
-                  rounded={rounded.has(line.node.id)}
-                  copies={shownCopies(line.node.reusedBy ?? line.node.id)}
-                  unit={units.own.get(line.node.id)}
-                  allCopies={units.copies.get(line.node.reusedBy ?? line.node.id) ?? 1}
-                  totals={
-                    inRevealed(line.node.reusedBy ?? line.node.id) && (units.copies.get(line.node.reusedBy ?? line.node.id) ?? 1) > 1
-                  }
-                  pinned={pinned === line.node.id}
-                  onReveal={reveal}
-                  fed={fed}
-                  onUseOverflow={onUseOverflow}
-                  onMachinesMenu={openMachinesMenu}
-                  logistics={logistics}
-                  mods={mods}
-                  link={link}
-                  target={slotByRow.get(line.node.id)}
-                  built={checkState(line.node)}
-                  onCheck={checkRow}
-                />
-              ),
-            )}
-          </tbody>
-        </table>
-      </div>
+      {layer === 'heat' ? (
+        <HeatView
+          networks={networks}
+          ledger={ledger}
+          catalog={catalog}
+          mods={mods}
+          onProducer={onProducer}
+          onResetProducer={onResetProducer}
+          onReuse={onReuse}
+          separateByproducts={separateByproducts}
+          rowsOf={rowsOf}
+          onShow={show}
+          onNetworkFuel={onNetworkFuel}
+          onNetworkSource={onNetworkSource}
+        />
+      ) : (
+        <div className="tree-scroll">
+          <table className="production tree">
+            <thead>
+              <tr>
+                <th>Item</th>
+                <th className="num">Rate /min</th>
+                <th>Recipe</th>
+                <th className="num">Machines</th>
+                <th className="num">Heat</th>
+                <th className="row-actions" aria-label="Row actions" />
+              </tr>
+            </thead>
+            <tbody ref={tbody}>
+              {lines.map((line) =>
+                line.kind === 'with' ? (
+                  <tr
+                    className={`tree-with in-with band band-start ${line.afterBranch ? 'after-branch' : ''}`}
+                    key={`${line.anchorId}/with`}
+                    style={cardStyle(line.depth)}
+                  >
+                    <td colSpan={6}>
+                      <Edges edges={line.edges} />
+                      <div className="tree-with-label" style={{ marginLeft: line.depth * 20 + 4 }}>
+                        with
+                        <span className="hint-inline">
+                          {line.anchorId === PLAN_ROOT
+                            ? 'uses gathered from all targets'
+                            : `uses gathered from below ${itemsByKey.get(line.anchor)?.name}`}
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  <TreeRow
+                    key={line.node.id}
+                    topName={topName}
+                    separateByproducts={separateByproducts}
+                    node={line.node}
+                    depth={line.depth}
+                    edges={line.edges}
+                    card={line.card}
+                    afterBranch={line.afterBranch}
+                    open={!collapsed.has(line.node.id)}
+                    onToggle={() => toggle(line.node.id)}
+                    catalog={catalog}
+                    rows={rowsOf.get(line.node.item) ?? 1}
+                    rowsOf={rowsOf}
+                    onProducer={onProducer}
+                    onResetProducer={onResetProducer}
+                    onReuse={onReuse}
+                    onCatalysts={onCatalysts}
+                    onHeight={onHeight}
+                    onStack={onStack}
+                    onMixedFeed={onMixedFeed}
+                    onRemember={onRemember}
+                    onForget={onForget}
+                    savable={savable.has(line.node.id)}
+                    onSeparateMenu={openMenu}
+                    rounded={rounded.has(line.node.id)}
+                    copies={shownCopies(line.node.reusedBy ?? line.node.id)}
+                    unit={units.own.get(line.node.id)}
+                    allCopies={units.copies.get(line.node.reusedBy ?? line.node.id) ?? 1}
+                    totals={
+                      inRevealed(line.node.reusedBy ?? line.node.id) && (units.copies.get(line.node.reusedBy ?? line.node.id) ?? 1) > 1
+                    }
+                    pinned={pinned === line.node.id}
+                    onReveal={reveal}
+                    fed={fed}
+                    onUseOverflow={onUseOverflow}
+                    onMachinesMenu={openMachinesMenu}
+                    logistics={logistics}
+                    mods={mods}
+                    link={link}
+                    target={slotByRow.get(line.node.id)}
+                    built={checkState(line.node)}
+                    onCheck={checkRow}
+                  />
+                ),
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <div
         ref={menuRef}
@@ -1138,24 +1191,14 @@ function TreeRow({
             {node.folded?.map((f) => (
               <div key={f.id} className="note-line fuel-pick">
                 {FOLDED_VERB[f.item].glyph} {FOLDED_VERB[f.item].does}
-                <ProducerSelect
-                  item={f.item}
-                  current={{ producer: f.producer, process: f.run?.process }}
+                <FoldedPick
+                  row={f}
+                  host={node.item}
+                  rows={rowsOf.get(f.item) ?? 1}
                   catalog={catalog}
-                  onChange={(producer, machine, everywhere) => onProducer({ item: f.item, producer, machine, row: f.id, everywhere })}
-                  // A boiler's fuel is its own: the plan-wide pick for heat is about Steam (see the bus panel).
-                  branch={{ rows: node.item === STEAM ? 1 : (rowsOf.get(f.item) ?? 1), own: f.ownChoice, mine: false, onReset: () => onResetProducer(f.id) }}
-                  noImport
-                  oneLine
-                  link
-                  // A boiler heated with Steam would only turn Steam into Steam, slower.
-                  exclude={node.item === STEAM ? [STEAM_HEAT_ID] : undefined}
+                  onProducer={onProducer}
+                  onResetProducer={onResetProducer}
                 />
-                {f.item === HEAT && (
-                  <span className="hint-inline" title="Furnaces and heating pads pass the heat on without loss, however many machines share one">
-                    {f.run?.process.id === STEAM_HEAT_ID ? 'on Steam Heating Pads' : 'in furnaces'}
-                  </span>
-                )}
                 {f.children.map((d) => (
                   <BusDraw
                     key={d.id}
@@ -1695,72 +1738,6 @@ const isFolded = (n: TreeNode) => n.item === HEAT || n.item === NUTRIENTS || n.i
  * reads on the line picking what the row burns, spreads or pays with rather than as a row.
  */
 const isDraw = (n: TreeNode) => n.kind === 'bus' && !n.children.length && n.fromByproduct <= 1e-9 && !n.consolidated
-
-/**
- * Rows taking by-products, set not to, or offered some by rows making their own can switch taking
- * them first on or off; the producer makes the rest either way.
- */
-function reuseOption(
-  node: TreeNode,
-  separateByproducts: Map<string, string[]>,
-  onReuse: (item: string, on: boolean, row?: string) => void,
-): ReuseOption | undefined {
-  const separately = separateByproducts.get(node.item)
-  if (!(node.fromByproduct > 0 || !node.reuse || node.reuseChosen || separately)) return undefined
-  return {
-    on: node.reuse && (node.fromByproduct > 0 || node.reuseChosen),
-    covered: node.kind === 'byproduct',
-    sources:
-      node.fromByproduct > 0
-        ? node.byproductSources.map((s) => s.label).join(', ')
-        : (separately?.map((s) => `${s} (made separately)`).join(', ') ?? ''),
-    onChange: (on, everywhere) => onReuse(node.item, on, everywhere ? undefined : node.id),
-  }
-}
-
-/**
- * A fuel, fertilizer or coin taken off the bus, on the line where its row picks it: how much, and
- * the pick to make it in the plan instead (it gets a row of its own then).
- */
-function BusDraw({
-  node,
-  catalog,
-  reuse,
-  onProducer,
-  onResetProducer,
-}: {
-  node: TreeNode
-  catalog: ProcessCatalog
-  reuse: ReuseOption | undefined
-  onProducer: (pick: ProducerPick) => void
-  onResetProducer: (row: string) => void
-}) {
-  return (
-    <span className="bus-draw" data-node-id={node.id}>
-      <span className="num">{fmt(node.rate)}/min</span>
-      {choosable(node, catalog, reuse) ? (
-        <ProducerSelect
-          item={node.item}
-          current={{ producer: node.producer, process: node.run?.process }}
-          catalog={catalog}
-          onChange={(producer, machine, everywhere) => onProducer({ item: node.item, producer, machine, row: node.id, everywhere })}
-          // What a row burns or spreads follows its branch only: plan-wide picks are for ingredients.
-          branch={{ rows: 1, own: node.ownChoice, mine: node.mine, onReset: () => onResetProducer(node.id) }}
-          reuse={reuse}
-          oneLine
-          link
-        />
-      ) : (
-        <span className="hint-inline">from the bus</span>
-      )}
-      {node.shortfall > 0 && <span className="warn-text">short by {fmt(node.shortfall)}/min</span>}
-    </span>
-  )
-}
-
-/** A row offers a pick of how its item is had. */
-const choosable = (node: TreeNode, catalog: ProcessCatalog, reuse: ReuseOption | undefined) =>
-  !!node.producer && ((catalog.byProduct.get(node.item)?.length ?? 0) > 0 || !!reuse)
 
 /** How a folded row reads: on the row it's folded into, and on the fuel, fertilizer or coin row below it. */
 const FOLDED_VERB: Record<string, { glyph: string; does: string; done: string; title: string }> = {

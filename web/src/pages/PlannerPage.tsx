@@ -7,6 +7,8 @@ import { OverflowTargetForm } from '../components/OverflowTargetForm'
 import { ProducerSelect, TierTag } from '../components/ProducerSelect'
 import { BookmarkIcon, ProductionTree, type TargetSlot } from '../components/ProductionTree'
 import { ledgers, targetFedBack, type DrawUse, type ItemLedger } from '../lib/ledger'
+import { setNetworkFuel, setNetworkSource } from '../lib/heatChoices'
+import type { HeatNetwork } from '../lib/heatNetworks'
 import {
   HEAT,
   MAX_TIER,
@@ -149,6 +151,10 @@ export function PlannerPage({
 
   const setProducer = (pick: ProducerPick) =>
     onUpdatePlan(`Change how ${itemName(pick.item)} is made`, (p) => chooseProducer(p, catalog, pick))
+  const setNetworkBurn = (net: HeatNetwork, producer: string, machine?: string) =>
+    onUpdatePlan(`Change what a ${itemName(net.fuel)} heat network burns`, (p) => setNetworkFuel(p, catalog, net, producer, machine))
+  const setNetworkSupply = (net: HeatNetwork, producer: string, machine?: string) =>
+    onUpdatePlan(`Change where a ${itemName(net.fuel)} heat network gets its fuel`, (p) => setNetworkSource(p, catalog, net, producer, machine))
   const resetProducer = (row: string) => onUpdatePlan(`Reset the pick for ${rowName(row)}`, (p) => clearBranchChoice(p, row))
   const setReuse = (item: string, on: boolean, row?: string) =>
     onUpdatePlan(`${on ? 'Reuse' : 'Stop reusing'} ${itemName(item)} by-products`, (p) => chooseReuse(p, item, on, row))
@@ -607,6 +613,9 @@ export function PlannerPage({
                   key={plan.id}
                   planId={plan.id}
                   tree={result.tree}
+                  ledger={ledger}
+                  onNetworkFuel={setNetworkBurn}
+                  onNetworkSource={setNetworkSupply}
                   catalog={catalog}
                   onProducer={setProducer}
                   onResetProducer={resetProducer}

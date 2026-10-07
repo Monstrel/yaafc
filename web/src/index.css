@@ -1378,6 +1378,119 @@ tr.idle {
   margin-bottom: 8px;
 }
 
+/* Items | Heat: which layer of the plan the tree shows. */
+.layer-toggle {
+  display: inline-flex;
+}
+
+.layer-toggle button {
+  padding: 3px 10px;
+  font-size: 13px;
+}
+
+.layer-toggle button:first-child {
+  border-radius: 8px 0 0 8px;
+}
+
+.layer-toggle button:last-child {
+  border-radius: 0 8px 8px 0;
+  margin-left: -1px;
+}
+
+.layer-toggle button[aria-selected='true'] {
+  position: relative;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* The heat layer: one card per network. */
+.heat-view {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.heat-net {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  padding: 10px 12px;
+  scroll-margin-top: 12px;
+}
+
+.heat-net-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 4px 16px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.heat-net-head .hint-inline {
+  margin-left: 8px;
+  font-weight: 400;
+}
+
+.heat-net-totals {
+  display: flex;
+  gap: 14px;
+  font-weight: 400;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.heat-net-totals strong {
+  color: var(--text);
+}
+
+.heat-net-source {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 2px 0 8px;
+}
+
+.heat-uses {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.heat-uses th {
+  text-align: left;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.heat-uses td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.heat-uses tr:last-child td {
+  border-bottom: none;
+}
+
+.heat-uses .num {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.heat-trail {
+  max-width: 340px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.heat-picks {
+  font-size: 13px;
+}
+
 .compact-button {
   padding: 3px 10px;
   font-size: 13px;
