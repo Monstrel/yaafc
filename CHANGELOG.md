@@ -8,6 +8,21 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
+## 2026-10-07T20:45Z
+
+- A new flow chart shows a row and everything that goes into it, left to right from raw
+  materials to product. Open it with the flow chart button at the end of any row with
+  ingredients. Lines are thicker the more they carry, and are coloured like the game's output
+  arrows: gold for a machine's product, blue for its other outputs (such as an Athanor's failed
+  products), grey for what comes off the bus.
+- Loops and by-products that cross between branches run in lanes of their own, so they never
+  hide behind a box. Each loop is marked, and the side panel lists what it takes in and gives out.
+- Items built separately join the chart wherever they're built in the plan, with a tag for how
+  much they send to other parts of the plan.
+- The chart opens 4 levels deep; Levels −/+/All shows more or less, and "more rows" on a box
+  opens the chart from there. Drag to pan, Ctrl + scroll or pinch to zoom, and click a box to
+  find its row in the plan.
+
 ## 2026-10-07T19:08Z
 
 - A new 🔥 Heat layer, next to Items above the plan, shows the plan's heat by network: the

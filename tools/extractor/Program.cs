@@ -47,6 +47,9 @@ if (mode == "schema")
         foreach (var prop in schema.Properties.Values.OrderBy(p => p.Index))
             Console.WriteLine($"  {prop.Name}: {prop.MappingType.Type}{(prop.MappingType.StructType is { } s ? $"<{s}>" : "")}{(prop.MappingType.InnerType is { } i ? $"<{i.Type}{(i.StructType is { } si ? $":{si}" : "")}>" : "")}");
     }
+    // Enums too, with their values.
+    foreach (var (name, values) in provider.MappingsForGame.Enums.Where(e => filterSchema.IsMatch(e.Key)).OrderBy(e => e.Key))
+        Console.WriteLine($"enum {name}: {string.Join(", ", values.OrderBy(v => v.Key).Select(v => $"{v.Value}={v.Key}"))}");
     return;
 }
 

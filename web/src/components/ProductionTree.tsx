@@ -21,6 +21,7 @@ import { ItemIcon, ItemLabel, SeedNote } from './ItemIcon'
 import { Money } from './Money'
 import { OverflowTargetForm } from './OverflowTargetForm'
 import { BusDraw, FoldedPick } from './FuelPick'
+import { FlowChartView } from './FlowChartView'
 import { HeatView } from './HeatView'
 import { ProducerSelect } from './ProducerSelect'
 import { choosable, reuseOption } from './rowPicks'
@@ -355,6 +356,8 @@ export function ProductionTree({
     setCollapsed((c) => new Set([...c, ...fold]))
   }
   const clearRef = useRef<HTMLDialogElement>(null)
+  // The flow chart overlay, opened from a row.
+  const [flowRoot, setFlowRoot] = useState<string | null>(null)
 
   // A unit's ×N badge shows its branch's totals while hovered, or from a click until the next one.
   const [hovered, setHovered] = useState<string | null>(null)
@@ -633,6 +636,7 @@ export function ProductionTree({
                     onForget={onForget}
                     savable={savable.has(line.node.id)}
                     onSeparateMenu={openMenu}
+                    onFlowChart={setFlowRoot}
                     rounded={rounded.has(line.node.id)}
                     copies={shownCopies(line.node.reusedBy ?? line.node.id)}
                     unit={units.own.get(line.node.id)}
@@ -811,6 +815,8 @@ export function ProductionTree({
         )}
       </div>
 
+      {flowRoot && <FlowChartView tree={tree} rootId={flowRoot} onClose={() => setFlowRoot(null)} onShow={show} />}
+
       <dialog ref={clearRef} className="tree-dialog">
         <h3>Clear all built marks?</h3>
         <p>
@@ -862,6 +868,7 @@ function TreeRow({
   onForget,
   savable,
   onSeparateMenu,
+  onFlowChart,
   rounded,
   copies,
   unit,
@@ -918,6 +925,8 @@ function TreeRow({
   /** Using it as my default would change something (else it's made the saved or built-in way). */
   savable: boolean
   onSeparateMenu: (node: TreeNode, button: HTMLElement) => void
+  /** Opens the flow chart of the row's branch. */
+  onFlowChart: (row: string) => void
   /** The row runs on a whole number of machines, rounded up. */
   rounded: boolean
   /** Copies of the row its numbers are split over (1 = the whole row, as when its unit's totals show). */
@@ -989,6 +998,7 @@ function TreeRow({
         <td className="row-actions">
           <span className="target-actions">{target.move}</span>
           <span className="row-action-slot">{target.remove}</span>
+          <span className="row-action-slot" />
           <span className="row-action-slot" />
         </td>
       </tr>
@@ -1483,6 +1493,20 @@ function TreeRow({
               )
             ))}
         </span>
+        <span className="row-action-slot">
+          {node.kind === 'produce' && whole.children.length > 0 && (
+            <button
+              type="button"
+              className="tree-action"
+              title={`Flow chart: ${name} and what goes into it, loops and by-products included`}
+              aria-label={`Show the flow chart of ${name}`}
+              aria-haspopup="dialog"
+              onClick={() => onFlowChart(whole.id)}
+            >
+              <FlowIcon />
+            </button>
+          )}
+        </span>
       </td>
     </tr>
   )
@@ -1505,6 +1529,29 @@ export function BookmarkIcon({ filled = false }: { filled?: boolean }) {
       style={{ verticalAlign: '-2px' }}
     >
       <path d="M4 2.5h8a.5.5 0 0 1 .5.5v10.5L8 10.5l-4.5 3V3a.5.5 0 0 1 .5-.5Z" />
+    </svg>
+  )
+}
+
+/** Boxes joined left to right: a row's flow chart. */
+function FlowIcon() {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      width="14"
+      height="14"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      style={{ verticalAlign: '-2px' }}
+    >
+      <rect x="1.5" y="2" width="4" height="3.5" rx="1" />
+      <rect x="1.5" y="10.5" width="4" height="3.5" rx="1" />
+      <rect x="10.5" y="6.25" width="4" height="3.5" rx="1" />
+      <path d="M5.5 3.75h1.5a1.5 1.5 0 0 1 1.5 1.5v5.5a1.5 1.5 0 0 1-1.5 1.5H5.5M8.5 8h2" />
     </svg>
   )
 }
