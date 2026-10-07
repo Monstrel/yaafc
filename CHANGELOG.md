@@ -8,6 +8,26 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
+## 2026-10-07T19:08Z
+
+- A new 🔥 Heat layer, next to Items above the plan, shows the plan's heat by network: the
+  machines heated by one fuel from one place, biggest first. Changing what a network burns, or
+  where its fuel comes from, changes it for every machine on it at once.
+- Paradox Crucibles can also refine the by-products of the machines making their input, such as
+  Gentian Nectar from Gentian nurseries, so those machines run only for what's left instead of
+  overflowing. Switch it on per crucible row; the row shows the blend and how many crucibles each
+  input gets. "Use as my default" saves it, and a row can turn it off for itself.
+- Rows and panels glide to where a change puts them, and the row you just clicked stays in place
+  on screen while the plan re-sorts around it. Building a row separately follows it to where it's
+  gathered.
+- Each row's ingredients are listed smallest branch first.
+- Fuel a row takes straight off the bus now shows on that row's line, next to what it burns,
+  instead of as a row of its own.
+- A target's amount and unit sit under its item, so the Rate column is narrower and shows the
+  target's rate like any other row.
+- A target's row is now called "… target" where a by-product feeds it.
+- Fixed: building fuel rows separately now gathers them.
+
 ## 2026-10-07T03:31Z
 
 - The sand tiers a Refiner makes now have their own names. The game calls them all "Refined Sand",
