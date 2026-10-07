@@ -909,10 +909,13 @@ function TreeRow({
           <Edges edges={edges} />
           <div className="tree-cell" style={{ paddingLeft: depth * 20 }}>
             <span className="fold-spacer" />
-            {target.item}
+            <div className="target-head">
+              {target.item}
+              {target.amount}
+            </div>
           </div>
         </td>
-        <td className="num rate-cell">{target.amount}</td>
+        <td className="num rate-cell" />
         <td>{target.notes}</td>
         <td colSpan={2} />
         <td className="row-actions">
@@ -1036,7 +1039,15 @@ function TreeRow({
               {built === true ? <CheckIcon /> : built === 'mixed' ? <span className="built-mixed" aria-hidden /> : null}
             </button>
           )}
-          {target ? target.item : <ItemLabel item={node.item} />}
+          {target ? (
+            // Its amount sits under the item, not in the Rate column, so it doesn't widen that column.
+            <div className="target-head">
+              {target.item}
+              {target.amount}
+            </div>
+          ) : (
+            <ItemLabel item={node.item} />
+          )}
           {unit && (
             <button
               type="button"
@@ -1057,7 +1068,7 @@ function TreeRow({
         </div>
       </td>
       <td className="num rate-cell">
-        {target ? target.amount : fmt(node.rate)}
+        {fmt(node.rate)}
         {beltsNeeded > 1 && (
           <div className="machine-meta" title={`${fmt(mods.beltSpeed)} items/min per belt`}>
             {beltsNeeded} belts

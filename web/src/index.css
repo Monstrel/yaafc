@@ -1584,9 +1584,16 @@ tr.kind-separate .item-label .name {
   font-weight: 600;
 }
 
+/* A target's item with its amount and unit under it, leaving the Rate column to the made rate. */
+.target-head {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
 .target-amount {
   display: flex;
-  justify-content: flex-end;
   gap: 4px;
   font-weight: normal;
 }

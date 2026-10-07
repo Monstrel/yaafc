@@ -1416,11 +1416,6 @@ function TargetAmount({
           )}
         </select>
       </div>
-      {unit === 'machines' && perMachine !== null && (
-        <div className="machine-meta" title={`${fmt(perMachine)}/min each`}>
-          = {fmt(made)}/min
-        </div>
-      )}
       {unit === 'net' && absorbs && (
         <>
           <div className="machine-meta" title="Made in all: the net amount, plus what the plan takes of it in place of the bus">
