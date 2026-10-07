@@ -3,6 +3,7 @@ import { CATALYSTS, HEAT, MONEY, NUTRIENTS, coinValue, heightMultiplier, itemNam
 import { fmt, fmtMachines, wholeMachines } from '../lib/format'
 import { buildingNameFor, machineNameFor, noun } from '../lib/plural'
 import { sanitizeStrings } from '../lib/sanitize'
+import { followScrollAnchor, releaseScrollAnchor } from '../lib/flip'
 import { foldKey, usePersistentState } from '../lib/store'
 import type { BusUse, FedOverflow } from '../lib/money'
 import type { LogisticsCheck } from '../lib/logistics'
@@ -383,12 +384,16 @@ export function ProductionTree({
     menuRef.current?.hidePopover()
     const count = all.filter((e) => e.node.kind === 'produce' && e.node.item === anchor.item).length
     if (count > 1) setConfirm({ node, anchor, count, moving })
-    else onSeparate({ item: node.item, anchor: anchor.item }, true, node.id, moving)
+    else {
+      followGathered(node.item, anchor)
+      onSeparate({ item: node.item, anchor: anchor.item }, true, node.id, moving)
+    }
   }
   const decide = (choice: AnchorDecision) => {
     dialogRef.current?.close()
     if (!confirm || choice === 'cancel') return
     const { node, anchor, moving } = confirm
+    followGathered(node.item, anchor)
     if (choice === 'lift') onSeparate({ item: anchor.item }, true, anchor.id)
     onSeparate({ item: node.item, anchor: anchor.item, ...(choice === 'one' && { at: anchor.id }) }, true, node.id, moving)
   }
@@ -422,6 +427,7 @@ export function ProductionTree({
     const row = tbody.current?.querySelector<HTMLElement>(`[data-node-id="${CSS.escape(pulse.id)}"]`)
     if (!row) return
     const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    releaseScrollAnchor()
     row.scrollIntoView({ block: 'center', behavior: still ? 'auto' : 'smooth' })
     row.classList.remove('pulse')
     void row.offsetWidth // restart the animation
@@ -481,7 +487,7 @@ export function ProductionTree({
 
   return (
     <>
-      <div className="tree-toolbar">
+      <div className="tree-toolbar" data-flip="tree-toolbar">
         <button className="compact-button primary" onClick={onAddTarget}>
           + Add target
         </button>
@@ -586,6 +592,7 @@ export function ProductionTree({
                   <tr
                     className={`tree-with in-with band band-start ${line.afterBranch ? 'after-branch' : ''}`}
                     key={`${line.anchorId}/with`}
+                    data-flip={`with:${line.anchorId}`}
                     style={cardStyle(line.depth)}
                   >
                     <td colSpan={6}>
@@ -673,6 +680,7 @@ export function ProductionTree({
                 role="menuitem"
                 onClick={() => {
                   menuRef.current?.hidePopover()
+                  followGathered(menu.node.item)
                   onSeparate({ item: menu.node.item }, true, menu.node.id, menu.moving)
                 }}
               >
@@ -943,7 +951,7 @@ function TreeRow({
   })
   if (node.id === PLAN_ROOT)
     return (
-      <tr data-node-id={node.id} className="kind-plan depth-0 band band-start" style={bandStyle(edgeX(0))}>
+      <tr data-node-id={node.id} data-flip={`row:${node.id}`} className="kind-plan depth-0 band band-start" style={bandStyle(edgeX(0))}>
         <td className="tree-item">
           <Edges edges={edges} />
           <div className="tree-cell">
@@ -961,6 +969,7 @@ function TreeRow({
     return (
       <tr
         data-node-id={node.id}
+        data-flip={`row:${node.id}`}
         className={`kind-target target band band-start depth-${Math.min(depth, 1)} ${afterBranch ? 'after-branch' : ''}`}
         style={bandStyle(edgeX(depth))}
       >
@@ -1054,6 +1063,7 @@ function TreeRow({
   return (
     <tr
       data-node-id={node.id}
+      data-flip={`row:${node.id}`}
       className={`kind-${node.kind} depth-${Math.min(depth, 1)} ${node.rate === 0 ? 'idle' : ''} ${totals ? 'unit-totals' : ''} ${built === true ? 'built' : ''} ${band} ${afterBranch ? 'after-branch' : ''}`}
       style={
         target
@@ -1688,6 +1698,25 @@ type Line =
 const PLAN_ROOT = 'plan'
 /** The root of an item built at the top of the plan (not a row inside it). */
 const isTopGroupId = (id: string) => /^separate\/[^/]+$/.test(id)
+
+/**
+ * Building `item` separately (or moving it) with `anchor`, or at the top of the plan: the page
+ * follows the row to the one that gathers it, under the anchor row picked if it's there, else under
+ * the first row of the anchor's item (it's built under each of them, or lifted to the top).
+ */
+function followGathered(item: string, anchor?: TreeNode) {
+  followScrollAnchor((fresh) => {
+    const rows = fresh.filter((k) => k.startsWith('row:')).map((k) => k.slice(4))
+    const gathers = rows.filter((id) => {
+      const above = parentId(id)
+      return anchor
+        ? id.endsWith(`/with:${item}`) && above !== null && rowItem(above) === anchor.item
+        : id === `separate/${item}`
+    })
+    const row = gathers.find((id) => parentId(id) === anchor?.id) ?? gathers[0]
+    return row && `row:${row}`
+  })
+}
 
 /** A row whose own machines get built in the game: only these can be marked built. */
 const hasMachines = (n: TreeNode) => n.kind === 'produce' && !!n.run?.process.machine

@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useMemo, useOptimistic, useState, type ReactNode } from 'react'
+import { startTransition, useEffect, useMemo, useOptimistic, useRef, useState, type ReactNode } from 'react'
 import { ItemIcon, ItemLabel } from '../components/ItemIcon'
 import { ItemPicker } from '../components/ItemPicker'
 import { Exp } from '../components/Exp'
@@ -7,6 +7,7 @@ import { OverflowTargetForm } from '../components/OverflowTargetForm'
 import { ProducerSelect, TierTag } from '../components/ProducerSelect'
 import { BookmarkIcon, ProductionTree, type TargetSlot } from '../components/ProductionTree'
 import { ledgers, targetFedBack, type DrawUse, type ItemLedger } from '../lib/ledger'
+import { useFlip } from '../lib/flip'
 import { setNetworkFuel, setNetworkSource } from '../lib/heatChoices'
 import type { HeatNetwork } from '../lib/heatNetworks'
 import {
@@ -64,7 +65,7 @@ import type { OverflowUse, PlanResult, ResolvedTarget, SupplyUse } from '../lib/
 import { separationsOf } from '../lib/separate'
 import { canSeparateShared, mergeSingleUses, separateShared, setSeparation } from '../lib/separateAll'
 import { buildingNameFor, machineNameFor, noun } from '../lib/plural'
-import { BOILER_HEAT, BUS, IMPORT, planProducer, rowItem } from '../lib/unfold'
+import { BOILER_HEAT, BUS, IMPORT, parentId, planProducer, rowItem } from '../lib/unfold'
 import { dropUnits, setUnits, unitScales } from '../lib/units'
 import type { TreeNode } from '../lib/tree'
 import { usePersistentState } from '../lib/store'
@@ -105,6 +106,12 @@ const NO_ROWS: string[] = []
 /** A tree row's name in undo's list. */
 const rowName = (row: string) => itemName(rowItem(row))
 
+/** A tree row gone from the plan is held in place by the row above it. */
+const flipParent = (key: string) => {
+  const above = key.startsWith('row:') ? parentId(key.slice(4)) : null
+  return above === null ? null : `row:${above}`
+}
+
 /** Stands in until the plan's first solve comes back. */
 const UNSOLVED: PlanResult = { status: 'ok', targets: [], runs: [], balances: [], tree: [] }
 
@@ -124,6 +131,9 @@ export function PlannerPage({
 }: Props) {
   const { mods, catalog } = model
   const result = model.result ?? UNSOLVED
+  // Panels and rows glide to where a change puts them, around the one just used.
+  const main = useRef<HTMLElement>(null)
+  useFlip(main, flipParent)
   // Forget recipe, machine, catalyst, branch and build-separately picks for anything that has left
   // the plan (and build-separately picks that no longer gather anything).
   useEffect(() => {
@@ -441,7 +451,7 @@ export function PlannerPage({
           <MyDefaultsPanel defaults={myDefaults} catalog={catalog} onForget={forget} />
         </aside>
 
-        <main className="planner-main">
+        <main className="planner-main" ref={main}>
           <div className="plan-bar panel">
             <select value={plan.id} onChange={(e) => onSelectPlan(e.target.value)} aria-label="Plan">
               {plans.map((p) => (
@@ -463,7 +473,7 @@ export function PlannerPage({
             </button>
           </div>
 
-          {result.status !== 'ok' && <div className="panel warning">Could not solve this plan: {result.message}</div>}
+          {result.status !== 'ok' && <div className="panel warning" data-flip="unsolved">Could not solve this plan: {result.message}</div>}
 
           {!model.result ? (
             <div className="panel empty-state" aria-busy>
@@ -471,7 +481,7 @@ export function PlannerPage({
             </div>
           ) : (
             <>
-              <section className="summary">
+              <section className="summary" data-flip="summary">
                 <div className="stat">
                   <span className="stat-glyph">🔥</span>
                   <div>
@@ -516,7 +526,7 @@ export function PlannerPage({
               </section>
 
               {deficits.length > 0 && (
-                <div className="panel warning">
+                <div className="panel warning" data-flip="deficits">
                   <strong>Can't be met.</strong> The chosen recipes can't supply these items (usually a loop that consumes as much
                   as it makes, or more than the bus carries of them). Pick a different recipe for them, or raise what the bus carries:
                   <ul>
@@ -530,7 +540,7 @@ export function PlannerPage({
               )}
 
               {runaways.length > 0 && (
-                <div className="panel warning">
+                <div className="panel warning" data-flip="runaways">
                   <strong>Overflow loop runs away.</strong> These overflow targets overflow at least as much as they take, so
                   they would need an endless factory. They make nothing until their recipes change or they become standard
                   targets:
@@ -546,7 +556,7 @@ export function PlannerPage({
               )}
 
               {beyond.length > 0 && (
-                <div className="panel notice">
+                <div className="panel notice" data-flip="beyond">
                   <strong>Beyond research tier {tierName(catalog.tier)}.</strong> These steps need research you haven&apos;t
                   reached yet. Pick another recipe for them, or plan ahead for the tier:
                   <ul className="flow-list notice-list">
@@ -562,7 +572,7 @@ export function PlannerPage({
               )}
 
               {beltLimited.length > 0 && (
-                <div className="panel notice">
+                <div className="panel notice" data-flip="belts">
                   <strong>Input belts can&apos;t keep up.</strong> At {fmt(mods.beltSpeed)} items/min per belt these machines
                   need more input belts than they have, so they run starved and you need more of them:
                   <ul className="logistics-list">
@@ -607,8 +617,8 @@ export function PlannerPage({
                 altar={machineTier(KNOWLEDGE_ALTAR) <= catalog.tier ? mods : null}
               />
 
-              <section className="panel tree-panel">
-                <h2>Production</h2>
+              <section className="panel tree-panel" data-flip="tree">
+                <h2 data-flip="tree-title">Production</h2>
                 <ProductionTree
                   key={plan.id}
                   planId={plan.id}
@@ -662,7 +672,7 @@ export function PlannerPage({
                 />
               </section>
 
-              <div className="two-col">
+              <div className="two-col" data-flip="totals">
                 <section className="panel">
                   <h2>Buildings</h2>
                   <ul className="flow-list">
@@ -771,7 +781,7 @@ function BusPanel({
   // strip shows them. A cap the user set keeps its line, so it isn't hidden away.
   const drawing = ledgers.filter((l) => l.bus > 0 || l.short > 0 || l.covered === 0 || l.cap !== null)
   return (
-    <section className="panel ledger">
+    <section className="panel ledger" data-flip="bus">
       <h2>Bus</h2>
       <div className="bus-flow">
       <div className="ledger-columns">

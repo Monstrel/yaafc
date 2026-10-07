@@ -10,6 +10,7 @@ import type { TreeNode } from '../lib/tree'
 import { BUS } from '../lib/unfold'
 import type { Modifiers } from '../lib/upgrades'
 import { FoldedPick, SourcePick } from './FuelPick'
+import { releaseScrollAnchor } from '../lib/flip'
 import { ItemLabel } from './ItemIcon'
 import { ProducerSelect } from './ProducerSelect'
 import { reuseOption } from './rowPicks'
@@ -76,7 +77,7 @@ function Network({
   const above = source.kind === 'row' ? heatedBy.get(source.row.id) : undefined
   const first = net.uses[0]
   return (
-    <section className="heat-net" id={cardId(net.key)}>
+    <section className="heat-net" id={cardId(net.key)} data-flip={`net:${net.key}`}>
       <header className="heat-net-head">
         <div>
           <ItemLabel item={net.fuel} size={20} />
@@ -146,7 +147,10 @@ function Network({
                 <button
                   type="button"
                   className="tree-link"
-                  onClick={() => document.getElementById(cardId(above.key))?.scrollIntoView({ block: 'start', behavior: 'smooth' })}
+                  onClick={() => {
+                    releaseScrollAnchor()
+                    document.getElementById(cardId(above.key))?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+                  }}
                 >
                   {itemName(above.fuel)} {above.source.kind === 'bus' ? 'from the bus' : 'made in the plan'}
                 </button>
@@ -175,7 +179,7 @@ function Network({
         </thead>
         <tbody>
           {net.uses.map((u) => (
-            <Use key={u.heatRow.id} use={u} onShow={onShow} {...picks} />
+            <Use key={u.heatRow.id} flip={`net:${net.key}/${u.heatRow.id}`} use={u} onShow={onShow} {...picks} />
           ))}
         </tbody>
       </table>
@@ -184,6 +188,7 @@ function Network({
 }
 
 function Use({
+  flip,
   use,
   onShow,
   catalog,
@@ -192,13 +197,13 @@ function Use({
   onReuse,
   separateByproducts,
   rowsOf,
-}: Omit<Props, 'networks' | 'ledger' | 'mods' | 'onNetworkFuel' | 'onNetworkSource'> & { use: HeatUse }) {
+}: Omit<Props, 'networks' | 'ledger' | 'mods' | 'onNetworkFuel' | 'onNetworkSource'> & { flip: string; use: HeatUse }) {
   const { row, heatRow, fuelRow, trail } = use
   const path = trail.map((n) => itemName(n.item))
   const shown = path.length > 3 ? ['…', ...path.slice(-3)] : path
   const pickProps = { catalog, onProducer, onResetProducer }
   return (
-    <tr>
+    <tr data-flip={flip}>
       <td>{machinesOf(row)}</td>
       <td>
         <ItemLabel item={row.item} size={18} />
