@@ -173,6 +173,11 @@ export function ProductionTree({
     return out
   }, [view])
   const byId = useMemo(() => new Map(all.map((e) => [e.node.id, e])), [all])
+  // Fuel, fertilizer and coins taken off the bus, shown on the row they're for: the row it is.
+  const drawnOn = useMemo(
+    () => new Map(all.flatMap(({ node }) => (node.folded ?? []).flatMap((f) => f.children.map((d) => [d.id, node.id] as const)))),
+    [all],
+  )
   // Forget folds on rows that left the plan (but not while it fails to solve and shows nothing).
   useEffect(() => {
     if (byId.size) setCollapsedIds((ids) => (ids.every((id) => byId.has(id)) ? ids : ids.filter((id) => byId.has(id))))
@@ -181,7 +186,7 @@ export function ProductionTree({
   const rowsOf = useMemo(() => {
     const counts = new Map<string, number>()
     for (const { node } of all)
-      for (const n of [node, ...(node.folded ?? [])])
+      for (const n of [node, ...(node.folded ?? []).flatMap((f) => [f, ...f.children])])
         if (n.producer && n.id !== PLAN_ROOT) counts.set(n.item, (counts.get(n.item) ?? 0) + 1)
     return counts
   }, [all])
@@ -412,7 +417,8 @@ export function ProductionTree({
 
   // Showing a target (from a link elsewhere on the page, or just added): unfold its row and pulse
   // it, once per request rather than whenever the tree changes under it.
-  const show = (id: string | null | undefined) => {
+  const show = (shown: string | null | undefined) => {
+    const id = (shown && drawnOn.get(shown)) ?? shown
     const ancestors = id ? byId.get(id)?.ancestors : undefined
     if (id && ancestors) {
       setCollapsed((c) => (ancestors.some((a) => c.has(a)) ? new Set([...c].filter((x) => !ancestors.includes(x))) : c))
@@ -924,26 +930,12 @@ function TreeRow({
   const details = [...(p?.notes ?? [])]
   if (belts?.outputCappedAt != null && node.kind === 'produce')
     details.push(`Output capped by its belt at ${fmt(belts.outputCappedAt)}/min per machine`)
-  // Rows taking by-products, set not to, or offered some by rows making their own can switch taking
-  // them first on or off; the producer makes the rest either way.
-  const separately = separateByproducts.get(node.item)
-  const reuse: ReuseOption | undefined =
-    node.fromByproduct > 0 || !node.reuse || node.reuseChosen || separately
-      ? {
-          on: node.reuse && (node.fromByproduct > 0 || node.reuseChosen),
-          covered: node.kind === 'byproduct',
-          sources:
-            node.fromByproduct > 0
-              ? node.byproductSources.map((s) => s.label).join(', ')
-              : (separately?.map((s) => `${s} (made separately)`).join(', ') ?? ''),
-          onChange: (on, everywhere) => onReuse(node.item, on, everywhere ? undefined : node.id),
-        }
-      : undefined
+  const reuse = reuseOption(node, separateByproducts, onReuse)
   // Belts it takes to carry this row's items (liquids go by pipe).
   const beltsNeeded = onBelt(node.item)
     ? Math.ceil(node.rate / itemsPerSlot(node.item, node.run?.process.stack) / mods.beltSpeed - 1e-9)
     : 0
-  const canChoose = !!node.producer && ((catalog.byProduct.get(node.item)?.length ?? 0) > 0 || !!reuse)
+  const canChoose = choosable(node, catalog, reuse)
   const coin = coinValue(node.item)
   const name = itemName(node.item)
   // A fuel, fertilizer or coin row, under the row whose Heat, Nutrients or Money it supplies (folded into it).
@@ -1147,6 +1139,16 @@ function TreeRow({
                     {f.run?.process.id === STEAM_HEAT_ID ? 'on Steam Heating Pads' : 'in furnaces'}
                   </span>
                 )}
+                {f.children.map((d) => (
+                  <BusDraw
+                    key={d.id}
+                    node={copies === 1 ? d : shareOf(d, copies)}
+                    catalog={catalog}
+                    reuse={reuseOption(d, separateByproducts, onReuse)}
+                    onProducer={onProducer}
+                    onResetProducer={onResetProducer}
+                  />
+                ))}
               </div>
             ))}
             {node.consolidated && (
@@ -1644,6 +1646,78 @@ const REUSED_LINE = '#reused'
 /** Heat, Nutrients and Money rows: shown as a pick on the row they heat, feed or pay for, not rows of their own. */
 const isFolded = (n: TreeNode) => n.item === HEAT || n.item === NUTRIENTS || n.item === MONEY
 
+/**
+ * A fuel, fertilizer or coin taken whole off the bus: nothing to build or follow below it, so it
+ * reads on the line picking what the row burns, spreads or pays with rather than as a row.
+ */
+const isDraw = (n: TreeNode) => n.kind === 'bus' && !n.children.length && n.fromByproduct <= 1e-9 && !n.consolidated
+
+/**
+ * Rows taking by-products, set not to, or offered some by rows making their own can switch taking
+ * them first on or off; the producer makes the rest either way.
+ */
+function reuseOption(
+  node: TreeNode,
+  separateByproducts: Map<string, string[]>,
+  onReuse: (item: string, on: boolean, row?: string) => void,
+): ReuseOption | undefined {
+  const separately = separateByproducts.get(node.item)
+  if (!(node.fromByproduct > 0 || !node.reuse || node.reuseChosen || separately)) return undefined
+  return {
+    on: node.reuse && (node.fromByproduct > 0 || node.reuseChosen),
+    covered: node.kind === 'byproduct',
+    sources:
+      node.fromByproduct > 0
+        ? node.byproductSources.map((s) => s.label).join(', ')
+        : (separately?.map((s) => `${s} (made separately)`).join(', ') ?? ''),
+    onChange: (on, everywhere) => onReuse(node.item, on, everywhere ? undefined : node.id),
+  }
+}
+
+/**
+ * A fuel, fertilizer or coin taken off the bus, on the line where its row picks it: how much, and
+ * the pick to make it in the plan instead (it gets a row of its own then).
+ */
+function BusDraw({
+  node,
+  catalog,
+  reuse,
+  onProducer,
+  onResetProducer,
+}: {
+  node: TreeNode
+  catalog: ProcessCatalog
+  reuse: ReuseOption | undefined
+  onProducer: (pick: ProducerPick) => void
+  onResetProducer: (row: string) => void
+}) {
+  return (
+    <span className="bus-draw" data-node-id={node.id}>
+      <span className="num">{fmt(node.rate)}/min</span>
+      {choosable(node, catalog, reuse) ? (
+        <ProducerSelect
+          item={node.item}
+          current={{ producer: node.producer, process: node.run?.process }}
+          catalog={catalog}
+          onChange={(producer, machine, everywhere) => onProducer({ item: node.item, producer, machine, row: node.id, everywhere })}
+          // What a row burns or spreads follows its branch only: plan-wide picks are for ingredients.
+          branch={{ rows: 1, own: node.ownChoice, mine: node.mine, onReset: () => onResetProducer(node.id) }}
+          reuse={reuse}
+          oneLine
+          link
+        />
+      ) : (
+        <span className="hint-inline">from the bus</span>
+      )}
+      {node.shortfall > 0 && <span className="warn-text">short by {fmt(node.shortfall)}/min</span>}
+    </span>
+  )
+}
+
+/** A row offers a pick of how its item is had. */
+const choosable = (node: TreeNode, catalog: ProcessCatalog, reuse: ReuseOption | undefined) =>
+  !!node.producer && ((catalog.byProduct.get(node.item)?.length ?? 0) > 0 || !!reuse)
+
 /** How a folded row reads: on the row it's folded into, and on the fuel, fertilizer or coin row below it. */
 const FOLDED_VERB: Record<string, { glyph: string; does: string; done: string; title: string }> = {
   [HEAT]: { glyph: '🔥', does: 'burns', done: 'burned', title: 'Burned for the heat of the machines above' },
@@ -1665,25 +1739,40 @@ function withReused(n: TreeNode): TreeNode {
     c.fromByproduct > 1e-9 &&
     c.rate - c.fromByproduct > 1e-9
   const folded = n.children.filter(isFolded)
+  // Each child with the by-product line shown above it, if any: the two stay together.
+  const feeds = n.children.flatMap((c) => (isFolded(c) ? c.children.filter((f) => !isDraw(f)) : [c])).map((child) => {
+    const c = withReused(child)
+    if (!partly(c)) return [c]
+    const line: TreeNode = {
+      ...blankRow(`${c.id}${REUSED_LINE}`),
+      item: c.item,
+      kind: 'byproduct',
+      rate: c.fromByproduct,
+      fromByproduct: c.fromByproduct,
+      byproductSources: c.byproductSources,
+      reusedBy: c.id,
+    }
+    return [line, { ...c, rate: c.rate - c.fromByproduct, reusedApart: true }]
+  })
+  // Smallest branches first, so a leaf (a fuel off the bus, say) sits right under the row it feeds
+  // rather than below a deep sibling. Rows gathered "with" it stay last, under their divider.
+  const key = (f: TreeNode[]) => {
+    const c = f[f.length - 1]
+    return isGroupRow(c, 1) ? Number.MAX_SAFE_INTEGER : rowCount(c)
+  }
   return {
     ...n,
-    ...(folded.length > 0 && { folded: folded.map((f) => ({ ...f, children: [] })) }),
-    children: n.children.flatMap((c) => (isFolded(c) ? c.children : [c])).flatMap((child) => {
-      const c = withReused(child)
-      if (!partly(c)) return [c]
-      const line: TreeNode = {
-        ...blankRow(`${c.id}${REUSED_LINE}`),
-        item: c.item,
-        kind: 'byproduct',
-        rate: c.fromByproduct,
-        fromByproduct: c.fromByproduct,
-        byproductSources: c.byproductSources,
-        reusedBy: c.id,
-      }
-      return [line, { ...c, rate: c.rate - c.fromByproduct, reusedApart: true }]
-    }),
+    // Each with what it takes off the bus, if that's all it takes.
+    ...(folded.length > 0 && { folded: folded.map((f) => ({ ...f, children: f.children.filter(isDraw) })) }),
+    children: feeds
+      .map((f) => ({ f, size: key(f) }))
+      .sort((a, b) => a.size - b.size)
+      .flatMap(({ f }) => f),
   }
 }
+
+/** Rows shown in a branch, its own included. */
+const rowCount = (n: TreeNode): number => 1 + n.children.reduce((sum, c) => sum + rowCount(c), 0)
 
 /** A row standing for something other than an item: all targets, or a target with no item. */
 function blankRow(id: string, children: TreeNode[] = []): TreeNode {

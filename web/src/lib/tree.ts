@@ -69,8 +69,10 @@ export interface TreeNode {
   /** Shown only: other rows' by-products cover part of the row, on a line of their own above it; `rate` leaves them out. */
   reusedApart?: boolean
   /**
-   * Shown only: the Heat and Nutrients rows folded into this one. Their picks (what it burns or
-   * spreads) show on its row, and the fuel or fertilizer rows below them sit below it.
+   * Shown only: the Heat, Nutrients and Money rows folded into this one. Their picks (what it burns,
+   * spreads or pays with) show on its row, and the fuel, fertilizer or coin rows below them sit
+   * below it, except those taken whole off the bus: they stay the folded row's children, shown on
+   * the same line as its pick.
    */
   folded?: TreeNode[]
 }

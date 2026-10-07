@@ -1199,6 +1199,21 @@ td.under {
   margin-top: 3px;
 }
 
+/* A fuel, fertilizer or coin off the bus, under the line picking it. */
+.bus-draw {
+  display: block;
+  padding-left: 20px;
+}
+
+.bus-draw > * {
+  margin-right: 6px;
+}
+
+.bus-draw .num {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
 .info-icon {
   color: var(--muted);
   font-size: 14px;
