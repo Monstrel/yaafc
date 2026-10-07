@@ -126,6 +126,18 @@ export interface Research {
 
 const data = raw as unknown as GameData
 
+/**
+ * The game calls every refine tier of sand "Refined Sand" (telling them apart only by icon), which
+ * makes the 2:1 chain read like a loop. Name each tier by how often it's been refined.
+ */
+const RENAMED: Record<string, string> = {
+  Sand3: 'Twice Refined Sand',
+  Sand4: 'Thrice Refined Sand',
+  Sand5: 'Quadruply Refined Sand',
+  Sand6: 'Quintuply Refined Sand',
+}
+for (const item of data.items) item.name = RENAMED[item.key] ?? item.name
+
 export const gameVersion = data.gameVersion
 export const items = data.items
 

@@ -8,6 +8,12 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
+## 2026-10-07T03:31Z
+
+- The sand tiers a Refiner makes now have their own names. The game calls them all "Refined Sand",
+  so the chain to shards looked like a loop. They now read Refined, Twice Refined, Thrice Refined,
+  Quadruply Refined and Quintuply Refined Sand, then Fully Refined Sand.
+
 ## 2026-10-06T22:15Z
 
 - Undo and Redo, next to Export and Import, or Ctrl+Z and Ctrl+Shift+Z (⌘ on a Mac). They step
