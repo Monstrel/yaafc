@@ -78,21 +78,24 @@ export function checkProcess(p: Process, mods: Modifiers, machines = 0): Logisti
             return { item: s.item, perMachine, slots, belts: beltsFor(slots, speed), ...(stack && { stack }) }
           })
       : []
-  const utilization = inputs.length ? inputUtilization(inputs.map((f) => f.slots), beltIn, speed) : 1
+  // A crucible row's mixed feed comes up one belt: its items share it.
+  const lanes = p.mixed ? [inputs.reduce((t, f) => t + f.slots, 0)] : inputs.map((f) => f.slots)
+  const utilization = inputs.length ? inputUtilization(lanes, beltIn, speed) : 1
   const cap = outputCap(p, mods)
   // Output items per minute at the capped rate (for the "capped at" note).
   const solidOut = p.outputs.filter((s) => onBelt(s.item)).reduce((sum, s) => sum + s.count * crafts, 0)
+  const belts = lanes.map((slots) => beltsFor(slots, speed))
   return {
     key: runKey(p),
     machineName: machine.name,
     beltSpeed: speed,
     beltIn,
     inputs,
-    inputBeltsNeeded: inputs.reduce((n, f) => n + f.belts, 0),
+    inputBeltsNeeded: belts.reduce((n, b) => n + b, 0),
     utilization,
     machines,
     machinesNeeded: utilization > 0 ? machines / utilization : Infinity,
-    multiBelt: inputs.some((f) => f.belts > 1),
+    multiBelt: belts.some((b) => b > 1),
     outputCappedAt: cap < 1 - EPS ? solidOut : null,
   }
 }

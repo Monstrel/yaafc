@@ -118,6 +118,7 @@ function plan(v: unknown, newId: () => string): Plan | undefined {
     separate: list(v.separate, separation),
     noReuse: strings(v.noReuse),
     roundUp: strings(v.roundUp),
+    mixedFeed: record(v.mixedFeed, bool),
     units: record(v.units, unitizing),
     built: strings(v.built),
     busSupply: caps && Object.keys(caps).length ? caps : undefined,
@@ -168,6 +169,7 @@ function myDefault(v: unknown): MyDefault | undefined {
     catalysts: strings(v.catalysts),
     height: num(v.height),
     stack: num(v.stack),
+    mixed: v.mixed === true || undefined,
   })
 }
 

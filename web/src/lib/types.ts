@@ -103,6 +103,12 @@ export interface Plan {
   noReuse?: string[]
   /** Tree row ids that run on a whole number of machines, rounded up; the extra output overflows. */
   roundUp?: string[]
+  /**
+   * Whether a Paradox Crucible row also refines the by-products of the row below it, as they come
+   * up the same belt (its input's machines then run only for what those leave), per tree row id.
+   * Absent = the saved default's, else not.
+   */
+  mixedFeed?: Record<string, boolean>
   /** Tree rows built as several identical copies of themselves and everything below them. */
   units?: Record<string, Unitizing>
   /** Tree row ids the player has marked built in their game: a checklist, it changes nothing the plan makes. */
@@ -156,6 +162,8 @@ export interface MyDefault {
   height?: number
   /** Coins per output belt entry, when it converts coins (Bank Portal). */
   stack?: number
+  /** It also refines the by-products of the machines making its input (Paradox Crucible). */
+  mixed?: boolean
 }
 
 /** The player's saved defaults, per item. */

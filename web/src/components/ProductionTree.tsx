@@ -52,6 +52,8 @@ interface Props {
   /** Rows running on a whole number of machines, rounded up. */
   roundUp: string[]
   onRoundUp: (row: string, on: boolean) => void
+  /** Has a crucible row also refine the by-products of the row below it, or only its input ('inherited': without its own setting). */
+  onMixedFeed: (row: string, on: boolean, inherited: boolean) => void
   /** Rows built in units, and how many copies of each row are built. */
   units: UnitScales
   /** Builds a row in units, or as one line (null). */
@@ -118,6 +120,7 @@ export function ProductionTree({
   mods,
   roundUp,
   onRoundUp,
+  onMixedFeed,
   units,
   onUnits,
   built,
@@ -566,6 +569,7 @@ export function ProductionTree({
                   onCatalysts={onCatalysts}
                   onHeight={onHeight}
                   onStack={onStack}
+                  onMixedFeed={onMixedFeed}
                   onRemember={onRemember}
                   onForget={onForget}
                   savable={savable.has(line.node.id)}
@@ -792,6 +796,7 @@ function TreeRow({
   onCatalysts,
   onHeight,
   onStack,
+  onMixedFeed,
   onRemember,
   onForget,
   savable,
@@ -845,6 +850,7 @@ function TreeRow({
   onHeight: (row: string, height: number, inherited: number) => void
   /** Sets the coins a row's Bank Portals output per entry ('inherited': the stack without its own setting). */
   onStack: (row: string, stack: number, inherited: number) => void
+  onMixedFeed: (row: string, on: boolean, inherited: boolean) => void
   /** Use as my default: remember how this row and everything below it is made. */
   onRemember: (row: TreeNode) => void
   onForget: (item: string) => void
@@ -1240,6 +1246,33 @@ function TreeRow({
                 </span>
               </label>
             )}
+            {node.mixable && node.kind === 'produce' && (
+              <div className="catalysts" role="group" aria-label="Crucible feed">
+                <button
+                  type="button"
+                  className={node.mixed ? 'catalyst on' : 'catalyst'}
+                  aria-pressed={!!node.mixed}
+                  title={`The ${node.mixable.map(itemName).join(' and ')} made below come up the same belt: the crucibles refine them too, each at its own speed, and the machines below run only for what's left`}
+                  onClick={() => onMixedFeed(node.id, !node.mixed, node.defaultMixed)}
+                >
+                  {node.mixable.map((i) => (
+                    <ItemIcon key={i} item={i} size={16} />
+                  ))}
+                  Also refine {node.mixable.map(itemName).join(' and ')}
+                </button>
+              </div>
+            )}
+            {node.mixParts && node.mixParts.filter((m) => m.rate > 0).length > 1 && (
+              <div className="note-line" title="How the crucibles split up, if each item gets crucibles of its own">
+                {node.mixParts.map((m, i) => (
+                  <span key={m.item}>
+                    {i > 0 && ' · '}
+                    <ItemLabel item={m.item} count={m.rate} size={16} /> in {fmtMachines(m.machines)}{' '}
+                    {buildingNameFor(p!.machine!.key, wholeMachines(m.machines))}
+                  </span>
+                ))}
+              </div>
+            )}
             {node.kind === 'byproduct' && <div className="note-line">♻ by-product of {sources}</div>}
             {node.kind !== 'byproduct' && node.fromByproduct > 0 && !node.reusedApart && (
               <div className="note-line">
@@ -1260,8 +1293,8 @@ function TreeRow({
                       node,
                       // The line for the by-products, where the row taking them shows one.
                       (n) => n.reusedBy === t.id || (n.id === t.id && !n.reusedApart),
-                      destinationName(t.id, topName),
-                      `Show the ${itemsByKey.get(b.item)?.name ?? b.item} row it feeds`,
+                      t.direct ? `${itemName(rowItem(t.id))} crucibles` : destinationName(t.id, topName),
+                      `Show the ${t.direct ? 'crucibles refining it' : `${itemsByKey.get(b.item)?.name ?? b.item} row it feeds`}`,
                     )}
                   </span>
                 ))}
@@ -1807,6 +1840,7 @@ function blankRow(id: string, children: TreeNode[] = []): TreeNode {
     defaultCatalysts: [],
     defaultHeight: 0,
     defaultStack: DEFAULT_BANK_STACK,
+    defaultMixed: false,
     reuse: true,
     reuseChosen: false,
     children,
@@ -1839,7 +1873,8 @@ function byproductsMadeSeparately(tree: TreeNode[]): Map<string, string[]> {
 function destinationName(id: string, topName: string): string {
   const name = itemsByKey.get(rowItem(id))?.name ?? rowItem(id)
   const up = parentId(id)
-  if (up === null) return `${name} target`
+  // A target's own row sits under its place in the targets (`0/Sol`).
+  if (up === null || /^\d+$/.test(up)) return `${name} target`
   if (up === 'separate') return `${name} (gathered with ${topName})`
   return itemsByKey.get(rowItem(up))?.name ?? rowItem(up)
 }
@@ -2050,6 +2085,7 @@ function shareOf(n: TreeNode, copies: number): TreeNode {
       overflow: b.overflow * k,
       to: b.to.map((t) => ({ ...t, amount: t.amount * k })),
     })),
+    mixParts: n.mixParts?.map((m) => ({ ...m, rate: m.rate * k, machines: m.machines * k })),
   }
 }
 

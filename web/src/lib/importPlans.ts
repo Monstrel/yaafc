@@ -92,6 +92,7 @@ function withDefaults(plan: Plan, defaults: MyDefaults, saved: SavedRecipe[], pr
     const rowCatalysts = { ...plan.rowCatalysts }
     const rowHeights = { ...plan.rowHeights }
     const rowStacks = { ...plan.rowStacks }
+    const mixedFeed = { ...plan.mixedFeed }
     for (const n of unfold(plan, catalog).nodes) {
       const d = n.mine ? defaults[n.item] : undefined
       if (!d) continue
@@ -100,6 +101,7 @@ function withDefaults(plan: Plan, defaults: MyDefaults, saved: SavedRecipe[], pr
       if (n.defaultHeight && rowHeights[n.id] === undefined) rowHeights[n.id] = n.defaultHeight
       if (n.process?.stack !== undefined && n.defaultStack !== DEFAULT_BANK_STACK && rowStacks[n.id] === undefined)
         rowStacks[n.id] = n.defaultStack
+      if (n.defaultMixed && n.mixable?.length && mixedFeed[n.id] === undefined) mixedFeed[n.id] = true
     }
     // Heat and nutrients come off the bus rather than from rows: the plan-wide pick says what feeds them.
     const producers = { ...plan.producers }
@@ -114,6 +116,7 @@ function withDefaults(plan: Plan, defaults: MyDefaults, saved: SavedRecipe[], pr
       rowCatalysts,
       rowHeights: Object.keys(rowHeights).length ? rowHeights : undefined,
       rowStacks: Object.keys(rowStacks).length ? rowStacks : undefined,
+      mixedFeed: Object.keys(mixedFeed).length ? mixedFeed : undefined,
     }
   } catch {
     // A plan the catalog can't lay out still imports, just without its defaults.

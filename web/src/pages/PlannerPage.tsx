@@ -51,6 +51,7 @@ import {
   setBuilt,
   setPlanDefault,
   setRoundUp,
+  setMixedFeed,
   followDefault,
   setRowCatalysts,
   setRowHeight,
@@ -629,6 +630,11 @@ export function PlannerPage({
                     showTarget(plan.targets.length)
                   }}
                   onRoundUp={(row, on) => onUpdatePlan(`${on ? 'Round up' : 'Stop rounding up'} ${rowName(row)}`, (p) => setRoundUp(p, row, on))}
+                  onMixedFeed={(row, on, inherited) =>
+                    onUpdatePlan(`${on ? 'Mix by-products into' : 'Stop mixing by-products into'} ${rowName(row)}`, (p) =>
+                      setMixedFeed(p, row, on, inherited),
+                    )
+                  }
                   units={units}
                   onUnits={(row, unit) =>
                     onUpdatePlan(`Build ${rowName(row)} ${unit ? 'in units' : 'as one line'}`, (p) => setUnits(p, row, unit))
@@ -1857,6 +1863,7 @@ function MyDefaultsPanel({
                     {d.catalysts?.length ? ` + ${d.catalysts.map(itemName).join(', ')}` : ''}
                     {d.height ? ` · height ${d.height}` : ''}
                     {d.stack ? ` · stacks of ${d.stack}` : ''}
+                    {d.mixed ? ' · with the by-products below' : ''}
                   </span>
                   <button className="icon-button" title={`Forget how you make ${itemName(item)}`} onClick={() => onForget(item)}>
                     ×

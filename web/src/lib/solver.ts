@@ -1,9 +1,9 @@
-import type { Stack } from './gameData'
+import { HEAT, type Stack } from './gameData'
 import { checkProcess, wholeMachines } from './logistics'
 import { unitScales } from './units'
 import { solveLP } from './lp'
 import { craftsPerMachine } from './machineRate'
-import { runKey, type Process, type ProcessCatalog } from './processes'
+import { paradoxId, runKey, type Process, type ProcessCatalog } from './processes'
 import { NO_FLOWS, buildTree, onOverflow, type ByproductRoute, type RowFlows, type TreeNode } from './tree'
 import type { Plan } from './types'
 import { absorbers, supplyAhead } from './ledger'
@@ -150,6 +150,8 @@ const CRAFT_COST = 1e-3
 const SIDE_RUN_FACTOR = 1.001
 // By-products go to the nearest rows that use them: priced by the steps between the two rows.
 const FLOW_COST = 1e-7
+// A crucible row's mixed feed takes the by-products below it after the rows of their own item do.
+const MIX_COST = 1e-5
 const SHORTFALL_ROW = 'shortfall'
 // Overflow an overflow target can't use is counted with shortfalls, so it uses all it can, but costs
 // less than any shortfall: falling short somewhere never stands in for leaving overflow unused (a
@@ -592,6 +594,30 @@ function solveRound(
     })
   }
 
+  // A crucible row's mixed feed: it also refines the by-products of the row making its input as
+  // they come up the belt, a column of crafts (and heat) per item, sharing the row's output, floor
+  // and hold. Rows of those items that take by-products get them first; the crucibles take the rest.
+  const mixes = new Map<PlanNode, { item: string; process: Process; name: string; source: PlanNode }[]>()
+  for (const n of shape.nodes) {
+    if (n.kind !== 'make' || !n.mix?.length) continue
+    const k = index.get(n)!
+    const source = supplierOf(n.children[0])
+    const heat = n.children[n.process!.inputs.findIndex((s) => s.item === HEAT)]
+    const parts = []
+    for (const item of n.mix) {
+      const q = catalog.byId.get(paradoxId(item))
+      const pool = `p:${index.get(source)}:${item}`
+      if (!q || !(pool in equalities)) continue
+      const name = `m:${k}:${item}`
+      const col: Record<string, number> = { [pool]: -q.inputs[0].count, [`b:${k}`]: 1, cost: CRAFT_COST * Math.max(q.seconds, 1) + MIX_COST }
+      if (heat) add(col, bal(heat), -(q.inputs.find((s) => s.item === HEAT)?.count ?? 0))
+      for (const row of [`h:${k}`, `r:${k}`]) if (row in equalities) col[row] = 1
+      columns[name] = col
+      parts.push({ item, process: q, name, source })
+    }
+    if (parts.length) mixes.set(n, parts)
+  }
+
   const fail = (status: 'infeasible' | 'error', message?: string): PlanResult => ({
     status,
     message,
@@ -679,19 +705,31 @@ function solveRound(
         const c = n.children[j]
         if (c) own.set(c, (own.get(c) ?? 0) + s.count * crafts(n))
       })
+  // A mixed crucible row's other inputs: their crafts (heated by its heat row) and what they refine.
+  const mixed = (n: PlanNode) => (mixes.get(n) ?? []).map((m) => ({ ...m, crafts: v(m.name) }))
+  for (const n of mixes.keys()) {
+    const heat = n.children[n.process!.inputs.findIndex((s) => s.item === HEAT)]
+    for (const m of mixed(n))
+      if (heat) own.set(heat, (own.get(heat) ?? 0) + (m.process.inputs.find((s) => s.item === HEAT)?.count ?? 0) * m.crafts)
+  }
   const demand = new Map<PlanNode, number>()
   for (const n of shape.nodes) {
     const s = supplierOf(n)
     demand.set(s, (demand.get(s) ?? 0) + (own.get(n) ?? 0))
   }
   const drawn = new Map<PlanNode, { from: PlanNode; amount: number }[]>()
-  const sent = new Map<PlanNode, { to: PlanNode; item: string; amount: number }[]>()
+  const sent = new Map<PlanNode, { to: PlanNode; item: string; amount: number; direct?: boolean }[]>()
   for (const f of flows) {
     const amount = v(f.name)
     if (amount <= 0) continue
     drawn.set(f.to, [...(drawn.get(f.to) ?? []), { from: f.from, amount }])
     sent.set(f.from, [...(sent.get(f.from) ?? []), { to: f.to, item: f.to.item, amount }])
   }
+  for (const n of mixes.keys())
+    for (const m of mixed(n)) {
+      const amount = m.process.inputs[0].count * m.crafts
+      if (amount > 0) sent.set(m.source, [...(sent.get(m.source) ?? []), { to: n, item: m.item, amount, direct: true }])
+    }
   /** Where each side output of a row goes, and what's left of it. */
   const routes = (n: PlanNode, x: number) => {
     const k = index.get(n)!
@@ -703,7 +741,7 @@ function solveRound(
         to: (sent.get(n) ?? [])
           .filter((s) => s.item === o.item && s.amount > tol)
           .sort((a, b) => b.amount - a.amount)
-          .map((s) => ({ id: s.to.id, amount: s.amount })),
+          .map((s) => ({ id: s.to.id, amount: s.amount, ...(s.direct && { direct: true }) })),
         overflow: cleaned(v(`ps:${k}:${o.item}`), tol),
       }
     }
@@ -719,7 +757,13 @@ function solveRound(
     const need = demand.get(n) ?? 0
     const x = crafts(n)
     // An overflow target's rows of its item get the overflow it takes.
-    const made = n.kind === 'make' ? outputOf(n.process!, n.item) * x : n.kind === 'overflow' ? v(`od:${index.get(n)}`) : 0
+    const parts = mixed(n)
+    const made =
+      n.kind === 'make'
+        ? outputOf(n.process!, n.item) * x + parts.reduce((t, m) => t + m.crafts, 0)
+        : n.kind === 'overflow'
+          ? v(`od:${index.get(n)}`)
+          : 0
     const tol = RELATIVE_NOISE * Math.max(1, need, made)
     const draws = (drawn.get(n) ?? []).filter((d) => d.amount > tol * 1e-2).sort((a, b) => b.amount - a.amount)
     const fromByproduct = draws.reduce((sum, d) => sum + d.amount, 0)
@@ -736,6 +780,7 @@ function solveRound(
       shortfall: short - drew > tol ? short - drew : 0,
       overflow: cleaned(v(`s:${index.get(n)}`), tol),
       byproductRoutes: n.kind === 'make' ? routes(n, x) : {},
+      ...(parts.length && { mix: [{ process: n.process!, crafts: x }, ...parts.map((m) => ({ process: m.process, crafts: m.crafts }))] }),
     })
   }
 
@@ -747,7 +792,9 @@ function solveRound(
     t.crafts += x
     totals.set(key, t)
   }
+  // A mixed crucible row counts as a group of crucibles per input.
   for (const n of shape.nodes) if (n.kind === 'make') count(n.process!, crafts(n))
+  for (const n of mixes.keys()) for (const m of mixed(n)) count(m.process, m.crafts)
   const runs: ProcessRun[] = [...totals].map(([key, { process: p, crafts: x }]) => ({
     key,
     process: p,

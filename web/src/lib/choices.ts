@@ -218,6 +218,17 @@ export function setRoundUp(plan: Plan, row: string, on: boolean): Plan {
   return { ...plan, roundUp: roundUp.length ? roundUp : undefined }
 }
 
+/**
+ * Has a Paradox Crucible row also refine the by-products of the row below it, or only its input.
+ * The row keeps its own setting only when it differs from the one it has anyway (`inherited`: a
+ * saved default's, else off).
+ */
+export function setMixedFeed(plan: Plan, row: string, on: boolean, inherited = false): Plan {
+  const rest = without(plan.mixedFeed, (id) => id === row) ?? {}
+  const mixedFeed = on === inherited ? rest : { ...rest, [row]: on }
+  return { ...plan, mixedFeed: Object.keys(mixedFeed).length ? mixedFeed : undefined }
+}
+
 /** Marks rows built in the player's game, or not: a checklist, it changes nothing the plan makes. */
 export function setBuilt(plan: Plan, rows: string[], on: boolean): Plan {
   const built = new Set(plan.built)
@@ -362,6 +373,7 @@ export function moveRows(
     rowStacks: rows(plan.rowStacks),
     separate,
     roundUp: roundUp?.length ? roundUp : undefined,
+    mixedFeed: rows(plan.mixedFeed),
     units: rows(plan.units),
     built: built?.length ? built : undefined,
   }
@@ -384,7 +396,7 @@ export function removeTarget(plan: Plan, index: number): Plan {
 
 /**
  * "Use as my default": remembers how a row and everything below it is made (recipe, machine,
- * catalysts, height and coin stack per item, the topmost row winning when an item appears more than once), following
+ * catalysts, height, coin stack and mixed feed per item, the topmost row winning when an item appears more than once), following
  * separate builds to the rows that make them. An item made the built-in way drops any saved
  * default instead. The plan's own picks in that part of the tree that now match the saved
  * defaults are dropped, so those rows follow the defaults.
@@ -425,25 +437,28 @@ export function rememberSetup(
       plan.rowStacks,
       (id) => underRow(id) && plan.rowStacks![id] === (setups.get(rowItem(id))?.setup.stack ?? DEFAULT_BANK_STACK),
     ),
+    mixedFeed: without(plan.mixedFeed, (id) => underRow(id) && plan.mixedFeed![id] === !!setups.get(rowItem(id))?.setup.mixed),
   }
   return { mine, plan: next }
 }
 
 /**
  * Un-saving a default from a row of the plan: the rows following it keep being made that way, as
- * the plan's own picks (recipe, machine, catalysts, height, coin stack), so only other plans lose it.
+ * the plan's own picks (recipe, machine, catalysts, height, coin stack, mixed feed), so only other plans lose it.
  */
 export function keepDefaultInPlan(plan: Plan, tree: TreeNode[], item: string, saved: MyDefault): Plan {
   const branches = { ...plan.branches }
   const rowCatalysts = { ...plan.rowCatalysts }
   const rowHeights = { ...plan.rowHeights }
   const rowStacks = { ...plan.rowStacks }
+  const mixedFeed = { ...plan.mixedFeed }
   for (const n of rowsById(tree).values()) {
     if (n.item !== item || !n.mine) continue
     branches[n.id] = { ...branches[n.id], producer: saved.producer, ...(saved.machine && { machine: saved.machine }) }
     if (saved.catalysts?.length && !rowCatalysts[n.id]) rowCatalysts[n.id] = [...saved.catalysts]
     if (saved.height && rowHeights[n.id] === undefined) rowHeights[n.id] = saved.height
     if (saved.stack && rowStacks[n.id] === undefined) rowStacks[n.id] = saved.stack
+    if (saved.mixed && n.mixable && mixedFeed[n.id] === undefined) mixedFeed[n.id] = true
   }
   return {
     ...plan,
@@ -451,6 +466,7 @@ export function keepDefaultInPlan(plan: Plan, tree: TreeNode[], item: string, sa
     rowCatalysts,
     rowHeights: Object.keys(rowHeights).length ? rowHeights : undefined,
     rowStacks: Object.keys(rowStacks).length ? rowStacks : undefined,
+    mixedFeed: Object.keys(mixedFeed).length ? mixedFeed : undefined,
   }
 }
 
@@ -510,6 +526,7 @@ function setupsBelow(rows: Map<string, TreeNode>, row: TreeNode) {
           ...(p?.catalysts.length && { catalysts: [...p.catalysts] }),
           ...(p?.acceptsHeight && p.height && { height: p.height }),
           ...(p?.stack !== undefined && p.stack !== DEFAULT_BANK_STACK && { stack: p.stack }),
+          ...(n.mixed && { mixed: true }),
         },
       })
     queue.push(...n.children)
@@ -530,7 +547,8 @@ function isBuiltIn(catalog: ProcessCatalog, item: string, s: MyDefault): boolean
     (!p || machineOfSetup(catalog, s) === defaultMachine(p, catalog.tier)) &&
     !s.catalysts &&
     !s.height &&
-    !s.stack
+    !s.stack &&
+    !s.mixed
   )
 }
 
@@ -539,7 +557,8 @@ const sameSetup = (catalog: ProcessCatalog, a: MyDefault, b: MyDefault) =>
   machineOfSetup(catalog, a) === machineOfSetup(catalog, b) &&
   sameSet(a.catalysts ?? [], b.catalysts ?? []) &&
   (a.height ?? 0) === (b.height ?? 0) &&
-  (a.stack ?? DEFAULT_BANK_STACK) === (b.stack ?? DEFAULT_BANK_STACK)
+  (a.stack ?? DEFAULT_BANK_STACK) === (b.stack ?? DEFAULT_BANK_STACK) &&
+  !!a.mixed === !!b.mixed
 
 /** Drops a row's own producer pick, so it follows the rows above it (or the plan) again; reuse stays as set. */
 export function clearBranchChoice(plan: Plan, row: string): Plan {
@@ -589,6 +608,9 @@ export function pruneChoices(plan: Plan, catalog: ProcessCatalog): Plan | null {
   const running = new Set(nodes.flatMap((n) => (n.kind === 'make' ? [n.id] : [])))
   const roundUp = plan.roundUp?.filter((id) => running.has(id))
   const u = roundUp?.length !== plan.roundUp?.length
+  // A mixed feed stays with a crucible row while the row below it makes something it can refine.
+  const mixable = new Set(nodes.flatMap((n) => (n.mixable?.length ? [n.id] : [])))
+  const x = keep(plan.mixedFeed, (id) => mixable.has(id))
   const units = keep(plan.units, (id) => running.has(id))
   // Only machines get built: marks stay with rows that run some.
   const built = plan.built?.filter((id) => running.has(id))
@@ -596,7 +618,7 @@ export function pruneChoices(plan: Plan, catalog: ProcessCatalog): Plan | null {
   // Caps on the bus's supply stay while the plan takes the item from the bus.
   const drawn = new Set(nodes.flatMap((n) => (n.kind === 'bus' ? [n.item] : [])))
   const caps = keep(plan.busSupply, (item) => drawn.has(item))
-  const dropped = [p, m, c, h, k, b, units, caps].some((x) => x.dropped) || s || r || f || u || d
+  const dropped = [p, m, c, h, k, b, x, units, caps].some((y) => y.dropped) || s || r || f || u || d
   if (!dropped) return null
   return {
     ...plan,
@@ -610,6 +632,7 @@ export function pruneChoices(plan: Plan, catalog: ProcessCatalog): Plan | null {
     noReuse: noReuse?.length ? noReuse : undefined,
     feedbackItems: feedbackItems?.length ? feedbackItems : undefined,
     roundUp: roundUp?.length ? roundUp : undefined,
+    mixedFeed: x.record && Object.keys(x.record).length ? x.record : undefined,
     units: units.record && Object.keys(units.record).length ? units.record : undefined,
     built: built?.length ? built : undefined,
     busSupply: caps.record && Object.keys(caps.record).length ? caps.record : undefined,

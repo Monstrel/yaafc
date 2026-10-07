@@ -1,6 +1,6 @@
 import { HEAT, NUTRIENTS, type Stack } from './gameData'
 import { craftsPerMachine } from './machineRate'
-import { runKey } from './processes'
+import { blendParadox, runKey, type Process } from './processes'
 import type { ProcessRun } from './solver'
 import type { Separation } from './types'
 import { BUS, type PlanNode } from './unfold'
@@ -34,6 +34,8 @@ export interface TreeNode {
   defaultHeight: number
   /** Coins its Bank Portals output per entry unless it sets its own. */
   defaultStack: number
+  /** A crucible row refines the by-products below it unless it sets its own. */
+  defaultMixed: boolean
   /** The row takes other rows' by-products of its item first (else it makes all of it). */
   reuse: boolean
   /** Reuse was picked: the row also takes by-products from rows that make their own. */
@@ -64,6 +66,12 @@ export interface TreeNode {
   /** For a `separate` leaf: the row that builds it, and the item that row sits under (none at the top). */
   groupId?: string
   groupAnchor?: string
+  /** For a Paradox Crucible row: by-products of the row below it that it could also refine. */
+  mixable?: string[]
+  /** It refines them too (its mixed feed is on). */
+  mixed?: boolean
+  /** What a mixed crucible row refines of each item, per minute, and the crucibles that takes: its own input first. */
+  mixParts?: MixPart[]
   /** Shown only: a line above the row `reusedBy` for the part of it other rows' by-products cover. */
   reusedBy?: string
   /** Shown only: other rows' by-products cover part of the row, on a line of their own above it; `rate` leaves them out. */
@@ -77,10 +85,22 @@ export interface TreeNode {
   folded?: TreeNode[]
 }
 
+/** One input of a mixed crucible row. */
+export interface MixPart {
+  item: string
+  /** Items per minute refined. */
+  rate: number
+  /** Crucibles' worth of work it takes. */
+  machines: number
+}
+
 /** Where one by-product of a row goes: rows of its item that take it, and what's left over. */
 export interface ByproductRoute {
-  /** Rows of the by-product's item fed by it, largest share first, per minute. */
-  to: { id: string; amount: number }[]
+  /**
+   * Rows fed by it, largest share first, per minute: rows of its item, or (`direct`) a crucible row
+   * refining it along with its own input.
+   */
+  to: { id: string; amount: number; direct?: boolean }[]
   /** Part nothing uses, per minute. */
   overflow: number
 }
@@ -100,6 +120,8 @@ export interface RowFlows {
   overflow: number
   /** Where each by-product of the row's machines goes, by item. */
   byproductRoutes: Record<string, ByproductRoute>
+  /** A crucible row with its mixed feed on: crafts per minute per input's process, its own first. */
+  mix?: { process: Process; crafts: number }[]
 }
 
 export const NO_FLOWS: RowFlows = {
@@ -129,8 +151,10 @@ export function buildTree(roots: PlanNode[], flows: Map<PlanNode, RowFlows>, mod
       defaultCatalysts: n.defaultCatalysts,
       defaultHeight: n.defaultHeight,
       defaultStack: n.defaultStack,
+      defaultMixed: n.defaultMixed,
       reuse: n.reuse,
       reuseChosen: n.reuseChosen,
+      ...(n.mixable?.length && { mixable: n.mixable, mixed: !!n.mix }),
       machines: 0,
       heat: 0,
       nutrients: 0,
@@ -152,8 +176,14 @@ export function buildTree(roots: PlanNode[], flows: Map<PlanNode, RowFlows>, mod
       case 'separate':
         return { ...base, kind: 'separate', groupId: n.ref!.id, groupAnchor: n.groupAnchor }
     }
-    const p = n.process!
-    const crafts = f.crafts
+    // A crucible row refining several items runs them as one blended process.
+    const p = f.mix ? blendParadox(f.mix) : n.process!
+    const crafts = f.mix ? f.mix.reduce((t, x) => t + x.crafts, 0) : f.crafts
+    const mixParts = f.mix?.map((x) => ({
+      item: x.process.inputs[0].item,
+      rate: x.process.inputs[0].count * x.crafts,
+      machines: x.process.seconds > 0 ? x.crafts / craftsPerMachine(x.process, mods) : 0,
+    }))
     const run: ProcessRun = {
       key: runKey(p),
       process: p,
@@ -178,6 +208,7 @@ export function buildTree(roots: PlanNode[], flows: Map<PlanNode, RowFlows>, mod
         .filter((s) => s.item !== n.item && s.count > 0 && !isPseudo(s.item))
         .map((s) => ({ ...s, ...(f.byproductRoutes[s.item] ?? { to: [], overflow: s.count }) })),
       children: n.children.map(toNode),
+      ...(mixParts && { mixParts }),
       ...gathered,
     }
   }

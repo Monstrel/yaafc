@@ -1,6 +1,15 @@
 import { HEAT, MONEY, NUTRIENTS, STEAM } from './gameData'
 import { COIN_STACK } from './machineRate'
-import { DEFAULT_BANK_STACK, STEAM_HEAT_ID, buyId, defaultProducer, sameRecipe, type Process, type ProcessCatalog } from './processes'
+import {
+  DEFAULT_BANK_STACK,
+  STEAM_HEAT_ID,
+  buyId,
+  defaultProducer,
+  paradoxId,
+  sameRecipe,
+  type Process,
+  type ProcessCatalog,
+} from './processes'
 import { separationsOf } from './separate'
 import type { MyDefault, Plan, PlanTarget, Separation } from './types'
 
@@ -41,6 +50,8 @@ export interface PlanNode {
   defaultHeight: number
   /** Coins its Bank Portals output per entry unless it sets its own (a saved default's, else 50). */
   defaultStack: number
+  /** A crucible row refines the by-products below it unless it sets its own (a saved default's, else not). */
+  defaultMixed: boolean
   /** The row takes other rows' by-products of its item first (else it makes all of it). */
   reuse: boolean
   /**
@@ -54,6 +65,13 @@ export interface PlanNode {
   groupAnchor?: string
   /** For a row gathering the uses of an item built separately: the choice behind it. */
   separation?: Separation
+  /**
+   * For a Paradox Crucible row: the by-products of the row making its input that it could also
+   * refine, coming up on the same belt (empty or absent: none).
+   */
+  mixable?: string[]
+  /** The ones it does refine, when its mixed feed is on. */
+  mix?: string[]
   /** Rows of a `make` row's ingredients (heat and nutrients too), then the rows it gathers. */
   children: PlanNode[]
 }
@@ -86,6 +104,8 @@ export interface ResolvedChoice {
   defaultHeight: number
   /** Coins its Bank Portals output per entry unless it sets its own. */
   defaultStack: number
+  /** A crucible row refines the by-products below it unless it sets its own. */
+  defaultMixed: boolean
 }
 
 const picked = (c: ResolvedChoice) => ({
@@ -94,6 +114,7 @@ const picked = (c: ResolvedChoice) => ({
   defaultCatalysts: c.defaultCatalysts,
   defaultHeight: c.defaultHeight,
   defaultStack: c.defaultStack,
+  defaultMixed: c.defaultMixed,
 })
 
 /** The row above a row (null for a root). */
@@ -165,8 +186,8 @@ const underBoiler = (item: string, id: string) => {
   return item === HEAT && above !== null && rowItem(above) === STEAM
 }
 
-/** What a row loads, how high it's built and the coins it outputs per entry when it follows no saved default. */
-const NO_SETUP = { defaultCatalysts: [] as string[], defaultHeight: 0, defaultStack: DEFAULT_BANK_STACK }
+/** What a row loads, how high it's built, the coins it outputs per entry and whether it mixes its feed when it follows no saved default. */
+const NO_SETUP = { defaultCatalysts: [] as string[], defaultHeight: 0, defaultStack: DEFAULT_BANK_STACK, defaultMixed: false }
 
 const knownMachine = (p: Process, machine: string | undefined) =>
   machine && p.machineOptions.some((m) => m.key === machine) ? machine : undefined
@@ -247,6 +268,7 @@ export function resolveChoice(
         defaultCatalysts: choice.catalysts ?? [],
         defaultHeight: choice.height ?? 0,
         defaultStack: choice.stack ?? DEFAULT_BANK_STACK,
+        defaultMixed: !!choice.mixed,
       }
     : NO_SETUP
   return onRow(p, choice.machine, false, choice.mine, defaults)
@@ -279,6 +301,19 @@ function fedStacks(ingredients: PlanNode[]): Record<string, number> | null {
     if (stack !== undefined && stack < COIN_STACK && source!.process!.product === c.item) stacks[c.item] = stack
   }
   return Object.keys(stacks).length ? stacks : null
+}
+
+/**
+ * By-products of the machines making a crucible's input (its row, or the separate build it points
+ * to) that a crucible can refine too: they come up the same belt as the input.
+ */
+function mixableBelow(input: PlanNode | undefined, catalog: ProcessCatalog): string[] {
+  const source = input?.kind === 'make' ? input : input?.kind === 'separate' ? input.ref : undefined
+  const p = source?.process
+  if (!p) return []
+  return p.outputs
+    .map((o) => o.item)
+    .filter((item) => item !== source!.item && !isPseudo(item) && catalog.byId.has(paradoxId(item)))
 }
 
 /** Separated uses gathered under one anchor row. */
@@ -394,6 +429,10 @@ export function unfold(plan: Plan, catalog: ProcessCatalog): PlanShape {
     const frame = groups.size ? { node: n, groups } : null
     if (frame) frames.push(frame)
     for (const s of n.process!.inputs) n.children.push(child(s.item, n))
+    if (n.process!.kind === 'paradox') {
+      n.mixable = mixableBelow(n.children[0], catalog)
+      if (n.mixable.length && (plan.mixedFeed?.[n.id] ?? n.defaultMixed)) n.mix = n.mixable
+    }
     const fed = fedStacks(n.children)
     if (fed) n.process = catalog.variant(n.process!, { inputStacks: fed })
     // A Purchasing Portal paid with coins a Bank Portal row below outputs in smaller stacks runs slower.

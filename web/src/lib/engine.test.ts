@@ -64,11 +64,12 @@ import {
   rowsById,
   setBuilt,
   setRoundUp,
+  setMixedFeed,
   setRowCatalysts,
   setRowHeight,
   setRowStack,
 } from './choices'
-import { sanitizePlans } from './sanitize'
+import { sanitizeMyDefaults, sanitizePlans } from './sanitize'
 import { dropUnits, setUnits, unitChoices, unitScales, wholePerCopy } from './units'
 import { BOILER_HEAT, resolveChoice } from './unfold'
 import { separationsOf, withSeparation } from './separate'
@@ -2817,5 +2818,96 @@ describe('building rows in units', () => {
     expect(pruneChoices(gone, catalog)!.units).toEqual({ '0/Bandage': { count: 2, of: 4 } })
     const odd = { ...bandages, units: { a: { count: 2, of: 4 }, b: { count: 3, of: 4 }, c: { count: 1, of: 1 }, d: { count: 2.5, of: 5 }, e: { count: 5, of: 4 } } }
     expect(sanitizePlans([odd], () => 'n')![0].units).toEqual({ a: { count: 2, of: 4 }, b: { count: 3, of: 4 } })
+  })
+})
+
+describe('Paradox Crucible mixed feed (refining the by-products below it too)', () => {
+  const mods = modifiers({})
+  const catalog = buildCatalog({ saved: [], machines: {}, mods, fertilizer: 'BasicFertilizer' })
+  // 180 Oblivion Essence from Gentian, and 18 Gentian Nectar used elsewhere in the plan.
+  const gentian = plan({
+    targets: [{ item: 'Mors', rate: 180 }, { item: 'GentianNectar', rate: 18 }],
+    producers: { Mors: 'paradox:Gentian', Gentian: 'nursery:GentianSeed', GentianNectar: 'nursery:GentianSeed' },
+  })
+  const nurseries = (r: PlanResult) => r.runs.filter((x) => x.process.id === 'nursery:GentianSeed').reduce((t, x) => t + x.craftsPerMinute, 0)
+  const crafts = (r: PlanResult, id: string) => r.runs.find((x) => x.process.id === id)?.craftsPerMinute ?? 0
+  const surplus = (r: PlanResult, item: string) => r.balances.find((b) => b.item === item)?.surplus ?? 0
+
+  it('refines only its input when off, overflowing the Nectar', () => {
+    const result = solvePlan(gentian, catalog, mods)
+    expectBalanced(result)
+    expect(nurseries(result)).toBeCloseTo(180)
+    expect(surplus(result, 'GentianNectar')).toBeCloseTo(162)
+    expect(result.tree[0].mixable).toEqual(['GentianNectar'])
+    expect(result.tree[0].mixed).toBe(false)
+  })
+
+  it('takes the Nectar up the same belt when on: the nurseries make only what that leaves', () => {
+    const result = solvePlan(setMixedFeed(gentian, '0/Mors', true), catalog, mods)
+    expectBalanced(result)
+    // Gentian + (Gentian − 18) Nectar = 180.
+    expect(nurseries(result)).toBeCloseTo(99)
+    expect(surplus(result, 'GentianNectar')).toBeCloseTo(0)
+    expect(surplus(result, 'Gentian')).toBeCloseTo(0)
+    expect(crafts(result, 'paradox:Gentian')).toBeCloseTo(99)
+    expect(crafts(result, 'paradox:GentianNectar')).toBeCloseTo(81)
+    for (const b of result.balances) expect(b.deficit).toBe(0)
+
+    const [root] = result.tree
+    expect(root.rate).toBeCloseTo(180)
+    expect(root.shortfall).toBe(0)
+    expect(root.run!.process.mixed).toBe(true)
+    expect(root.mixParts!.map((m) => [m.item, round1(m.rate)])).toEqual([
+      ['Gentian', 99],
+      ['GentianNectar', 81],
+    ])
+    // One group of crucibles per input, adding up to the row.
+    const groups = root.mixParts!.reduce((t, m) => t + m.machines, 0)
+    expect(root.machines).toBeCloseTo(groups)
+    expect(groups).toBeCloseTo((99 * paradoxSeconds('Gentian') + 81 * paradoxSeconds('GentianNectar')) / 60)
+    // Heat for every essence, whichever item it came from.
+    expect(root.heat).toBeCloseTo((1200 * (99 * paradoxSeconds('Gentian') + 81 * paradoxSeconds('GentianNectar'))) / 60)
+    // Both items come up the crucible's one input belt.
+    expect(checkProcess(root.run!.process, mods)!.utilization).toBe(1)
+    // The nursery row shows its Nectar going into the crucibles.
+    const grown = root.children.find((c) => c.item === 'Gentian')!
+    const nectar = grown.byproducts.find((b) => b.item === 'GentianNectar')!
+    expect(nectar.to.find((t) => t.direct)?.id).toBe('0/Mors')
+    expect(nectar.overflow).toBeCloseTo(0)
+  })
+
+  it('is forgotten once the crucible refines something with no by-products below it', () => {
+    const mixed = setMixedFeed(gentian, '0/Mors', true)
+    expect(pruneChoices(mixed, catalog)).toBeNull()
+    const sage = { ...mixed, producers: { ...mixed.producers, Mors: 'paradox:SageSeed' } }
+    expect(pruneChoices(sage, catalog)!.mixedFeed).toBeUndefined()
+    expect(sanitizePlans([mixed], () => 'n')![0].mixedFeed).toEqual({ '0/Mors': true })
+  })
+
+  it('is saved with my defaults, followed by other plans, and kept by the plan when un-saved', () => {
+    const mixed = setMixedFeed(gentian, '0/Mors', true)
+    const before = solvePlan(mixed, catalog, mods)
+    expect(rememberChanges(catalog, rowsById(before.tree), before.tree[0])).toBe(true)
+    const saved = rememberSetup(mixed, catalog, before.tree, before.tree[0])
+    expect(saved.mine.Mors).toEqual({ producer: 'paradox:Gentian', mixed: true })
+    expect(saved.plan.mixedFeed).toEqual({})
+
+    // A new plan making Oblivion Essence follows the default, crucibles mixing their feed.
+    const withMine = buildCatalog({ saved: [], machines: {}, mods, fertilizer: 'BasicFertilizer', mine: saved.mine })
+    const fresh = plan({ targets: [{ item: 'Mors', rate: 180 }] })
+    const after = solvePlan(fresh, withMine, mods)
+    expect(after.tree[0]).toMatchObject({ mine: true, defaultMixed: true, mixed: true })
+    expect(nurseries(after)).toBeCloseTo(90)
+    expect(rememberChanges(withMine, rowsById(after.tree), after.tree[0])).toBe(false)
+    expect(sanitizeMyDefaults(saved.mine)!.Mors).toEqual({ producer: 'paradox:Gentian', mixed: true })
+
+    // One row can still turn it off, and back on to follow the default again.
+    const off = setMixedFeed(fresh, '0/Mors', false, true)
+    expect(off.mixedFeed).toEqual({ '0/Mors': false })
+    expect(nurseries(solvePlan(off, withMine, mods))).toBeCloseTo(180)
+    expect(setMixedFeed(off, '0/Mors', true, true).mixedFeed).toBeUndefined()
+
+    const kept = keepDefaultInPlan(fresh, after.tree, 'Mors', saved.mine.Mors)
+    expect(kept.mixedFeed).toEqual({ '0/Mors': true })
   })
 })

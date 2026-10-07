@@ -99,6 +99,11 @@ export interface Process {
   fertilizer?: string
   /** Coin its Purchasing Portals are paid in, which sets their pace. */
   coin?: string
+  /**
+   * A Paradox Crucible row refining several items off one belt, as solved: `inputs` are each one's
+   * share of an entry and `seconds` their average (see `blendParadox`).
+   */
+  mixed?: boolean
 }
 
 export interface ProcessContext {
@@ -392,6 +397,31 @@ function paradoxProcess(i: Item, coinStack?: number): Process {
     height: 0,
     acceptsHeight: false,
     tier: machine ? machineTier(machine.key) : 1,
+  }
+}
+
+/**
+ * A crucible row refining several items off one belt, as one process: each item's share of the
+ * entries, at the average time and heat per Oblivion Essence. A crucible handed a run of different
+ * items takes each one's own time, so a row of them works the same as one group per item.
+ * `parts` are each input's process (the row's own first) and its crafts per minute.
+ */
+export function blendParadox(parts: { process: Process; crafts: number }[]): Process {
+  const own = parts[0].process
+  const total = parts.reduce((t, x) => t + x.crafts, 0)
+  const used = parts.filter((x) => x.crafts > 0)
+  if (total <= 0 || used.length < 2) return used[0]?.process ?? own
+  const share = (x: { crafts: number }) => x.crafts / total
+  const heat = used.reduce((t, x) => t + share(x) * (x.process.inputs.find((s) => s.item === HEAT)?.count ?? 0), 0)
+  const items = used.map((x) => x.process.inputs[0].item)
+  return {
+    ...own,
+    label: `Oblivion Essence ← ${items.map(itemName).join(' + ')}`,
+    seconds: used.reduce((t, x) => t + share(x) * x.process.seconds, 0),
+    inputs: [...used.map((x) => ({ ...x.process.inputs[0], count: share(x) * x.process.inputs[0].count })), { item: HEAT, count: heat }],
+    notes: ['One belt entry → 1 Oblivion Essence, each at its own speed: the row averages them'],
+    inputStacks: undefined,
+    mixed: true,
   }
 }
 
