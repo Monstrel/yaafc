@@ -8,6 +8,19 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
+## 2026-10-08T01:40Z
+
+- Machines make all of their outputs, failed products as much as successful ones, and each has
+  to go somewhere. The planner now puts outputs nothing else uses to work: it follows the recipes
+  that take them in until they become something your plan uses, and builds that in. Gold Dust
+  from Athanors now comes with Refiners turning their Crude Gold Dust into Impure, joining the
+  Athanors' own Impure, and that into Gold Dust, joining theirs: a quarter of the Athanors.
+  Silver and copper powders, sands and other grades climb back the same way.
+- These rows show with ♻ under the row they add to, and in the flow chart beside it. Rows that
+  use an output directly still take it first; only what would overflow is recovered.
+- Fixed: the flow chart no longer drops lines between two boxes it shows when fewer levels are
+  showing.
+
 ## 2026-10-07T20:45Z
 
 - A new flow chart shows a row and everything that goes into it, left to right from raw
