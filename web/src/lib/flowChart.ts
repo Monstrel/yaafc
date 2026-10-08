@@ -127,8 +127,8 @@ const isTransparent = (n: TreeNode) =>
 const portOf = (n: TreeNode | undefined, item: string): FlowPort =>
   !n?.run || n.kind === 'bus' ? 'none' : n.run.process.product === item ? 'main' : 'side'
 
-/** What a row's own machines make of its item, per minute. */
-const made = (n: TreeNode) => Math.max(0, n.rate - n.fromByproduct - n.fromBus - n.shortfall)
+/** What a row's own machines make of its item, per minute (what's recovered into it comes beside it). */
+const made = (n: TreeNode) => Math.max(0, n.rate - n.fromByproduct - n.fromBus - n.shortfall - n.fromRecovery)
 
 /**
  * The chart of the branch under `rootId`, showing `levels` levels below it (all of them when
@@ -185,7 +185,8 @@ export function buildFlowChart(tree: TreeNode[], rootId: string, levels?: number
   const deepest = (n: TreeNode, d: number): number =>
     n.children.reduce((m, c) => {
       if (c.consolidated) return m
-      if (isTransparent(c)) return Math.max(m, deepest(c, d))
+      // A recovery row sits beside the row it recovers into.
+      if (isTransparent(c) || c.recovery) return Math.max(m, deepest(c, d))
       const group = c.kind === 'separate' && c.groupId ? rows.get(c.groupId) : undefined
       if (group && !followed.has(group.id)) {
         followed.add(group.id)
@@ -201,8 +202,9 @@ export function buildFlowChart(tree: TreeNode[], rootId: string, levels?: number
   /** Adds the boxes of the rows under `n`, feeding `parent`. */
   const addChildren = (n: TreeNode, parent: FlowBox, depth: number) => {
     for (const c of n.children) {
-      // Items built separately here feed their uses, not this row: they come in with the first of them.
-      if (c.consolidated) continue
+      // Items built separately here feed their uses, not this row: they come in with the first of
+      // them. Rows recovering into this one's supply join its output: they come in beside it.
+      if (c.consolidated || c.recovery) continue
       if (isTransparent(c)) {
         addChildren(c, parent, depth)
         continue
@@ -246,7 +248,17 @@ export function buildFlowChart(tree: TreeNode[], rootId: string, levels?: number
         short.row = c.id
         attach(parent.id, short)
       }
+      joinRecoveries(c, parent, depth)
     }
+  }
+
+  /** Rows recovering outputs into a row's supply: beside it, feeding what it feeds. */
+  const joinRecoveries = (n: TreeNode, into: FlowBox, depth: number) => {
+    for (const r of n.children)
+      if (r.recovery) {
+        consumerOf.set(r.id, into.id)
+        addRow(r, into, depth)
+      }
   }
 
   /**
@@ -271,6 +283,8 @@ export function buildFlowChart(tree: TreeNode[], rootId: string, levels?: number
     if (n.fromByproduct > EPS) takers.push({ row: n, depth: depth + 1 })
     if (depth >= limit) b.more = countRows(n)
     else addChildren(n, b, depth + 1)
+    // With nothing above it in the chart, what's recovered into its supply comes into it.
+    joinRecoveries(n, b, depth + 1)
     return b
   }
 

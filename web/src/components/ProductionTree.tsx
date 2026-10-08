@@ -179,7 +179,7 @@ export function ProductionTree({
   // Rows where "Use as my default" would change something: only those offer it.
   const savable = useMemo(() => {
     const rows = rowsById(tree)
-    return new Set([...rows.values()].filter((n) => n.kind === 'produce' && rememberChanges(catalog, rows, n)).map((n) => n.id))
+    return new Set([...rows.values()].filter((n) => n.kind === 'produce' && !n.recovery && rememberChanges(catalog, rows, n)).map((n) => n.id))
   }, [tree, catalog])
 
   // Every node with the ids of the branches above it, folded or not.
@@ -1016,7 +1016,8 @@ function TreeRow({
   const beltsNeeded = onBelt(node.item)
     ? Math.ceil(node.rate / itemsPerSlot(node.item, node.run?.process.stack) / mods.beltSpeed - 1e-9)
     : 0
-  const canChoose = choosable(node, catalog, reuse)
+  // A recovery row runs the recipe that turns what it recovers into its item: no other pick fits.
+  const canChoose = !node.recovery && choosable(node, catalog, reuse)
   const coin = coinValue(node.item)
   const name = itemName(node.item)
   // A fuel, fertilizer or coin row, under the row whose Heat, Nutrients or Money it supplies (folded into it).
@@ -1056,6 +1057,7 @@ function TreeRow({
     </button>
   ) : (
     node.kind === 'produce' &&
+    !node.recovery &&
     depth > 0 && (
       <button
         type="button"
@@ -1175,6 +1177,14 @@ function TreeRow({
           </span>
         ) : (
           <>
+            {node.recovery && (
+              <span
+                className="leaf-note recovery-note"
+                title={`Machines make all of their outputs, and each has to go somewhere. These recover what other machines output and nothing else uses (${recovers(node)}), and what they make joins the ${name} above`}
+              >
+                ♻ {p?.label ?? name} · recovers {recovers(node)}
+              </span>
+            )}
             {canChoose && (
               <ProducerSelect
                 item={node.item}
@@ -1511,6 +1521,13 @@ function TreeRow({
     </tr>
   )
 }
+
+/** What a recovery row takes in from other machines' outputs: "Impure Gold Dust". */
+const recovers = (n: TreeNode) =>
+  n.children
+    .filter((c) => c.kind === 'byproduct' && !c.producer)
+    .map((c) => itemName(c.item))
+    .join(' and ')
 
 /** A bookmark: use this row's setup as my default. */
 /** A bookmark: outlined, or filled for a saved default. */
@@ -1887,6 +1904,7 @@ function blankRow(id: string, children: TreeNode[] = []): TreeNode {
     byproductSources: [],
     fromBus: 0,
     shortfall: 0,
+    fromRecovery: 0,
     producer: '',
     ownChoice: false,
     mine: false,

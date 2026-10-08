@@ -2,7 +2,7 @@ import { moveRows } from './choices'
 import { runKey, type ProcessCatalog } from './processes'
 import { separationKey, separationsOf, withSeparation } from './separate'
 import type { Plan, Separation } from './types'
-import { consumedBy, resolveChoice, unfold, type PlanNode } from './unfold'
+import { consumedBy, inRecovery, resolveChoice, unfold, type PlanNode } from './unfold'
 
 /** Rows from the root of its tree down to `n`. */
 function chain(n: PlanNode): PlanNode[] {
@@ -71,9 +71,10 @@ function* sharedSeparations(plan: Plan, catalog: ProcessCatalog): Generator<Plan
     // An overflow target's row makes only its overflow: it never gathers other uses.
     const overflowRows = new Set(targetRows.filter((_, i) => consumedBy(filled[i])))
     const byItem = new Map<string, PlanNode[]>()
-    // Heat and nutrients go to the machines on their furnaces and in their nurseries: never gathered.
+    // Heat and nutrients go to the machines on their furnaces and in their nurseries, and rows
+    // recovering outputs to the row they recover into: never gathered.
     for (const n of nodes)
-      if (n.kind === 'make' && !n.item.startsWith('@') && !n.separation && !overflowRows.has(n) && !chosen.has(n.item) && !skipped.has(n.item))
+      if (n.kind === 'make' && !inRecovery(n) && !n.item.startsWith('@') && !n.separation && !overflowRows.has(n) && !chosen.has(n.item) && !skipped.has(n.item))
         byItem.set(n.item, [...(byItem.get(n.item) ?? []), n])
     const shared = [...byItem].filter(([, rows]) => rows.length > 1)
     const items = new Set(shared.map(([item]) => item))
@@ -117,7 +118,7 @@ function gathered(
   if (rows.some((n) => branchSettings(p, n.id) !== settings)) return null
   const s: Separation = !anchor
     ? { item }
-    : nodes.filter((n) => n.kind === 'make' && n.item === anchor.item).length > 1
+    : nodes.filter((n) => n.kind === 'make' && !inRecovery(n) && n.item === anchor.item).length > 1
       ? { item, anchor: anchor.item, at: anchor.id }
       : { item, anchor: anchor.item }
   if (added.has(separationKey(s))) return null

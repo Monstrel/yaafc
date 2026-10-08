@@ -358,8 +358,9 @@ function solveRound(
   mods: Modifiers,
   absorbing: Map<string, Absorbing>,
   floors: Map<string, number>,
+  recovering = true,
 ): PlanResult {
-  const shape = unfold(plan, catalog)
+  const shape = unfold(plan, catalog, recovering)
   const targets = resolveTargets(plan, shape, mods)
   const index = new Map(shape.nodes.map((n, k) => [n, k]))
   const bal = (n: PlanNode) => `b:${index.get(supplierOf(n))}`
@@ -462,7 +463,10 @@ function solveRound(
       columns[`i:${k}`] = { [`b:${k}`]: 1, [`bc:${s.item}`]: 1, cost: IMPORT_COST }
       columns[`d:${k}`] = { [`b:${k}`]: 1, cost: deficitCost(s) }
     } else if (s.kind === 'bus') columns[`i:${k}`] = { [`b:${k}`]: 1, cost: IMPORT_COST }
-    else if (s.kind === 'overflow') continue
+    // A row taking what other rows output only has that, and a recovery row only what it recovers:
+    // what it makes joins the supply of the row above it.
+    else if (s.kind === 'overflow' || s.kind === 'reclaim') continue
+    else if (s.recovers) columns[`rc:${k}`] = { [`b:${k}`]: -1, [bal(s.parent!)]: 1, cost: 0 }
     else columns[`d:${k}`] = { [`b:${k}`]: 1, cost: deficitCost(s) }
   }
   targets.forEach((t, i) => {
@@ -540,6 +544,23 @@ function solveRound(
     })
   }
 
+  // Recovery takes only what would overflow: rows using an output as it is take it first. Where an
+  // output goes both ways, the share of it that overflows without recovery caps what's recovered.
+  const isReclaim = (c: PlanNode) => c.kind === 'reclaim'
+  const sharedWith = (n: PlanNode, item: string) => (consumers.get(item) ?? []).filter((c) => n.reuse || c.reuseChosen)
+  const contested = (n: PlanNode, item: string) => {
+    const cs = sharedWith(n, item)
+    return cs.some(isReclaim) && cs.some((c) => !isReclaim(c))
+  }
+  const overflowShare = new Map<string, number>()
+  if (shape.nodes.some((n) => n.kind === 'make' && n.process!.outputs.some((o) => o.item !== n.item && contested(n, o.item)))) {
+    const visit = (t: TreeNode) => {
+      for (const b of t.byproducts) if (b.count > 0) overflowShare.set(`${t.id}>${b.item}`, b.overflow / b.count)
+      t.children.forEach(visit)
+    }
+    solveRound(plan, catalog, mods, absorbing, floors, false).tree.forEach(visit)
+  }
+
   for (const n of shape.nodes) {
     if (n.kind !== 'make') continue
     const p = n.process!
@@ -579,11 +600,17 @@ function solveRound(
         columns[`ps:${k}:${o.item}`][extra] = -1
         columns[`es:${k}:${o.item}`] = { [extra]: 1, cost: 0 }
       }
+      const cap = contested(n, o.item) ? `rq:${k}:${o.item}` : null
+      if (cap) {
+        equalities[cap] = 0
+        col[cap] = -(overflowShare.get(`${n.id}>${o.item}`) ?? 1) * o.count
+        columns[`rqs:${k}:${o.item}`] = { [cap]: 1, cost: 0 }
+      }
       // A row making its own keeps to itself: its by-products only go where reuse was picked.
-      for (const c of consumers.get(o.item) ?? []) {
-        if (!n.reuse && !c.reuseChosen) continue
+      for (const c of sharedWith(n, o.item)) {
         const name = `f:${k}>${index.get(c)}`
         columns[name] = { [pool]: -1, [`b:${index.get(c)}`]: 1, cost: FLOW_COST * (1 + distance(n, c)) }
+        if (cap && isReclaim(c)) columns[name][cap] = 1
         if (extra in equalities && sameRun(n, c)) columns[name][extra] = -1
         flows.push({ name, from: n, to: c })
       }
@@ -712,6 +739,15 @@ function solveRound(
     for (const m of mixed(n))
       if (heat) own.set(heat, (own.get(heat) ?? 0) + (m.process.inputs.find((s) => s.item === HEAT)?.count ?? 0) * m.crafts)
   }
+  // A recovery row supplies what it recovers to the row above it, which needs that much less.
+  const recovered = new Map<PlanNode, number>()
+  for (const n of shape.nodes)
+    if (n.recovers) {
+      const x = v(`rc:${index.get(n)}`)
+      own.set(n, x)
+      const into = supplierOf(n.parent!)
+      recovered.set(into, (recovered.get(into) ?? 0) + x)
+    }
   const demand = new Map<PlanNode, number>()
   for (const n of shape.nodes) {
     const s = supplierOf(n)
@@ -767,7 +803,8 @@ function solveRound(
     const tol = RELATIVE_NOISE * Math.max(1, need, made)
     const draws = (drawn.get(n) ?? []).filter((d) => d.amount > tol * 1e-2).sort((a, b) => b.amount - a.amount)
     const fromByproduct = draws.reduce((sum, d) => sum + d.amount, 0)
-    const missing = need - made - fromByproduct
+    const fromRecovery = recovered.get(n) ?? 0
+    const missing = need - made - fromByproduct - fromRecovery
     const short = missing > tol ? missing : 0
     // Rows taking an item from the bus get what it carries; past a capped supply, they fall short.
     const drew = n.kind !== 'bus' ? 0 : capped.has(n.item) ? Math.min(short, cleaned(v(`i:${index.get(n)}`), tol)) : short
@@ -776,6 +813,7 @@ function solveRound(
       crafts: x,
       fromByproduct,
       byproductSources: draws.map((d) => ({ id: d.from.id, label: d.from.process!.label })),
+      fromRecovery: cleaned(fromRecovery, tol),
       fromBus: drew,
       shortfall: short - drew > tol ? short - drew : 0,
       overflow: cleaned(v(`s:${index.get(n)}`), tol),

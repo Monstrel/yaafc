@@ -390,7 +390,15 @@ function Box({
             {short && <span className="warn-text"> · short {fmt(b.node!.shortfall)}/min</span>}
           </span>
         )}
-        {b.kind === 'machines' && p?.machine && <span className="flow-box-recipe">{p.label}</span>}
+        {b.kind === 'machines' && p?.machine && (
+          <span
+            className="flow-box-recipe"
+            title={b.node?.recovery ? 'Recovers what other machines output and nothing else uses' : undefined}
+          >
+            {b.node?.recovery && '♻ '}
+            {p.label}
+          </span>
+        )}
         {b.kind === 'bus' && <span className="flow-box-meta">from the bus</span>}
         {b.kind === 'outside' && <span className="flow-box-meta">{b.note}</span>}
       </button>

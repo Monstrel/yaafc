@@ -1,0 +1,79 @@
+import { describe, expect, it } from 'vitest'
+import { buildFlowChart } from './flowChart'
+import { buildCatalog } from './processes'
+import { solvePlan } from './solver'
+import type { TreeNode } from './tree'
+import type { Plan } from './types'
+import { modifiers } from './upgrades'
+
+const mods = modifiers({})
+const catalog = buildCatalog({ saved: [], machines: {}, mods, fertilizer: null })
+const plan = (partial: Partial<Plan>): Plan => ({
+  id: 't',
+  name: 't',
+  targets: [],
+  producers: {},
+  machines: {},
+  ...partial,
+})
+const all = (n: TreeNode): TreeNode[] => [n, ...n.children.flatMap(all)]
+
+describe('recovering what machines output', () => {
+  // Gold Dust from Advanced Athanors: 10% Gold Dust, 30% Impure Gold Dust, 60% Crude Gold Dust.
+  // Refiners take 2 Crude → 1 Impure, 2 Impure → 1 Gold Dust, 2 Gold Dust → 1 Pure Gold Dust.
+  const gold = solvePlan(
+    plan({ targets: [{ item: 'GoldIngot', rate: 8.45 }], producers: { GoldDust3: 'recipe:GoldDust3' } }),
+    catalog,
+    mods,
+  )
+  const rows = gold.tree.flatMap(all)
+  const athanors = rows.find((n) => n.item === 'GoldDust3' && n.producer === 'recipe:GoldDust3')!
+
+  it('climbs every output up to the product it ends in, joining the stream at each grade', () => {
+    expect(gold.status).toBe('ok')
+    // Each craft yields 0.1 + 0.3 / 2 + 0.6 / 4 = 0.4 Gold Dust: 16.9 a minute takes 42.25 crafts.
+    expect(athanors.run!.craftsPerMinute).toBeCloseTo(42.25)
+    const [intoDust] = athanors.children.filter((c) => c.recovery)
+    expect(intoDust).toMatchObject({ item: 'GoldDust3', producer: 'recipe:GoldDust3_Alt' })
+    expect(intoDust.rate).toBeCloseTo(12.675)
+    expect(athanors.fromRecovery).toBeCloseTo(12.675)
+    // Its Impure Gold Dust: the Athanors' own, and the Crude refined up into it.
+    const impure = intoDust.children.find((c) => c.item === 'GoldDust2')!
+    expect(impure.fromByproduct).toBeCloseTo(12.675)
+    expect(impure.byproductSources.map((s) => s.id)).toEqual([athanors.id])
+    const [intoImpure] = impure.children.filter((c) => c.recovery)
+    expect(intoImpure).toMatchObject({ item: 'GoldDust2', producer: 'recipe:GoldDust2' })
+    expect(intoImpure.rate).toBeCloseTo(12.675)
+    expect(intoImpure.children[0]).toMatchObject({
+      item: 'GoldDust',
+      kind: 'byproduct',
+      fromByproduct: expect.closeTo(25.35),
+    })
+  })
+
+  it('leaves none of the Athanors’ outputs overflowing', () => {
+    for (const b of athanors.byproducts) expect(b.overflow).toBe(0)
+    const balance = (item: string) => gold.balances.find((b) => b.item === item)!
+    for (const item of ['GoldDust', 'GoldDust2', 'GoldDust3']) expect(balance(item).surplus).toBe(0)
+  })
+
+  it('shows only recoveries the plan runs', () => {
+    for (const n of rows) if (n.recovery) expect(n.rate).toBeGreaterThan(0)
+  })
+
+  it('draws the recovered streams beside the Athanors, feeding the Pure Gold Dust Refiners too', () => {
+    const pure = rows.find((n) => n.item === 'GoldDust5')!
+    const chart = buildFlowChart(gold.tree, pure.id)!
+    const into = (id: string) => chart.edges.filter((e) => e.to === id)
+    const recovered = rows.find((n) => n.recovery && n.item === 'GoldDust3')!
+    // Both Gold Dust streams feed the Pure Gold Dust Refiners.
+    expect(into(pure.id).map((e) => e.from)).toEqual(expect.arrayContaining([athanors.id, recovered.id]))
+    expect(chart.boxes.get(athanors.id)!.rate).toBeCloseTo(4.225)
+    // The Athanors' failed products go up the Refiners on their blue outputs.
+    const fails = chart.edges.filter((e) => e.from === athanors.id && e.kind === 'byproduct')
+    expect(fails.map((e) => e.item).sort()).toEqual(['GoldDust', 'GoldDust2'])
+    expect(fails.every((e) => e.port === 'side')).toBe(true)
+    // Nothing loops: every stream only climbs.
+    expect(chart.loops).toEqual([])
+  })
+})

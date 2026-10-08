@@ -25,6 +25,7 @@ export type PlanNodeKind =
   | 'loop' // fed by the row `ref` further up this branch (or cut off, too deep, with no `ref`)
   | 'separate' // built separately, by the row `ref`
   | 'overflow' // the plan's overflow of the item, taken by an overflow target's rows
+  | 'reclaim' // taken only from what other rows' machines output and nothing else uses (see `recovers`)
 
 /**
  * One row of the production tree, as a place in the factory: its machines feed the row above
@@ -72,7 +73,15 @@ export interface PlanNode {
   mixable?: string[]
   /** The ones it does refine, when its mixed feed is on. */
   mix?: string[]
-  /** Rows of a `make` row's ingredients (heat and nutrients too), then the rows it gathers. */
+  /**
+   * A `make` row recovering other machines' outputs: its machines turn them (its `reclaim` rows)
+   * into the item of the row above it, joining that row's supply instead of feeding its machines.
+   */
+  recovers?: boolean
+  /**
+   * Rows of a `make` row's ingredients (heat and nutrients too), then the rows it gathers, then
+   * the rows recovering outputs into its supply.
+   */
   children: PlanNode[]
 }
 
@@ -146,8 +155,22 @@ export const isTargetRow = (id: string) => /^\d+\/[^/]+$/.test(id)
 /** The item a row id is for. */
 export const rowItem = (id: string) => {
   const step = id.slice(id.lastIndexOf('/') + 1)
-  return step.startsWith('with:') ? step.slice(5) : step
+  if (step.startsWith('with:')) return step.slice(5)
+  // A recovery row: `recover:Item@process`.
+  if (step.startsWith(RECOVER)) return step.slice(RECOVER.length, step.indexOf('@', RECOVER.length))
+  return step
 }
+
+const RECOVER = 'recover:'
+
+/** Whether a row recovers outputs, or is there to supply one that does. */
+export function inRecovery(n: PlanNode): boolean {
+  for (let a: PlanNode | undefined = n; a; a = a.parent) if (a.recovers) return true
+  return false
+}
+
+/** Whether a row id is a recovery row's (see `PlanNode.recovers`). */
+export const isRecoveryId = (id: string) => id.slice(id.lastIndexOf('/') + 1).startsWith(RECOVER)
 
 const makes = (p: Process | undefined, item: string) =>
   !!p && (p.product === item || p.secondary.includes(item) || p.outputs.some((o) => o.item === item))
@@ -334,9 +357,10 @@ interface Frame {
  * from the solver). Each row's ingredients become rows below it; a row whose item and process
  * already run further up its branch loops back to that row instead; an item built separately gets
  * a row gathering its uses (at the top of the plan, or after the children of its anchor rows) and
- * a `separate` row pointing there wherever it's used.
+ * a `separate` row pointing there wherever it's used. Outputs nothing uses are recovered where
+ * they can be (see `recover`), unless `recovering` is off.
  */
-export function unfold(plan: Plan, catalog: ProcessCatalog): PlanShape {
+export function unfold(plan: Plan, catalog: ProcessCatalog, recovering = true): PlanShape {
   const seps = separationsOf(plan.separate)
   const top = new Map(seps.filter((s) => !s.anchor).map((s) => [s.item, s]))
   // Single-row anchors first, so they win over every-row ones for the same item.
@@ -500,5 +524,173 @@ export function unfold(plan: Plan, catalog: ProcessCatalog): PlanShape {
     expand(pending[i])
     roots.push(pending[i])
   }
+  if (recovering) recover(nodes, catalog, plan, child, create)
   return { roots, targetRows, nodes }
+}
+
+/** Steps a recovery chain can take from an output to an item the plan uses. */
+const MAX_CHAIN = 4
+/** Rounds of looking for recoveries: each can add rows whose machines output more. */
+const MAX_RECOVERY_ROUNDS = 3
+/** Processes that can recover outputs: crafting recipes (saved cauldron ones too) and nurseries. */
+const RECOVERING = new Set(['recipe', 'cauldron', 'nursery'])
+
+/** Per item, the processes that take it in, for finding recovery chains. */
+const takersCache = new WeakMap<ProcessCatalog, Map<string, Process[]>>()
+function takersOf(catalog: ProcessCatalog, item: string): Process[] {
+  let index = takersCache.get(catalog)
+  if (!index) {
+    index = new Map()
+    for (const p of catalog.byId.values()) {
+      if (!RECOVERING.has(p.kind) || catalog.reach(p) > catalog.tier) continue
+      for (const s of p.inputs) if (!isPseudo(s.item)) index.set(s.item, [...(index.get(s.item) ?? []), p])
+    }
+    takersCache.set(catalog, index)
+  }
+  return index.get(item) ?? []
+}
+
+/** One step of a recovery chain: `process` takes `input` in. */
+interface ChainStep {
+  process: Process
+  input: string
+}
+
+/** Steps between two rows of the tree. */
+function rowDistance(a: string, b: string): number {
+  const x = a.split('/')
+  const y = b.split('/')
+  let common = 0
+  while (common < x.length && common < y.length && x[common] === y[common]) common++
+  return x.length + y.length - 2 * common
+}
+
+/**
+ * Recovers what machines output and nothing in the plan uses. A machine makes all of its outputs,
+ * whichever the recipe is for (a failed craft's product as much as a successful one's): each has to
+ * go somewhere, or the machine stalls. For each such output, the shortest chains of recipes from it
+ * to an item the plan uses (made or taken from the bus) become rows recovering it into that item,
+ * under the nearest row of it: the output feeds a `reclaim` row, the recipe runs on a recovery row
+ * joining that row's supply, and each further step is a recovery row of its own. A step's other
+ * inputs are made as usual. New rows can output more, so this repeats a few rounds.
+ */
+function recover(
+  nodes: PlanNode[],
+  catalog: ProcessCatalog,
+  plan: Plan,
+  child: (item: string, parent: PlanNode) => PlanNode,
+  create: (item: string, id: string, depth: number, parent: PlanNode | undefined, fields: Partial<PlanNode>) => PlanNode,
+) {
+  const tried = new Set<string>()
+  for (let round = 0; round < MAX_RECOVERY_ROUNDS; round++) {
+    // Rows an output could be recovered into: rows making or taking an item for the plan's use.
+    const usedBy = new Map<string, PlanNode[]>()
+    for (const n of nodes)
+      if ((n.kind === 'make' || n.kind === 'bus') && !n.recovers && !isPseudo(n.item))
+        usedBy.set(n.item, [...(usedBy.get(n.item) ?? []), n])
+    // Rows taking an item from other rows' outputs, and overflow targets taking the overflow of
+    // one: those outputs are used already.
+    const taken = new Set([
+      ...nodes.filter((n) => n.kind === 'reclaim').map((n) => n.item),
+      ...plan.targets.flatMap((t) => consumedBy(t) ?? []),
+    ])
+    let added = false
+    for (const source of [...nodes]) {
+      if (source.kind !== 'make') continue
+      for (const out of source.process!.outputs) {
+        const item = out.item
+        // Outputs the plan uses only in part still need a place for the rest.
+        if (item === source.item || isPseudo(item) || out.count <= 0 || taken.has(item)) continue
+        const key = `${source.id}>${item}`
+        if (tried.has(key)) continue
+        tried.add(key)
+        for (const chain of chainsFrom(item, catalog, usedBy)) {
+          // The nearest row of the item it ends in.
+          const row = usedBy
+            .get(chain.into)!
+            .reduce((best, n) => (rowDistance(n.id, source.id) < rowDistance(best.id, source.id) ? n : best))
+          build(row, chain.steps)
+          added = true
+        }
+      }
+    }
+    if (!added) break
+  }
+
+  /**
+   * Builds a chain's rows under `row`: the last step's recovery row joins its supply, and each
+   * step's input is a `reclaim` row, recovered in turn by the step before it.
+   */
+  function build(row: PlanNode, steps: ChainStep[]) {
+    let at = row
+    for (let i = steps.length - 1; i >= 0; i--) {
+      const rr = recoveryRow(at, steps[i])
+      const input = rr.children.find((c) => c.kind === 'reclaim' && c.item === steps[i].input)
+      if (!input) return
+      at = input
+    }
+  }
+
+  /** The row under `at` recovering `step.input` into `at`'s item with `step.process` (made once). */
+  function recoveryRow(at: PlanNode, step: ChainStep): PlanNode {
+    const id = `${at.id}/${RECOVER}${at.item}@${step.process.id}`
+    const existing = at.children.find((c) => c.id === id)
+    if (existing) return existing
+    // A pick on the row itself, while it still takes the output in and makes the item.
+    const pick = plan.branches?.[id]?.producer
+    const picked = pick ? catalog.byId.get(pick) : undefined
+    const process =
+      picked && picked.inputs.some((s) => s.item === step.input) && picked.outputs.some((o) => o.item === at.item)
+        ? picked
+        : step.process
+    const rr = create(at.item, id, at.depth + 1, at, { kind: 'make', process, recovers: true })
+    at.children.push(rr)
+    for (const s of process.inputs)
+      rr.children.push(
+        s.item === step.input
+          ? create(s.item, `${id}/${s.item}`, rr.depth + 1, rr, { kind: 'reclaim', reuse: true, reuseChosen: true })
+          : child(s.item, rr),
+      )
+    return rr
+  }
+}
+
+/**
+ * The shortest chains of recipes turning `item` into an item the plan uses (`usedBy`), each with
+ * the item it ends in. A recipe counts whichever of its outputs leads on: failed and successful
+ * products alike.
+ */
+function chainsFrom(
+  item: string,
+  catalog: ProcessCatalog,
+  usedBy: Map<string, PlanNode[]>,
+): { into: string; steps: ChainStep[] }[] {
+  const seen = new Set([item])
+  let frontier: { item: string; steps: ChainStep[] }[] = [{ item, steps: [] }]
+  for (let depth = 0; depth < MAX_CHAIN && frontier.length; depth++) {
+    const found: { into: string; steps: ChainStep[] }[] = []
+    const next: typeof frontier = []
+    for (const at of frontier)
+      for (const p of takersOf(catalog, at.item)) {
+        const steps = [...at.steps, { process: p, input: at.item }]
+        for (const o of p.outputs) {
+          if (o.count <= 0 || isPseudo(o.item) || o.item === at.item) continue
+          // A row of the item running the same recipe takes the input as a by-product already.
+          const rows = usedBy.get(o.item)
+          if (rows?.some((n) => n.kind === 'make' && sameRecipe(n.process!, p))) continue
+          if (rows) found.push({ into: o.item, steps })
+          else if (!seen.has(o.item)) {
+            seen.add(o.item)
+            next.push({ item: o.item, steps })
+          }
+        }
+      }
+    if (found.length) {
+      // One chain per item and recipe it ends with.
+      const kept = new Map(found.map((c) => [`${c.into}@${c.steps[c.steps.length - 1].process.id}`, c]))
+      return [...kept.values()]
+    }
+    frontier = next
+  }
+  return []
 }

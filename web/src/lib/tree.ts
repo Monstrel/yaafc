@@ -58,6 +58,13 @@ export interface TreeNode {
   fromBus: number
   /** Part of the rate nothing can supply, per minute. */
   shortfall: number
+  /** Part of the rate its recovery rows (children with `recovery`) supply, per minute. */
+  fromRecovery: number
+  /**
+   * The row recovers what other machines output into the supply of the row above it: it joins
+   * that row's output rather than feeding its machines.
+   */
+  recovery?: boolean
   children: TreeNode[]
   /** Gathers the uses of an item built separately (a root, or a "with" row under its anchor). */
   consolidated?: boolean
@@ -116,6 +123,8 @@ export interface RowFlows {
   byproductSources: { id: string; label: string }[]
   fromBus: number
   shortfall: number
+  /** Part of the row's rate its recovery rows supply. */
+  fromRecovery?: number
   /** Part of the row's own item made or brought in that nothing uses. */
   overflow: number
   /** Where each by-product of the row's machines goes, by item. */
@@ -139,6 +148,8 @@ const isPseudo = (item: string) => item.startsWith('@')
 
 /** The solved plan rows as the production tree shows them. */
 export function buildTree(roots: PlanNode[], flows: Map<PlanNode, RowFlows>, mods: Modifiers): TreeNode[] {
+  // Recovery rows the solve doesn't run (recovering costs more than it saves) aren't shown.
+  const used = (n: PlanNode) => (flows.get(n)?.rate ?? 0) > 1e-9
   const toNode = (n: PlanNode): TreeNode => {
     const f = flows.get(n) ?? NO_FLOWS
     const base = {
@@ -164,11 +175,18 @@ export function buildTree(roots: PlanNode[], flows: Map<PlanNode, RowFlows>, mod
       byproductSources: f.byproductSources,
       fromBus: f.fromBus,
       shortfall: f.shortfall,
+      fromRecovery: f.fromRecovery ?? 0,
+      ...(n.recovers && { recovery: true }),
       children: [],
     }
+    // Rows recovering other machines' outputs into this one's supply.
+    const recoveries = () => n.children.filter((c) => c.recovers && used(c)).map(toNode)
     switch (n.kind) {
       case 'bus':
-        return { ...base, kind: f.fromByproduct > 0 && f.fromBus === 0 ? 'byproduct' : 'bus' }
+        return { ...base, kind: f.fromByproduct > 0 && f.fromBus === 0 ? 'byproduct' : 'bus', children: recoveries() }
+      // Taken from other machines' outputs, with the rows recovering more of it.
+      case 'reclaim':
+        return { ...base, kind: 'byproduct', children: recoveries() }
       case 'loop':
         return { ...base, kind: 'loop' }
       case 'overflow':
@@ -195,7 +213,7 @@ export function buildTree(roots: PlanNode[], flows: Map<PlanNode, RowFlows>, mod
     // A gathered row stays one, even when by-products cover it, so it can still be undone.
     const gathered = n.separation && { consolidated: true, separation: n.separation }
     // Wholly covered by other rows' by-products: its own machines and ingredients stand idle.
-    if (crafts === 0 && f.fromByproduct > 0) return { ...base, kind: 'byproduct', run, ...gathered }
+    if (crafts === 0 && f.fromByproduct > 0 && !base.fromRecovery) return { ...base, kind: 'byproduct', run, ...gathered }
     const perSecond = (key: string) => (run.inputs.find((s) => s.item === key)?.count ?? 0) / 60
     return {
       ...base,
@@ -207,7 +225,7 @@ export function buildTree(roots: PlanNode[], flows: Map<PlanNode, RowFlows>, mod
       byproducts: run.outputs
         .filter((s) => s.item !== n.item && s.count > 0 && !isPseudo(s.item))
         .map((s) => ({ ...s, ...(f.byproductRoutes[s.item] ?? { to: [], overflow: s.count }) })),
-      children: n.children.map(toNode),
+      children: n.children.filter((c) => !c.recovers || used(c)).map(toNode),
       ...(mixParts && { mixParts }),
       ...gathered,
     }

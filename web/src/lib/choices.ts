@@ -508,6 +508,8 @@ function setupsBelow(rows: Map<string, TreeNode>, row: TreeNode) {
     const n = queue.shift()!
     if (covered.has(n.id)) continue
     covered.add(n.id)
+    // Recovering other machines' outputs isn't how the item is made: never a default.
+    if (n.recovery) continue
     if (n.kind === 'separate') {
       const group = n.groupId && rows.get(n.groupId)
       if (group) queue.push(group)

@@ -351,7 +351,10 @@ describe('production tree', () => {
     const copper = copperRow(own)
     expect(copper.kind).toBe('produce')
     expect(copper.fromByproduct).toBe(0)
-    expect(copper.byproducts.find((b) => b.item === 'CopperPowder')!.overflow).toBeGreaterThan(0)
+    // Their Impure Copper Powder has no row of its own to go to now: it's recovered into Copper Powder.
+    const impure = copper.byproducts.find((b) => b.item === 'CopperPowder')!
+    expect(impure.overflow).toBe(0)
+    expect(impure.to.length).toBeGreaterThan(0)
 
     // Picking reuse on the Copper Ingot side takes them after all.
     const linked = chooseReuse(own, 'CopperPowder2', true, copper.id)
@@ -562,9 +565,11 @@ describe('production tree', () => {
 
   describe('building every shared item separately', () => {
     const sol = plan({ targets: [{ item: 'Sol', rate: 0.25 }] })
+    // Rows recovering outputs, and the rows supplying them, are never gathered.
+    const outsideRecovery = (n: TreeNode): TreeNode[] => (n.recovery ? [] : [n, ...n.children.flatMap(outsideRecovery)])
     const madeIn = (p: Plan) => {
       const counts = new Map<string, number>()
-      for (const n of solvePlan(p, catalog, mods).tree.flatMap(all))
+      for (const n of solvePlan(p, catalog, mods).tree.flatMap(outsideRecovery))
         if (n.run && !n.consolidated && !n.item.startsWith('@')) counts.set(n.item, (counts.get(n.item) ?? 0) + 1)
       return counts
     }
