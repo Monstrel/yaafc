@@ -1,5 +1,6 @@
 import { fmt } from './format'
 import { HEAT, MONEY, NUTRIENTS } from './gameData'
+import { STEAM_HEAT_ID } from './processes'
 import type { TreeNode } from './tree'
 import { parentId } from './unfold'
 
@@ -14,6 +15,19 @@ import { parentId } from './unfold'
  * outside the chart (a loop or by-product from rows not in it, an item built elsewhere, overflow).
  */
 export type FlowBoxKind = 'machines' | 'bus' | 'outside'
+
+/**
+ * What a heated row's machines sit on, drawn under its box: furnaces burning a solid fuel, or Steam
+ * Heating Pads taking Steam. Fuel off the bus shows only here; fuel made in the plan feeds it.
+ */
+export interface FlowHeat {
+  /** The fuel, and how much of it they burn per minute (none if the Heat row has no fuel row). */
+  item?: string
+  rate: number
+  /** Heat used, P/s. */
+  heat: number
+  pads: boolean
+}
 
 export interface FlowBox {
   /** The tree row it shows (a made-up id for bus and outside boxes). */
@@ -39,6 +53,8 @@ export interface FlowBox {
   elsewhere?: { rate: number; uses: number }
   /** The loop it takes part in (index into `FlowChart.loops`), if any. */
   loop?: number
+  /** The furnaces or heating pads its machines sit on ('machines' boxes using heat). */
+  heat?: FlowHeat
   children: FlowBox[]
   /** Layout: left edge, center line, size. */
   x: number
@@ -69,6 +85,8 @@ interface Link {
   rate: number
   kind: FlowEdgeKind
   port?: FlowPort
+  /** Fuel: it goes into the furnaces or heating pads under the box, not its machines. */
+  fuel?: boolean
 }
 
 export interface FlowEdge extends Link {
@@ -103,6 +121,8 @@ export interface FlowChart {
 export const BOX_W = 210
 export const BOX_H = 74
 export const SMALL_H = 50
+/** Height of the furnaces or heating pads drawn under a heated box. */
+export const HEAT_H = 30
 const V_GAP = 14
 const MIN_GAP = 72
 const LANE_STEP = 18
@@ -122,6 +142,9 @@ export const labelWidth = (rate: number) => 46 + `${fmt(rate)}/min`.length * 6.5
 /** Heat, Nutrients and Money rows that are just what the row above burns, spreads or pays with. */
 const isTransparent = (n: TreeNode) =>
   (n.item === HEAT || n.item === NUTRIENTS || n.item === MONEY) && !n.run?.process.machine
+
+/** Fuel rows taken whole off the bus: the furnaces or pads they go into say so, they get no box. */
+const fromBusOnly = (n: TreeNode) => n.kind === 'bus'
 
 /** Which output of a row's machines `item` leaves by. */
 const portOf = (n: TreeNode | undefined, item: string): FlowPort =>
@@ -157,36 +180,72 @@ export function buildFlowChart(tree: TreeNode[], rootId: string, levels?: number
   let outside = 0
   const limit = levels ?? Infinity
 
-  const box = (b: Omit<FlowBox, 'x' | 'y' | 'w' | 'h' | 'children' | 'more'>): FlowBox => {
+  /** Heat a box takes from furnaces fed further up the tree: lines from their fuel, once every box is made. */
+  const heatLoops: { from: string; to: string; item: string; rate: number }[] = []
+  /** What a row's machines sit on: its Heat row's fuel, or the fuel of the furnaces it shares further up. */
+  const heatOf = (id: string, n: TreeNode): FlowHeat | undefined => {
+    const h = n.children.find((c) => c.item === HEAT && isTransparent(c))
+    if (!h) return undefined
+    const up = h.kind === 'loop' ? loopSource(h) : undefined
+    const source = up ? rows.get(up)! : h
+    const fuel = source.children.find((c) => !c.recovery)
+    // Of what the furnaces up the tree burn, the part for these machines' heat.
+    const rate = !fuel ? 0 : up ? (fuel.rate * h.rate) / (source.rate || 1) : fuel.rate
+    // Fuel built separately comes from where it's gathered.
+    const from = fuel?.kind === 'separate' && fuel.groupId ? fuel.groupId : fuel?.id
+    if (up && fuel && from && !fromBusOnly(fuel)) heatLoops.push({ from, to: id, item: fuel.item, rate })
+    return { item: fuel?.item, rate, heat: n.heat, pads: source.producer === STEAM_HEAT_ID }
+  }
+
+  const box = (b: Omit<FlowBox, 'x' | 'y' | 'w' | 'h' | 'children' | 'more' | 'heat'>): FlowBox => {
+    const heat = b.kind === 'machines' && b.node ? heatOf(b.id, b.node) : undefined
     const made: FlowBox = {
       ...b,
+      heat,
       more: 0,
       children: [],
       x: 0,
       y: 0,
       w: BOX_W,
-      h: b.kind === 'machines' ? BOX_H : SMALL_H,
+      h: b.kind === 'machines' ? BOX_H + (heat ? HEAT_H : 0) : SMALL_H,
     }
     boxes.set(made.id, made)
     return made
   }
+  /** Tree rows whose item is fuel for the furnaces or pads under the box they feed. */
+  const fuelRows = new Set<string>()
   /** Adds `b` as a feed of the box `to`. */
-  const attach = (to: string, b: FlowBox) => {
+  const attach = (to: string, b: FlowBox, fuel = false) => {
     boxes.get(to)!.children.push(b)
-    links.push({ id: `${b.id}>${to}`, from: b.id, to, item: b.item, rate: b.rate, kind: 'feed' })
+    links.push({ id: `${b.id}>${to}`, from: b.id, to, item: b.item, rate: b.rate, kind: 'feed', fuel })
   }
+  /** A line from a box making `row`'s item, into the furnaces or pads under `to` when it's fuel. */
+  const link = (l: Omit<Link, 'fuel'>, row: string) => links.push({ ...l, fuel: fuelRows.has(row) })
+  /** The fuel rows under a Heat row that get boxes: all but those taken whole off the bus. */
+  const fuelFeeds = (h: TreeNode) =>
+    h.children.filter((f) => {
+      if (fromBusOnly(f)) return false
+      fuelRows.add(f.id)
+      return true
+    })
   /** A box for what comes from outside the chart; `source` is the row making it, shown on a click. */
   const outsideBox = (item: string, rate: number, note: string, depth: number, source?: string) =>
     box({ id: `outside:${outside++}`, kind: 'outside', item, rate, note, depth, row: source, source })
 
-  /** Rows of a branch that get a box (Heat, Nutrients and Money rows don't, their rows do). */
+  /**
+   * Rows of a branch that get a box (Heat, Nutrients and Money rows don't, their rows do, but for
+   * fuel off the bus).
+   */
   const countRows = (n: TreeNode): number =>
-    n.children.reduce((t, c) => t + (c.consolidated ? 0 : isTransparent(c) ? countRows(c) : 1 + countRows(c)), 0)
+    n.children.reduce((t, c) => {
+      if (c.consolidated || (n.item === HEAT && fromBusOnly(c))) return t
+      return t + (isTransparent(c) ? countRows(c) : 1 + countRows(c))
+    }, 0)
   /** Levels below a row, following its uses of items built separately into where they're built. */
   const followed = new Set([start.id])
   const deepest = (n: TreeNode, d: number): number =>
     n.children.reduce((m, c) => {
-      if (c.consolidated) return m
+      if (c.consolidated || (n.item === HEAT && fromBusOnly(c))) return m
       // A recovery row sits beside the row it recovers into.
       if (isTransparent(c) || c.recovery) return Math.max(m, deepest(c, d))
       const group = c.kind === 'separate' && c.groupId ? rows.get(c.groupId) : undefined
@@ -207,6 +266,13 @@ export function buildFlowChart(tree: TreeNode[], rootId: string, levels?: number
       // Items built separately here feed their uses, not this row: they come in with the first of
       // them. Rows recovering into this one's supply join its output: they come in beside it.
       if (c.consolidated || c.recovery) continue
+      if (c.item === HEAT && isTransparent(c)) {
+        for (const f of fuelFeeds(c)) {
+          consumerOf.set(f.id, parent.id)
+          addRow(f, parent, depth)
+        }
+        continue
+      }
       if (isTransparent(c)) {
         addChildren(c, parent, depth)
         continue
@@ -218,10 +284,11 @@ export function buildFlowChart(tree: TreeNode[], rootId: string, levels?: number
 
   /** The boxes a row puts in the chart: its machines, the part from the bus, what comes from elsewhere. */
   const addRow = (c: TreeNode, parent: FlowBox, depth: number) => {
+    const fuel = fuelRows.has(c.id)
     switch (c.kind) {
       case 'produce': {
         const b = box({ id: c.id, row: c.id, kind: 'machines', item: c.item, rate: made(c), node: c, depth })
-        attach(parent.id, b)
+        attach(parent.id, b, fuel)
         if (depth >= limit) {
           b.more = countRows(c)
           addHidden(c, b, depth + 1)
@@ -235,18 +302,19 @@ export function buildFlowChart(tree: TreeNode[], rootId: string, levels?: number
         pending.push({ from: c.groupId, row: c, depth, kind: 'separate', note: 'built separately' })
         break
       case 'overflow':
-        attach(parent.id, outsideBox(c.item, c.rate, 'overflow of the plan', depth))
+        attach(parent.id, outsideBox(c.item, c.rate, 'overflow of the plan', depth), fuel)
         break
     }
     if (c.kind === 'produce' || c.kind === 'bus' || c.kind === 'byproduct') {
-      if (c.fromBus > EPS)
+      // Fuel's part off the bus shows on the furnaces or pads it goes into.
+      if (c.fromBus > EPS && !fuel)
         attach(parent.id, box({ id: `${c.id}#bus`, row: c.id, kind: 'bus', item: c.item, rate: c.fromBus, depth }))
       if (c.fromByproduct > EPS) takers.push({ row: c, depth })
       if (c.kind !== 'produce' && c.shortfall > EPS) {
         // Nothing makes it: a click shows the row that's short.
         const short = outsideBox(c.item, c.shortfall, 'short: nothing supplies it', depth)
         short.row = c.id
-        attach(parent.id, short)
+        attach(parent.id, short, fuel)
       }
       joinRecoveries(c, parent, depth)
     }
@@ -259,15 +327,17 @@ export function buildFlowChart(tree: TreeNode[], rootId: string, levels?: number
   const addHidden = (n: TreeNode, into: FlowBox, depth: number) => {
     for (const c of n.children) {
       if (c.consolidated || c.recovery) continue
-      if (isTransparent(c)) {
-        addHidden(c, into, depth)
-        continue
-      }
-      consumerOf.set(c.id, into.id)
-      if (c.fromByproduct > EPS) takers.push({ row: c, depth, hidden: true })
-      if (c.kind === 'loop') pending.push({ from: loopSource(c), row: c, depth, kind: 'loop', note: '', hidden: true })
-      if (c.kind === 'separate') pending.push({ from: c.groupId, row: c, depth, kind: 'separate', note: '', hidden: true })
+      if (c.item === HEAT && isTransparent(c)) fuelFeeds(c).forEach((f) => hide(f, into, depth))
+      else if (isTransparent(c)) addHidden(c, into, depth)
+      else hide(c, into, depth)
     }
+  }
+  /** A row below the level limit: its feeds from boxes in the chart come into `into`. */
+  const hide = (c: TreeNode, into: FlowBox, depth: number) => {
+    consumerOf.set(c.id, into.id)
+    if (c.fromByproduct > EPS) takers.push({ row: c, depth, hidden: true })
+    if (c.kind === 'loop') pending.push({ from: loopSource(c), row: c, depth, kind: 'loop', note: '', hidden: true })
+    if (c.kind === 'separate') pending.push({ from: c.groupId, row: c, depth, kind: 'separate', note: '', hidden: true })
   }
 
   /** The row a loop row's item is made by: the nearest row of it further up the tree. */
@@ -281,6 +351,7 @@ export function buildFlowChart(tree: TreeNode[], rootId: string, levels?: number
   const joinRecoveries = (n: TreeNode, into: FlowBox, depth: number) => {
     for (const r of n.children)
       if (r.recovery) {
+        if (fuelRows.has(n.id)) fuelRows.add(r.id)
         consumerOf.set(r.id, into.id)
         addRow(r, into, depth)
       }
@@ -326,15 +397,17 @@ export function buildFlowChart(tree: TreeNode[], rootId: string, levels?: number
     const group = p.kind === 'separate' && p.from ? rows.get(p.from) : undefined
     if (group && !boxes.has(group.id)) boxes.get(to)!.children.push(hub(group, p.depth))
     if (p.from && boxes.has(p.from))
-      links.push({ id: `${p.kind}:${p.row.id}`, from: p.from, to, item: p.row.item, rate: p.row.rate, kind: p.kind })
-    else attach(to, outsideBox(p.row.item, p.row.rate, p.note, p.depth, p.from))
+      link({ id: `${p.kind}:${p.row.id}`, from: p.from, to, item: p.row.item, rate: p.row.rate, kind: p.kind }, p.row.id)
+    else attach(to, outsideBox(p.row.item, p.row.rate, p.note, p.depth, p.from), fuelRows.has(p.row.id))
   }
   // Rows below the level limit: only from boxes the chart has, once it has them all.
   for (const p of pending)
     if (p.hidden && p.from && boxes.has(p.from)) {
       const to = consumerOf.get(p.row.id)!
-      links.push({ id: `${p.kind}:${p.row.id}`, from: p.from, to, item: p.row.item, rate: p.row.rate, kind: p.kind })
+      link({ id: `${p.kind}:${p.row.id}`, from: p.from, to, item: p.row.item, rate: p.row.rate, kind: p.kind }, p.row.id)
     }
+  for (const l of heatLoops)
+    if (boxes.has(l.from)) links.push({ ...l, id: `heat:${l.to}`, kind: 'loop', fuel: true })
   // What items built separately send to uses the chart doesn't show.
   for (const b of boxes.values()) {
     if (!b.group) continue
@@ -356,11 +429,12 @@ export function buildFlowChart(tree: TreeNode[], rootId: string, levels?: number
       if (amount <= EPS) continue
       covered += amount
       if (boxes.has(s.id))
-        links.push({ id: `bp:${s.id}>${row.id}`, from: s.id, to, item: row.item, rate: amount, kind: 'byproduct' })
-      else if (!hidden) attach(to, outsideBox(row.item, amount, `by-product of ${s.label}`, depth, s.id))
+        link({ id: `bp:${s.id}>${row.id}`, from: s.id, to, item: row.item, rate: amount, kind: 'byproduct' }, row.id)
+      else if (!hidden)
+        attach(to, outsideBox(row.item, amount, `by-product of ${s.label}`, depth, s.id), fuelRows.has(row.id))
     }
     if (!hidden && row.fromByproduct - covered > 1e-6)
-      attach(to, outsideBox(row.item, row.fromByproduct - covered, 'by-products', depth))
+      attach(to, outsideBox(row.item, row.fromByproduct - covered, 'by-products', depth), fuelRows.has(row.id))
   }
   // A crucible refining the by-products of the row below it takes them straight off that row.
   for (const b of boxes.values())
@@ -503,6 +577,10 @@ function layout(root: FlowBox, boxes: Map<string, FlowBox>, links: Link[]) {
   const maxDepth = Math.max(...[...boxes.values()].map((b) => b.depth))
   const col = (b: FlowBox) => maxDepth - b.depth
   const byId = (id: string) => boxes.get(id)!
+  /** A box's card, above the furnaces or pads under it, and the middle of those. */
+  const cardH = (b: FlowBox) => b.h - (b.heat ? HEAT_H : 0)
+  const cardY = (b: FlowBox) => b.y - b.h / 2 + cardH(b) / 2
+  const heatY = (b: FlowBox) => b.y + b.h / 2 - HEAT_H / 2
 
   // Lines needing a lane: all but those to the neighbouring column on the right.
   const laned = links.filter((e) => col(byId(e.to)) - col(byId(e.from)) !== 1)
@@ -569,16 +647,19 @@ function layout(root: FlowBox, boxes: Map<string, FlowBox>, links: Link[]) {
   const spread = (side: 'out' | 'in') => {
     const bySide = new Map<string, Link[]>()
     for (const e of curves) {
-      const at = side === 'out' ? e.from : e.to
+      // Fuel goes into the furnaces or pads under its box, apart from the box's own feeds.
+      const at = side === 'out' ? e.from : `${e.to}${e.fuel ? '#heat' : ''}`
       bySide.set(at, [...(bySide.get(at) ?? []), e])
     }
-    for (const [id, es] of bySide) {
-      const b = byId(id)
+    for (const [at, es] of bySide) {
+      const fuel = at.endsWith('#heat')
+      const b = byId(fuel ? at.slice(0, -5) : at)
+      const [mid, h] = fuel ? [heatY(b), HEAT_H + 8] : [cardY(b), cardH(b)]
       const other = (e: Link) => byId(side === 'out' ? e.to : e.from).y
       es.sort((p, q) => other(p) - other(q) || (p.id < q.id ? -1 : 1))
-      const step = Math.min(PORT_STEP, (b.h - 16) / Math.max(1, es.length - 1))
+      const step = Math.min(PORT_STEP, (h - 16) / Math.max(1, es.length - 1))
       es.forEach((e, i) => {
-        const y = b.y + (i - (es.length - 1) / 2) * step
+        const y = mid + (i - (es.length - 1) / 2) * step
         port.set(e, { ...(port.get(e) ?? { out: 0, in: 0 }), [side]: y })
       })
     }
@@ -604,8 +685,8 @@ function layout(root: FlowBox, boxes: Map<string, FlowBox>, links: Link[]) {
     const inX = b.x - 12 - r.into * LANE_X_STEP
     const laneY = r.backward ? -16 - above.get(r)! * LANE_STEP : height + 16 + below.get(r)! * LANE_STEP
     // Leave and enter the boxes a little off their middle, clear of their tree feeds.
-    const outY = a.y + (r.backward ? -a.h / 4 : a.h / 4)
-    const inY = b.y + (r.backward ? -b.h / 4 : b.h / 4)
+    const outY = cardY(a) + (r.backward ? -cardH(a) / 4 : cardH(a) / 4)
+    const inY = e.fuel ? heatY(b) : cardY(b) + (r.backward ? -cardH(b) / 4 : cardH(b) / 4)
     const path = elbow([
       [a.x + a.w, outY],
       [outX, outY],

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { BOX_W, buildFlowChart, labelWidth } from './flowChart'
+import { BOX_H, BOX_W, HEAT_H, buildFlowChart, labelWidth } from './flowChart'
 import { buildCatalog } from './processes'
 import { solvePlan } from './solver'
 import type { TreeNode } from './tree'
@@ -66,8 +66,55 @@ describe('flow chart', () => {
     expect(one.depth).toBe(full.depth)
     expect(Math.max(...[...one.boxes.values()].map((b) => b.depth))).toBe(1)
     const cut = [...one.boxes.values()].find((b) => b.more > 0)!
-    // Heat, Nutrients and Money rows get no box of their own.
-    expect(cut.more).toBe(all(cut.node!).filter((n) => !n.item.startsWith('@')).length - 1)
+    // Heat, Nutrients and Money rows get no box of their own, nor does fuel off the bus.
+    const busFuel = all(cut.node!)
+      .filter((n) => n.item === '@heat')
+      .flatMap((h) => h.children.filter((f) => f.kind === 'bus'))
+    expect(busFuel.length).toBeGreaterThan(0)
+    expect(cut.more).toBe(all(cut.node!).filter((n) => !n.item.startsWith('@')).length - 1 - busFuel.length)
+  })
+
+  it('shows what heated machines burn under their box, not as a box of its own', () => {
+    const { tree } = solvePlan(plan({ targets: [{ item: 'GoldIngot', rate: 10 }] }), catalog, mods)
+    const chart = buildFlowChart(tree, tree[0].id)!
+    const heated = [...chart.boxes.values()].filter((b) => b.heat)
+    expect(heated.length).toBeGreaterThan(0)
+    for (const b of heated) {
+      const h = b.node!.children.find((c) => c.item === '@heat')!
+      const fuel = h.children[0]
+      expect(b.heat).toMatchObject({ item: fuel.item, rate: fuel.rate })
+      expect(b.h).toBe(BOX_H + HEAT_H)
+      // Taken off the bus: no box or line for it.
+      if (fuel.kind === 'bus') expect(chart.edges.some((e) => e.to === b.id && e.item === fuel.item)).toBe(false)
+    }
+  })
+
+  it('feeds fuel made in the plan into what the machines sit on, below their own feeds', () => {
+    const steel = plan({ targets: [{ item: 'SteelIngot', rate: 10 }], producers: { '@heat': 'fuel:CokePowder' } })
+    const id = '0/SteelIngot/@heat/CokePowder'
+    const { tree } = solvePlan(
+      { ...steel, branches: { [id]: { producer: 'recipe:CokePowder' } } },
+      catalog,
+      mods,
+    )
+    const chart = buildFlowChart(tree, tree[0].id)!
+    const fuel = chart.edges.find((e) => e.from === id)!
+    expect(fuel).toMatchObject({ to: tree[0].id, fuel: true, kind: 'feed' })
+    const into = (e: { path: string }) => Number(e.path.split(',').at(-1))
+    const root = chart.root
+    expect(into(fuel)).toBeGreaterThan(root.y + root.h / 2 - HEAT_H)
+    for (const e of chart.edges.filter((e) => e.to === root.id && e.kind === 'feed' && !e.fuel))
+      expect(into(e)).toBeLessThan(root.y + root.h / 2 - HEAT_H)
+    // Rows under it heated by that same fuel (a loop back up the tree) take it from that row too.
+    const shared = all(tree[0]).filter((n) => n.item === '@heat' && n.kind === 'loop')
+    expect(shared.length).toBeGreaterThan(0)
+    for (const h of shared) {
+      const machines = h.id.slice(0, h.id.lastIndexOf('/'))
+      const line = chart.edges.find((e) => e.to === machines && e.fuel)!
+      expect(line).toMatchObject({ from: id, kind: 'loop', item: 'CokePowder' })
+      expect(chart.boxes.get(machines)!.heat!.item).toBe('CokePowder')
+      expect(line.rate).toBeGreaterThan(0)
+    }
   })
 
   it('shows feeds from rows outside the chart as boxes of their own', () => {

@@ -16,6 +16,7 @@ import {
   type FlowChart,
   type FlowEdge,
   type FlowEdgeKind,
+  type FlowHeat,
   type FlowPort,
 } from '../lib/flowChart'
 import { buildingNameFor } from '../lib/plural'
@@ -334,6 +335,15 @@ export function FlowChartView({ tree, rootId, onClose, onShow }: Props) {
                     <KeyLine kind={k} /> {KIND_TEXT[k].name}: {KIND_TEXT[k].hint}
                   </div>
                 ))}
+              {[...chart.boxes.values()].some((b) => b.heat) && (
+                <div>
+                  <span className="flow-key-heat" aria-hidden>
+                    🔥
+                  </span>
+                  Under a box: the furnaces or Steam Heating Pads its machines sit on, and the fuel they burn. Fuel
+                  made in the plan feeds into it.
+                </div>
+              )}
               <p className="flow-tip">
                 Thicker lines carry more. Hover a box or line to follow it; click a box to show its row in the tree.
               </p>
@@ -363,9 +373,10 @@ function Box({
   const p = b.node?.run?.process
   const machines = b.node?.machines ?? 0
   const short = b.kind === 'machines' && (b.node?.shortfall ?? 0) > 1e-9
+  const tagged = b.more > 0 || !!b.elsewhere
   return (
     <div
-      className={`flow-box ${b.kind}${b.group ? ' group' : ''}${b.loop !== undefined ? ' in-loop' : ''}${faded ? ' faded' : ''}`}
+      className={`flow-box ${b.kind}${b.group ? ' group' : ''}${b.loop !== undefined ? ' in-loop' : ''}${b.heat ? ' heated' : ''}${tagged ? ' tagged' : ''}${faded ? ' faded' : ''}`}
       style={style}
       onPointerEnter={() => onHover(true)}
       onPointerLeave={() => onHover(false)}
@@ -402,6 +413,7 @@ function Box({
         {b.kind === 'bus' && <span className="flow-box-meta">from the bus</span>}
         {b.kind === 'outside' && <span className="flow-box-meta">{b.note}</span>}
       </button>
+      {b.heat && <HeatSlab heat={b.heat} />}
       {b.loop !== undefined && (
         <span className="flow-loop-badge on-box" title={`Part of loop ${b.loop + 1}`}>
           ↻{b.loop + 1}
@@ -419,6 +431,35 @@ function Box({
         <button type="button" className="flow-box-more" onClick={onOpen} title="Open the chart from this row">
           ‹ {b.more} more {b.more === 1 ? 'row' : 'rows'}
         </button>
+      )}
+    </div>
+  )
+}
+
+/** The furnaces or Steam Heating Pads a box's machines sit on, with the fuel they burn. */
+function HeatSlab({ heat }: { heat: FlowHeat }) {
+  const on = heat.pads ? 'Steam Heating Pads' : 'Furnaces'
+  return (
+    <div
+      className="flow-box-heat"
+      title={
+        heat.item
+          ? `${on} under these machines: ${fmt(heat.rate)} ${itemName(heat.item)}/min for ${fmt(heat.heat)} P/s`
+          : `${on} under these machines: ${fmt(heat.heat)} P/s`
+      }
+    >
+      <span aria-hidden>🔥</span>
+      {heat.item ? (
+        <>
+          <ItemIcon item={heat.item} size={14} />
+          <span className="flow-box-heat-name">{itemName(heat.item)}</span>
+          <span className="flow-box-heat-rate">{fmt(heat.rate)}/min</span>
+        </>
+      ) : (
+        <>
+          <span className="flow-box-heat-name">Heat</span>
+          <span className="flow-box-heat-rate">{fmt(heat.heat)} P/s</span>
+        </>
       )}
     </div>
   )
