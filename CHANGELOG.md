@@ -8,7 +8,7 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
-## 2026-10-08T19:27Z
+## 2026-10-08T19:35Z
 
 - Put a Cauldron recipe on your plan without saving it first: on the Cauldron page, every recipe
   for an item your open plan makes has a Use button. It saves the recipe and puts it on that row,
@@ -16,6 +16,9 @@ out.
   or all of them.
 - The recipe menu of a planner row whose item a Cauldron can make has "Find a new Cauldron
   recipe", which opens the Cauldron page searching for that item.
+- Plans you haven't named are named after what they make, like "Wood Board + Gold Coin", so they
+  no longer all show as "New plan". Type a name to keep your own; clear it to go back to naming
+  the plan after its targets. Plans still called "New plan" pick up their new name on their own.
 
 ## 2026-10-08T16:10Z
 

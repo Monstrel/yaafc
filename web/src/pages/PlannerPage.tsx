@@ -30,6 +30,7 @@ import { buildingCounts, checkLogistics, resourceUsers, type LogisticsCheck, typ
 import { fedOverflow, moneyLedger, type BusUse, type MoneyLedger, type OutputRow, type OutputSource } from '../lib/money'
 import { STEAM_HEAT_ID, defaultProducer, processTitle, type ProcessCatalog } from '../lib/processes'
 import type { PlanModel } from '../lib/planModel'
+import { namedAfterTargets, planTitle, targetsName } from '../lib/planName'
 import {
   chooseProducer,
   chooseReuse,
@@ -474,13 +475,15 @@ export function PlannerPage({
             <select value={plan.id} onChange={(e) => onSelectPlan(e.target.value)} aria-label="Plan">
               {plans.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.name}
+                  {planTitle(p)}
                 </option>
               ))}
             </select>
             <input
               className="plan-name"
-              value={plan.name}
+              value={namedAfterTargets(plan) ? '' : plan.name}
+              placeholder={targetsName(plan)}
+              title="Leave empty to name the plan after what it makes"
               onChange={(e) => onUpdatePlan('Rename plan', (p) => ({ ...p, name: e.target.value }))}
               aria-label="Plan name"
             />

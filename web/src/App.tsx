@@ -2,6 +2,7 @@ import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } fro
 import { recipeSignature, type CauldronMode } from './lib/cauldron'
 import { planGroups } from './lib/itemGroups'
 import { usePlanModel } from './lib/planModel'
+import { namedAfterTargets, planTitle } from './lib/planName'
 import { ADVANCED_CAULDRON, gameVersion, itemName, itemsByKey, machineTier } from './lib/gameData'
 import { chooseProducer } from './lib/choices'
 import { pickableRows, type TreeNode } from './lib/tree'
@@ -105,17 +106,18 @@ export default function App() {
   const updateAvailable = useUpdateAvailable()
 
   const plan = plans.find((p) => p.id === activePlanId) ?? plans[0]
+  const title = planTitle(plan)
   // What the active plan makes and overflows, offered as ingredient groups in the recipe finder.
   // Also solved for the planner page, from here so each change is solved once.
   const model = usePlanModel(plan, progress, saved, myDefaults)
   const activePlanGroups = useMemo(
     () =>
       planGroups(
-        plan.name,
+        title,
         model.result?.balances.filter((b) => b.produced > 0).map((b) => b.item) ?? [],
         model.result?.balances.filter((b) => b.surplus > 0).map((b) => b.item) ?? [],
       ),
-    [plan.name, model.result],
+    [title, model.result],
   )
   /** Changes the open plan; `label` says how, for undo (null for upkeep the app does by itself). */
   const updatePlan = (label: string | null, update: (p: Plan) => Plan) => {
@@ -305,7 +307,7 @@ export default function App() {
           planGroups={activePlanGroups}
           search={search}
           onSearch={setSearch}
-          planName={plan.name}
+          planName={title}
           planTree={model.result?.tree ?? null}
           onUse={applyRecipe}
         />
@@ -347,8 +349,10 @@ export default function App() {
             setActivePlanId(p.id)
           }}
           onDuplicatePlan={() => {
-            const p = { ...structuredClone(plan), id: newId(), name: `${plan.name} (copy)` }
-            history.name(`Duplicate plan “${plan.name}”`)
+            // A copy of a plan named after its targets is too, so it follows its own targets.
+            const name = namedAfterTargets(plan) ? '' : `${plan.name} (copy)`
+            const p = { ...structuredClone(plan), id: newId(), name }
+            history.name(`Duplicate plan “${title}”`)
             setPlans((ps) => [...ps, p])
             setActivePlanId(p.id)
           }}
@@ -357,7 +361,7 @@ export default function App() {
           onRevealed={revealed}
           onDeletePlan={() => {
             const rest = plans.filter((p) => p.id !== plan.id)
-            history.name(`Delete plan “${plan.name}”`)
+            history.name(`Delete plan “${title}”`)
             setPlans(rest)
             setActivePlanId(rest[0]?.id ?? '')
           }}

@@ -1,6 +1,7 @@
 import { recipeSignature } from './cauldron'
 import { HEAT, NUTRIENTS } from './gameData'
 import { planFertilizer } from './planModel'
+import { namedAfterTargets } from './planName'
 import { DEFAULT_BANK_STACK, buildCatalog } from './processes'
 import type { Backup } from './store'
 import type { MyDefaults, Plan, Progress, SavedRecipe } from './types'
@@ -52,7 +53,8 @@ export function mergeBackup(mine: { saved: SavedRecipe[]; plans: Plan[] }, backu
   )
 
   const planIds = new Set(mine.plans.map((p) => p.id))
-  const names = new Set(mine.plans.map((p) => p.name))
+  // Plans named after their targets keep that: their name follows what they make.
+  const names = new Set(mine.plans.filter((p) => !namedAfterTargets(p)).map((p) => p.name))
   const added = backup.plans.map((p) => {
     let id = p.id
     while (planIds.has(id)) id = newId()

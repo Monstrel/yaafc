@@ -130,7 +130,8 @@ export function newId(): string {
   return Math.random().toString(36).slice(2, 10)
 }
 
-export function emptyPlan(name = 'New plan'): Plan {
+/** A new plan; without a name it's named after its targets (see planName.ts). */
+export function emptyPlan(name = ''): Plan {
   return { id: newId(), name, targets: [blankTarget()], producers: {}, machines: {} }
 }
 
