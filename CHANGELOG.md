@@ -8,6 +8,14 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
+## 2026-10-08T16:10Z
+
+- The flow chart now shows heat: under each heated box sit the furnaces or Steam Heating Pads its
+  machines need, with the fuel they burn per minute. Fuel made in your plan runs into them; fuel
+  off the bus shows only there, without a box of its own.
+- Rows you've ticked as built in the plan get a green check on their box in the flow chart.
+- The flow chart's side panel key is now titled "Key".
+
 ## 2026-10-08T15:25Z
 
 - Rows recovering other machines' outputs now sit beside the row they add to in the plan, both
