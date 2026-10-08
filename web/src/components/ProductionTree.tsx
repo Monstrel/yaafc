@@ -1180,7 +1180,7 @@ function TreeRow({
             {node.recovery && (
               <span
                 className="leaf-note recovery-note"
-                title={`Machines make all of their outputs, and each has to go somewhere. These recover what other machines output and nothing else uses (${recovers(node)}), and what they make joins the ${name} above`}
+                title={`Machines make all of their outputs, and each has to go somewhere. These recover what other machines output and nothing else uses (${recovers(node)}), and what they make goes where the ${name} beside them goes`}
               >
                 ♻ {p?.label ?? name} · recovers {recovers(node)}
               </span>
@@ -1523,11 +1523,7 @@ function TreeRow({
 }
 
 /** What a recovery row takes in from other machines' outputs: "Impure Gold Dust". */
-const recovers = (n: TreeNode) =>
-  n.children
-    .filter((c) => c.kind === 'byproduct' && !c.producer)
-    .map((c) => itemName(c.item))
-    .join(' and ')
+const recovers = (n: TreeNode) => (n.recovers ?? []).map(itemName).join(' and ')
 
 /** A bookmark: use this row's setup as my default. */
 /** A bookmark: outlined, or filled for a saved default. */
@@ -1853,9 +1849,39 @@ function withReused(n: TreeNode): TreeNode {
     c.fromByproduct > 1e-9 &&
     c.rate - c.fromByproduct > 1e-9
   const folded = n.children.filter(isFolded)
-  // Each child with the by-product line shown above it, if any: the two stay together.
+  // Each child with the by-product line shown above it, if any, and the rows recovering outputs into
+  // its supply after it: they stay together. The recovery rows feed this row alongside the child,
+  // not the child's machines, so they sit beside it (a row gathering an item built separately
+  // keeps them: what it feeds isn't the row above it).
   const feeds = n.children.flatMap((c) => (isFolded(c) ? c.children.filter((f) => !isDraw(f)) : [c])).map((child) => {
-    const c = withReused(child)
+    const whole = withReused(child)
+    // Only the rows recovering into this one: those it shows beside it came from further down.
+    const joining = new Set(child.consolidated ? [] : child.children.filter((r) => r.recovery).map((r) => r.id))
+    if (!joining.size) return withByproductLine(whole)
+    const recovered = whole.children.filter((r) => joining.has(r.id))
+    const c = { ...whole, rate: whole.rate - whole.fromRecovery, children: whole.children.filter((r) => !joining.has(r.id)) }
+    // A row taking only other rows' outputs, all of which come recovered: just the recovery rows.
+    const empty = c.kind === 'byproduct' && !c.producer && c.rate <= 1e-9 && !c.children.length
+    return [...(empty ? [] : withByproductLine(c)), ...recovered]
+  })
+  // Smallest branches first, so a leaf (a fuel off the bus, say) sits right under the row it feeds
+  // rather than below a deep sibling. Rows gathered "with" it stay last, under their divider.
+  const key = (f: TreeNode[]) => {
+    const c = f.find((r) => !r.reusedBy && !r.recovery) ?? f[f.length - 1]
+    return isGroupRow(c, 1) ? Number.MAX_SAFE_INTEGER : f.reduce((t, r) => t + rowCount(r), 0)
+  }
+  return {
+    ...n,
+    // Each with what it takes off the bus, if that's all it takes.
+    ...(folded.length > 0 && { folded: folded.map((f) => ({ ...f, children: f.children.filter(isDraw) })) }),
+    children: feeds
+      .map((f) => ({ f, size: key(f) }))
+      .sort((a, b) => a.size - b.size)
+      .flatMap(({ f }) => f),
+  }
+
+  /** A row, after the line for the part of it other rows' by-products cover, if any. */
+  function withByproductLine(c: TreeNode): TreeNode[] {
     if (!partly(c)) return [c]
     const line: TreeNode = {
       ...blankRow(`${c.id}${REUSED_LINE}`),
@@ -1867,21 +1893,6 @@ function withReused(n: TreeNode): TreeNode {
       reusedBy: c.id,
     }
     return [line, { ...c, rate: c.rate - c.fromByproduct, reusedApart: true }]
-  })
-  // Smallest branches first, so a leaf (a fuel off the bus, say) sits right under the row it feeds
-  // rather than below a deep sibling. Rows gathered "with" it stay last, under their divider.
-  const key = (f: TreeNode[]) => {
-    const c = f[f.length - 1]
-    return isGroupRow(c, 1) ? Number.MAX_SAFE_INTEGER : rowCount(c)
-  }
-  return {
-    ...n,
-    // Each with what it takes off the bus, if that's all it takes.
-    ...(folded.length > 0 && { folded: folded.map((f) => ({ ...f, children: f.children.filter(isDraw) })) }),
-    children: feeds
-      .map((f) => ({ f, size: key(f) }))
-      .sort((a, b) => a.size - b.size)
-      .flatMap(({ f }) => f),
   }
 }
 

@@ -65,6 +65,8 @@ export interface TreeNode {
    * that row's output rather than feeding its machines.
    */
   recovery?: boolean
+  /** For a recovery row: the items it takes in from other machines' outputs. */
+  recovers?: string[]
   children: TreeNode[]
   /** Gathers the uses of an item built separately (a root, or a "with" row under its anchor). */
   consolidated?: boolean
@@ -176,7 +178,10 @@ export function buildTree(roots: PlanNode[], flows: Map<PlanNode, RowFlows>, mod
       fromBus: f.fromBus,
       shortfall: f.shortfall,
       fromRecovery: f.fromRecovery ?? 0,
-      ...(n.recovers && { recovery: true }),
+      ...(n.recovers && {
+        recovery: true,
+        recovers: n.children.filter((c) => c.kind === 'reclaim').map((c) => c.item),
+      }),
       children: [],
     }
     // Rows recovering other machines' outputs into this one's supply.

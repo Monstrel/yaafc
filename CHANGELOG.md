@@ -8,6 +8,13 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
+## 2026-10-08T15:25Z
+
+- Rows recovering other machines' outputs now sit beside the row they add to in the plan, both
+  feeding the row above, as in the flow chart: Gold Dust refined from the Athanors' failed
+  products no longer looks like an ingredient of the Athanors. A row whose whole supply is
+  recovered shows just the rows recovering it.
+
 ## 2026-10-08T01:40Z
 
 - Machines make all of their outputs, failed products as much as successful ones, and each has
