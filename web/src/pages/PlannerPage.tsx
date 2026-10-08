@@ -99,6 +99,11 @@ interface Props {
   onNewPlan: () => void
   onDuplicatePlan: () => void
   onDeletePlan: () => void
+  /** Looks for a new cauldron recipe for a row's item on the Cauldron page. */
+  onFindCauldron: (row: TreeNode) => void
+  /** A row to show once the plan is solved (after a recipe was put on it from the Cauldron page), and hearing it was. */
+  reveal: string | null
+  onRevealed: () => void
 }
 
 const NO_ROWS: string[] = []
@@ -128,6 +133,9 @@ export function PlannerPage({
   onNewPlan,
   onDuplicatePlan,
   onDeletePlan,
+  onFindCauldron,
+  reveal,
+  onRevealed,
 }: Props) {
   const { mods, catalog } = model
   const result = model.result ?? UNSOLVED
@@ -250,6 +258,16 @@ export function PlannerPage({
       const id = ids[same ? (ids.indexOf(s.id) + 1) % ids.length : 0]
       return { id, n: (s?.n ?? 0) + 1, of: ids }
     })
+  // A recipe just put on a row from the Cauldron page: show that row, once the plan has a tree to show it in.
+  const [revealedRow, setRevealedRow] = useState<string | null>(null)
+  if (reveal && model.result && revealedRow !== reveal) {
+    setRevealedRow(reveal)
+    showRow([reveal])
+  }
+  // Shown once: coming back to the planner later starts at the top again.
+  useEffect(() => {
+    if (revealedRow) onRevealed()
+  }, [revealedRow, onRevealed])
   /** The target just added, whose item picker opens. */
   // Whether the upgrades and defaults column shows beside the plan (two-column layout only).
   const [sideOpen, setSideOpen] = usePersistentState<boolean>('planner-side', true, (v) => (typeof v === 'boolean' ? v : undefined), {
@@ -629,6 +647,7 @@ export function PlannerPage({
                   catalog={catalog}
                   onProducer={setProducer}
                   onResetProducer={resetProducer}
+                  onFindCauldron={onFindCauldron}
                   onReuse={setReuse}
                   onRemember={remember}
                   onForget={unsave}

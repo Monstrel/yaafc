@@ -1,8 +1,10 @@
-import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
 import { recipeSignature, type CauldronMode } from './lib/cauldron'
 import { planGroups } from './lib/itemGroups'
 import { usePlanModel } from './lib/planModel'
-import { gameVersion, itemName } from './lib/gameData'
+import { ADVANCED_CAULDRON, gameVersion, itemName, itemsByKey, machineTier } from './lib/gameData'
+import { chooseProducer } from './lib/choices'
+import { pickableRows, type TreeNode } from './lib/tree'
 import { noun } from './lib/plural'
 import {
   emptyPlan,
@@ -16,7 +18,17 @@ import {
   type Backup,
 } from './lib/store'
 import { mergeBackup } from './lib/importPlans'
-import { oneOf, sanitizeMyDefaults, sanitizePlans, sanitizeProgress, sanitizeSavedRecipes, sanitizeString } from './lib/sanitize'
+import {
+  oneOf,
+  newCauldronSearch,
+  sanitizeCauldronSearch,
+  sanitizeMyDefaults,
+  sanitizePlans,
+  sanitizeProgress,
+  sanitizeSavedRecipes,
+  sanitizeString,
+  type CauldronSearch,
+} from './lib/sanitize'
 import type { MyDefaults, Plan, Progress, SavedRecipe } from './lib/types'
 import { UndoHistory, useUndo } from './lib/undo'
 import { useUpdateAvailable } from './lib/updateCheck'
@@ -109,6 +121,50 @@ export default function App() {
   const updatePlan = (label: string | null, update: (p: Plan) => Plan) => {
     if (label) history.name(label)
     setPlans((ps) => ps.map((p) => (p.id === plan.id ? update(p) : p)))
+  }
+
+  // The Cauldron page's mix and search, kept across page switches (and reloads) so coming back
+  // shows the same search, and set up by the planner when it sends the player to find a recipe.
+  const [search, setSearch] = usePersistentState<CauldronSearch>(
+    'cauldron-search',
+    newCauldronSearch,
+    (v) => sanitizeCauldronSearch(v, (k) => itemsByKey.has(k)),
+    { perTab: true },
+  )
+  // The row to show when the planner opens again, after a recipe was put on it from the Cauldron page.
+  const [reveal, setReveal] = useState<string | null>(null)
+  const revealed = useCallback(() => setReveal(null), [])
+
+  /** Off to the Cauldron page to find a new recipe for a planner row's item. */
+  const findCauldron = (row: TreeNode) => {
+    const current = row.run?.process
+    // A row already on a cauldron looks among that cauldron's mixes; else the page's own mode,
+    // unless the plan can't build Advanced Cauldrons yet.
+    const mode: CauldronMode =
+      current?.kind === 'cauldron'
+        ? current.machine?.key === ADVANCED_CAULDRON
+          ? 'advanced'
+          : 'normal'
+        : machineTier(ADVANCED_CAULDRON) > model.catalog.tier
+          ? 'normal'
+          : search.mode
+    setSearch((s) => ({ ...s, mode, target: row.item, mustInclude: null, page: 0 }))
+    setTab('cauldron')
+  }
+  /**
+   * Puts a recipe from the Cauldron page on a row of the open plan (null: every row of its item),
+   * saving it first if it isn't yet, and goes to that row.
+   */
+  const applyRecipe = (mode: CauldronMode, inputs: string[], output: string, row: string | null) => {
+    const sig = recipeSignature(mode, inputs)
+    const known = saved.find((s) => recipeSignature(s.mode, s.inputs) === sig)
+    const recipe = known ?? { id: newId(), mode, inputs: [...inputs], output, createdAt: Date.now() }
+    history.name(`Use a Cauldron recipe for ${itemName(output)}`)
+    if (!known) setSaved((list) => [...list, recipe])
+    const pick = { item: output, producer: `cauldron:${recipe.id}`, row: row ?? undefined, everywhere: row === null }
+    updatePlan(null, (p) => chooseProducer(p, model.catalog, pick))
+    setReveal(row ?? (model.result ? (pickableRows(model.result.tree, output)[0]?.id ?? null) : null))
+    setTab('planner')
   }
 
   const toggleSave = (mode: CauldronMode, inputs: string[], output: string) => {
@@ -242,7 +298,18 @@ export default function App() {
 
       {tab === 'home' && <HomePage onNavigate={setTab} />}
       {tab === 'changelog' && <ChangelogPage />}
-      {tab === 'cauldron' && <CauldronPage saved={saved} onToggleSave={toggleSave} planGroups={activePlanGroups} />}
+      {tab === 'cauldron' && (
+        <CauldronPage
+          saved={saved}
+          onToggleSave={toggleSave}
+          planGroups={activePlanGroups}
+          search={search}
+          onSearch={setSearch}
+          planName={plan.name}
+          planTree={model.result?.tree ?? null}
+          onUse={applyRecipe}
+        />
+      )}
       {tab === 'saved' && (
         <SavedPage
           saved={saved}
@@ -285,6 +352,9 @@ export default function App() {
             setPlans((ps) => [...ps, p])
             setActivePlanId(p.id)
           }}
+          onFindCauldron={findCauldron}
+          reveal={reveal}
+          onRevealed={revealed}
           onDeletePlan={() => {
             const rest = plans.filter((p) => p.id !== plan.id)
             history.name(`Delete plan “${plan.name}”`)

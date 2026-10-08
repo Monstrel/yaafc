@@ -219,6 +219,8 @@ export const cauldronIngredients = items.filter(
 
 /** Items a cauldron can produce. CauldronMulti scales the distance; 0 means "never selected". */
 export const cauldronTargets = items.filter((i) => i.cauldronTarget > 0 && i.cauldronMulti > 0)
+const cauldronTargetKeys = new Set(cauldronTargets.map((i) => i.key))
+export const isCauldronTarget = (key: string) => cauldronTargetKeys.has(key)
 
 // ---- Machines ----
 

@@ -727,7 +727,65 @@ h2 {
   text-shadow: 0 0 2px var(--panel);
 }
 
+.recipe-icon-saved .find-badge {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  display: flex;
+  padding: 1px;
+  border-radius: 50%;
+  color: var(--accent);
+  background: var(--panel);
+}
+
+/* Off to the Cauldron page for a new mix: below the producers, apart from them. */
+.recipe-find {
+  margin-top: 4px;
+  border-top-color: var(--border);
+  border-radius: 0 0 6px 6px;
+}
+
 /* ---------- cauldron page ---------- */
+
+/* Which of the plan's rows a recipe goes on, when several make its item. */
+.use-menu {
+  width: 280px;
+}
+
+.use-menu-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  text-align: left;
+}
+
+.use-menu-row .hint-inline {
+  margin-left: auto;
+}
+
+.use-menu-row:hover,
+.use-menu-row:focus-visible {
+  background: var(--panel-2);
+}
+
+.use-menu-all {
+  margin-top: 4px;
+  border-top-color: var(--border);
+  border-radius: 0;
+}
+
+.use-button {
+  white-space: nowrap;
+}
+
+td.use-cell {
+  width: 1%;
+  text-align: right;
+}
 
 .segmented {
   display: flex;

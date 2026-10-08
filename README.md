@@ -13,7 +13,10 @@ cauldron recipes as steps in production chains, including self-feeding loops.
 - **Planner**: set targets in items/min. The planner works backward to every step's rate and
   (fractional) machine count, and shows it as a foldable production tree. Any step's producer can
   be a game recipe, a nursery, a saved ★ cauldron recipe, or a purchase, picked per branch (a
-  row and the rows of its item below it) or for every row at once. Each row's machines feed the
+  row and the rows of its item below it) or for every row at once. For items cauldrons make,
+  "Find a new Cauldron recipe" opens the Cauldron finder on that item. Whenever the open plan
+  makes a recipe's item, Use on the Cauldron page saves the recipe and puts it on that row (or
+  on the one picked, when there are several). Each row's machines feed the
   row above them, as built in the factory; only by-products cross branches, going to the nearest
   rows that use them. Loops are solved with a linear program. When a chain can't be met, the
   shortfall is reported where it breaks, and everything above it is still sized. Each plan has a

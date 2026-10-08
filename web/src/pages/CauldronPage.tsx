@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { type Dispatch, type SetStateAction, useEffect, useMemo, useRef, useState } from 'react'
 import { ItemIcon, ItemLabel } from '../components/ItemIcon'
 import { IngredientFilter, PrefToggle } from '../components/IngredientFilter'
 import { ItemPicker } from '../components/ItemPicker'
 import { cauldronStats, evaluate, findRecipes, recipeSignature, type CauldronMode, type CauldronResult } from '../lib/cauldron'
-import { cauldronIngredients, cauldronTargets, itemsByKey } from '../lib/gameData'
+import { HEAT, MONEY, NUTRIENTS, cauldronIngredients, cauldronTargets, itemName, itemsByKey } from '../lib/gameData'
 import { diagnoseNoResults, type FinderQuery } from '../lib/diagnose'
 import { fmt, fmtSeconds } from '../lib/format'
 import { noun } from '../lib/plural'
@@ -18,8 +18,9 @@ import {
   type IngredientPrefs,
   type ItemGroup,
 } from '../lib/itemGroups'
-import { sanitizeCauldronSearch, sanitizePrefs, type CauldronSearch } from '../lib/sanitize'
+import { sanitizePrefs, type CauldronSearch } from '../lib/sanitize'
 import { usePersistentState } from '../lib/store'
+import { pickableRows, type PickableRow, type TreeNode } from '../lib/tree'
 import type { SavedRecipe } from '../lib/types'
 
 interface Props {
@@ -27,27 +28,29 @@ interface Props {
   onToggleSave: (mode: CauldronMode, inputs: string[], output: string) => void
   /** Extra preset groups from the active plan (made / overflow). */
   planGroups: ItemGroup[]
+  /** The mix and search, kept by the app so the planner can set one up. */
+  search: CauldronSearch
+  onSearch: Dispatch<SetStateAction<CauldronSearch>>
+  /** The open plan, whose rows a recipe can be put on. */
+  planName: string
+  /** Its solved rows (null until the first solve). */
+  planTree: TreeNode[] | null
+  /** Saves the recipe if it isn't yet, and has a row of the plan use it (null: every row of its item). */
+  onUse: (mode: CauldronMode, inputs: string[], output: string, row: string | null) => void
 }
 
 const PAGE = 50
 
-const newSearch = (): CauldronSearch => ({
-  mode: 'normal',
-  mix: [null, null, null],
-  target: null,
-  mustInclude: null,
-  sort: 'cost',
-  page: 0,
-})
-
-export function CauldronPage({ saved, onToggleSave, planGroups }: Props) {
-  // Kept across tab switches (and reloads), so coming back shows the same search.
-  const [search, setSearch] = usePersistentState<CauldronSearch>(
-    'cauldron-search',
-    newSearch,
-    (v) => sanitizeCauldronSearch(v, (k) => itemsByKey.has(k)),
-    { perTab: true },
-  )
+export function CauldronPage({
+  saved,
+  onToggleSave,
+  planGroups,
+  search,
+  onSearch: setSearch,
+  planName,
+  planTree,
+  onUse,
+}: Props) {
   const update = (patch: Partial<CauldronSearch>) => setSearch((s) => ({ ...s, ...patch }))
   const { mode, mix, target, mustInclude, sort } = search
   const slots = mode === 'normal' ? 3 : 2
@@ -75,6 +78,24 @@ export function CauldronPage({ saved, onToggleSave, planGroups }: Props) {
     changePrefs(p)
   }
 
+  // Use: a recipe goes on a row of the open plan making its item; with several rows, a menu says which.
+  const rowsOf = (item: string) => (planTree ? pickableRows(planTree, item) : [])
+  const [useMenu, setUseMenu] = useState<{ recipe: Recipe; rows: PickableRow[]; x: number; y: number } | null>(null)
+  const useMenuRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (useMenu) useMenuRef.current?.showPopover()
+  }, [useMenu])
+  const applyRecipe = (recipe: Recipe, button: HTMLElement) => {
+    const rows = rowsOf(recipe.output)
+    if (rows.length === 1) return onUse(recipe.mode, recipe.inputs, recipe.output, rows[0].id)
+    const rect = button.getBoundingClientRect()
+    setUseMenu({ recipe, rows, x: Math.max(8, Math.min(rect.right - 280, window.innerWidth - 288)), y: rect.bottom + 4 })
+  }
+  const applyTo = (row: string | null) => {
+    useMenuRef.current?.hidePopover()
+    if (useMenu) onUse(useMenu.recipe.mode, useMenu.recipe.inputs, useMenu.recipe.output, row)
+  }
+
   const savedSignatures = useMemo(() => new Set(saved.map((s) => recipeSignature(s.mode, s.inputs))), [saved])
   const mixKeys = mix.slice(0, slots)
   const mixResult = mixKeys.every(Boolean) ? evaluate(mode, mixKeys as string[]) : null
@@ -100,6 +121,9 @@ export function CauldronPage({ saved, onToggleSave, planGroups }: Props) {
   const setPage = (p: number) => update({ page: p })
 
   const targetItem = target ? itemsByKey.get(target) : undefined
+  // Rows of the open plan that a found recipe can go on.
+  const targetRows = target ? rowsOf(target) : []
+  const using = targetRows.length > 0
   const stats = targetItem ? cauldronStats(targetItem.cauldronTarget) : null
 
   return (
@@ -140,6 +164,11 @@ export function CauldronPage({ saved, onToggleSave, planGroups }: Props) {
               result={mixResult}
               saved={savedSignatures.has(recipeSignature(mode, mixKeys as string[]))}
               onSave={() => onToggleSave(mode, mixKeys as string[], mixResult.output.key)}
+              onUse={
+                rowsOf(mixResult.output.key).length > 0
+                  ? (button) => applyRecipe({ mode, inputs: mixKeys as string[], output: mixResult.output.key }, button)
+                  : undefined
+              }
             />
           ) : (
             <div className="result-card empty">Pick {slots} ingredients</div>
@@ -193,6 +222,12 @@ export function CauldronPage({ saved, onToggleSave, planGroups }: Props) {
               {fmt(stats.heatPerSecond)} P/s · {found.length.toLocaleString()} {noun(found.length, 'recipe')}
             </p>
           )}
+          {targetItem && using && (
+            <p className="hint">
+              Use puts a recipe on {targetRows.length === 1 ? 'the' : `one of the ${targetRows.length}`} {targetItem.name}{' '}
+              {noun(targetRows.length, 'row')} in “{planName}”, saving it if it isn&apos;t yet.
+            </p>
+          )}
 
           {found.length > 0 && (
             <>
@@ -203,6 +238,7 @@ export function CauldronPage({ saved, onToggleSave, planGroups }: Props) {
                     <th colSpan={slots}>Ingredients</th>
                     <th className="num">Value</th>
                     <th className="num">Offset</th>
+                    {using && <th />}
                   </tr>
                 </thead>
                 <tbody>
@@ -232,6 +268,11 @@ export function CauldronPage({ saved, onToggleSave, planGroups }: Props) {
                           {r.result.offset >= 0 ? '+' : ''}
                           {fmt(r.result.offset)}
                         </td>
+                        {using && (
+                          <td className="use-cell">
+                            <UseButton onClick={(button) => applyRecipe({ mode: r.mode, inputs: r.inputs, output: r.result.output.key }, button)} />
+                          </td>
+                        )}
                       </tr>
                     )
                   })}
@@ -263,6 +304,31 @@ export function CauldronPage({ saved, onToggleSave, planGroups }: Props) {
             />
           )}
         </section>
+      </div>
+
+      <div
+        ref={useMenuRef}
+        popover="auto"
+        className="pref-menu use-menu"
+        style={useMenu ? { left: useMenu.x, top: useMenu.y } : undefined}
+        onToggle={(e) => e.newState === 'closed' && setUseMenu(null)}
+      >
+        {useMenu && (
+          <>
+            <div className="pref-menu-title">
+              Use on which <ItemLabel item={useMenu.recipe.output} size={18} /> row in “{planName}”?
+            </div>
+            {useMenu.rows.map((r) => (
+              <button type="button" key={r.id} className="use-menu-row" onClick={() => applyTo(r.id)}>
+                <span>{rowPlace(r)}</span>
+                <span className="hint-inline">{fmt(r.rate)}/min</span>
+              </button>
+            ))}
+            <button type="button" className="use-menu-row use-menu-all" onClick={() => applyTo(null)}>
+              All {useMenu.rows.length} rows
+            </button>
+          </>
+        )}
       </div>
 
       <div
@@ -323,7 +389,17 @@ function NoResults({ target, mode, prefs, mustInclude, onApply }: FinderQuery & 
   )
 }
 
-function ResultCard({ result, saved, onSave }: { result: CauldronResult; saved: boolean; onSave: () => void }) {
+function ResultCard({
+  result,
+  saved,
+  onSave,
+  onUse,
+}: {
+  result: CauldronResult
+  saved: boolean
+  onSave: () => void
+  onUse?: (button: HTMLElement) => void
+}) {
   const stats = cauldronStats(result.output.cauldronTarget)
   return (
     <div className="result-card">
@@ -336,7 +412,34 @@ function ResultCard({ result, saved, onSave }: { result: CauldronResult; saved: 
         </div>
       </div>
       <StarButton saved={saved} onClick={onSave} />
+      {onUse && <UseButton onClick={onUse} />}
     </div>
+  )
+}
+
+/** A mix to put on a row of the open plan. */
+interface Recipe {
+  mode: CauldronMode
+  inputs: string[]
+  output: string
+}
+
+const VIA: Record<string, string> = { [HEAT]: 'Burned for', [NUTRIENTS]: 'Spread for', [MONEY]: 'Paid for' }
+
+/** Where a row sits: a target, or what it goes into. */
+const rowPlace = (r: PickableRow) => (r.feeds ? `${r.via ? VIA[r.via] : 'For'} ${itemName(r.feeds)}` : 'Target')
+
+/** Puts a recipe on a row of the open plan making its item (saving it, if it isn't yet). */
+function UseButton({ onClick }: { onClick: (button: HTMLElement) => void }) {
+  return (
+    <button
+      type="button"
+      className="compact-button use-button"
+      onClick={(e) => onClick(e.currentTarget)}
+      title="Make this item with it in the open plan (saving it, if it isn't yet)"
+    >
+      Use
+    </button>
   )
 }
 

@@ -1,4 +1,4 @@
-import { HEAT, NUTRIENTS, type Stack } from './gameData'
+import { HEAT, MONEY, NUTRIENTS, type Stack } from './gameData'
 import { craftsPerMachine } from './machineRate'
 import { blendParadox, runKey, type Process } from './processes'
 import type { ProcessRun } from './solver'
@@ -147,6 +147,8 @@ export const NO_FLOWS: RowFlows = {
 }
 
 const isPseudo = (item: string) => item.startsWith('@')
+/** Rows whose fuel, fertilizer or coin rows show folded into the row above them. */
+const FOLDED = new Set([HEAT, NUTRIENTS, MONEY])
 
 /** The solved plan rows as the production tree shows them. */
 export function buildTree(roots: PlanNode[], flows: Map<PlanNode, RowFlows>, mods: Modifiers): TreeNode[] {
@@ -244,4 +246,36 @@ export const onOverflow = (n: TreeNode): boolean => n.children.some((c) => c.kin
 /** Every node id that has children (for "expand/collapse all"). */
 export function branchIds(nodes: TreeNode[]): string[] {
   return nodes.flatMap((n) => (n.children.length ? [n.id, ...branchIds(n.children)] : []))
+}
+
+/** A row whose producer can be picked, and where it sits in the plan. */
+export interface PickableRow {
+  id: string
+  rate: number
+  /** Item of the row it feeds (none for a target's own row), and how: as an ingredient, or burned, spread or paid. */
+  feeds?: string
+  via?: string
+}
+
+/**
+ * The rows making `item` that pick their own producer, in tree order: not loops, separate builds,
+ * overflow, rows covered by other rows' by-products, or recovery rows (they run the one recipe that
+ * recovers into them).
+ */
+export function pickableRows(tree: TreeNode[], item: string): PickableRow[] {
+  const rows: PickableRow[] = []
+  const walk = (nodes: TreeNode[], above: TreeNode[]) => {
+    for (const n of nodes) {
+      if (n.item === item && n.producer && !n.recovery && n.kind !== 'byproduct') {
+        const parent = above.at(-1)
+        // Fuel, fertilizer and coins feed the row above their Heat, Nutrients or Money row.
+        const folded = parent && FOLDED.has(parent.item)
+        const feeds = folded ? above.at(-2) : parent
+        rows.push({ id: n.id, rate: n.rate, feeds: feeds?.item, via: folded ? parent.item : undefined })
+      }
+      walk(n.children, [...above, n])
+    }
+  }
+  walk(tree, [])
+  return rows
 }

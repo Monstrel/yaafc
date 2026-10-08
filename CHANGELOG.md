@@ -8,6 +8,15 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
+## 2026-10-08T19:27Z
+
+- Put a Cauldron recipe on your plan without saving it first: on the Cauldron page, every recipe
+  for an item your open plan makes has a Use button. It saves the recipe and puts it on that row,
+  then takes you to the row in the planner. When several rows make the item, Use asks which row,
+  or all of them.
+- The recipe menu of a planner row whose item a Cauldron can make has "Find a new Cauldron
+  recipe", which opens the Cauldron page searching for that item.
+
 ## 2026-10-08T16:10Z
 
 - The flow chart now shows heat: under each heated box sit the furnaces or Steam Heating Pads its

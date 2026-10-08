@@ -189,6 +189,16 @@ export interface CauldronSearch {
   page: number
 }
 
+/** An empty mix and search. */
+export const newCauldronSearch = (): CauldronSearch => ({
+  mode: 'normal',
+  mix: [null, null, null],
+  target: null,
+  mustInclude: null,
+  sort: 'cost',
+  page: 0,
+})
+
 /** The Cauldron tab's mix and search, keeping only item keys `known` accepts. */
 export function sanitizeCauldronSearch(v: unknown, known: (key: string) => boolean): CauldronSearch | undefined {
   if (!isObj(v)) return undefined

@@ -1,5 +1,5 @@
 import { type CSSProperties, type ReactNode, useEffect, useId, useMemo, useRef, useState } from 'react'
-import { CATALYSTS, HEAT, MONEY, NUTRIENTS, coinValue, heightMultiplier, itemName, itemsByKey } from '../lib/gameData'
+import { CATALYSTS, HEAT, MONEY, NUTRIENTS, coinValue, heightMultiplier, isCauldronTarget, itemName, itemsByKey } from '../lib/gameData'
 import { fmt, fmtMachines, wholeMachines } from '../lib/format'
 import { buildingNameFor, machineNameFor, noun } from '../lib/plural'
 import { sanitizeStrings } from '../lib/sanitize'
@@ -35,6 +35,8 @@ interface Props {
   onProducer: (pick: ProducerPick) => void
   /** Drops a row's own producer pick. */
   onResetProducer: (row: string) => void
+  /** Looks for a new cauldron recipe for a row's item on the Cauldron page. */
+  onFindCauldron: (row: TreeNode) => void
   /** Whether rows of an item take by-products first: on a row's branch, or everywhere (no row). */
   onReuse: (item: string, on: boolean, row?: string) => void
   /** Loads catalysts into one row's machines. */
@@ -121,6 +123,7 @@ export function ProductionTree({
   catalog,
   onProducer,
   onResetProducer,
+  onFindCauldron,
   onReuse,
   onCatalysts,
   onHeight,
@@ -628,6 +631,7 @@ export function ProductionTree({
                     rowsOf={rowsOf}
                     onProducer={onProducer}
                     onResetProducer={onResetProducer}
+                    onFindCauldron={onFindCauldron}
                     onReuse={onReuse}
                     onCatalysts={onCatalysts}
                     onHeight={onHeight}
@@ -868,6 +872,7 @@ function TreeRow({
   rowsOf,
   onProducer,
   onResetProducer,
+  onFindCauldron,
   onReuse,
   onCatalysts,
   onHeight,
@@ -919,6 +924,7 @@ function TreeRow({
   rowsOf: Map<string, number>
   onProducer: (pick: ProducerPick) => void
   onResetProducer: (row: string) => void
+  onFindCauldron: (row: TreeNode) => void
   onReuse: (item: string, on: boolean, row?: string) => void
   /** Loads catalysts into one row's machines. */
   /** Loads catalysts into a row ('inherited': what it loads without its own setting). */
@@ -1205,6 +1211,7 @@ function TreeRow({
                 // What a row burns or spreads follows its branch only: plan-wide picks are for ingredients.
                 branch={{ rows: burned ? 1 : rows, own: node.ownChoice, mine: node.mine, onReset: () => onResetProducer(node.id) }}
                 reuse={reuse}
+                onFind={isCauldronTarget(node.item) ? () => onFindCauldron(node) : undefined}
                 compact
               />
             )}

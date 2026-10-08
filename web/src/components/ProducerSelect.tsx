@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
 import { fmt, fmtSeconds } from '../lib/format'
-import { HEAT, coinValue, iconUrl, itemName, itemsByKey, tierIcon, tierName, type Item, type Stack } from '../lib/gameData'
+import { HEAT, coinValue, iconUrl, itemName, itemsByKey, machinesByKey, tierIcon, tierName, type Item, type Stack } from '../lib/gameData'
 import { itemNameFor } from '../lib/plural'
 import {
   DEFAULT_PARADOX_INPUT,
@@ -92,6 +92,7 @@ export function ProducerSelect({
   oneLine,
   branch,
   reuse,
+  onFind,
 }: {
   item: string
   /** The producer in use (a process id, 'import' or 'bus') and its process on the machine it runs on. */
@@ -111,6 +112,8 @@ export function ProducerSelect({
   branch?: BranchScope
   /** On a row that can take by-products: a switch for taking them first, the producer making the rest. */
   reuse?: ReuseOption
+  /** For an item cauldrons make: looks for a new cauldron recipe on the Cauldron page. */
+  onFind?: () => void
 }) {
   const all = catalog.byProduct.get(item) ?? []
   const isCrucible = (p: Process) => p.machine?.key === PARADOX_CRUCIBLE && p.product === item
@@ -211,7 +214,7 @@ export function ProducerSelect({
 
   // Arrow keys move between options (and back up to the search box).
   const onKeyDown = (e: KeyboardEvent) => {
-    const list = [...(pop.current?.querySelectorAll<HTMLElement>('[role=option], [role=switch]') ?? [])]
+    const list = [...(pop.current?.querySelectorAll<HTMLElement>('[role=option], [role=switch], .recipe-find') ?? [])]
     const at = list.indexOf(document.activeElement as HTMLElement)
     const inSearch = e.target instanceof HTMLInputElement
     const next =
@@ -407,6 +410,26 @@ export function ProducerSelect({
               )}
               {shown.length === 0 && <div className="picker-empty">No matches</div>}
             </div>
+            {onFind && (
+              <button
+                type="button"
+                className="recipe-option recipe-find"
+                onClick={() => {
+                  pop.current?.hidePopover()
+                  onFind()
+                }}
+              >
+                <FindIcon size={32} />
+                <span className="recipe-body">
+                  <span className="recipe-head">
+                    <span className="recipe-title">Find a new Cauldron recipe</span>
+                  </span>
+                  <span className="recipe-preview muted">
+                    Search mixes that make {itemName(item)} on the Cauldron page; Use there puts one in this plan
+                  </span>
+                </span>
+              </button>
+            )}
           </>
         )}
       </div>
@@ -466,6 +489,26 @@ function ChoiceIcon({ choice, size }: { choice: Choice; size: number }) {
       {img}
       <span className="star" aria-hidden>
         ★
+      </span>
+    </span>
+  )
+}
+
+/** The Cauldron with a magnifying glass over it: looking for a new mix. */
+function FindIcon({ size }: { size: number }) {
+  const src = iconUrl(machinesByKey.get('Cauldron')?.icon)
+  return (
+    <span className="recipe-icon-saved" aria-hidden>
+      {src ? (
+        <img className="item-icon" src={src} width={size} height={size} alt="" />
+      ) : (
+        <span className="item-icon missing" style={{ width: size, height: size }} />
+      )}
+      <span className="find-badge">
+        <svg viewBox="0 0 16 16" width={12} height={12} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <circle cx="6.5" cy="6.5" r="4" />
+          <path d="M9.5 9.5 14 14" />
+        </svg>
       </span>
     </span>
   )
