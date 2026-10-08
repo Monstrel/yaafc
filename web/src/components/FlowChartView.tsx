@@ -322,7 +322,7 @@ export function FlowChartView({ tree, rootId, built, onClose, onShow }: Props) {
               </section>
             )}
             <section className="flow-key">
-              <h4>Lines</h4>
+              <h4>Key</h4>
               <p className="flow-key-note">Coloured as the game colours a machine's output arrows:</p>
               {(['main', 'side', 'none'] as const)
                 .filter((k) => ports.has(k))
