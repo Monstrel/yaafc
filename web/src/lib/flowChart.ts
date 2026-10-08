@@ -462,6 +462,29 @@ export function buildFlowChart(tree: TreeNode[], rootId: string, levels?: number
   return { root, boxes, edges: laid.edges, loops, depth: deepest(start, 0), ...laid.size }
 }
 
+/** The most levels a chart opens with. */
+export const MAX_DEFAULT_LEVELS = 6
+/** The most boxes in one column a chart opens with, past its first level. */
+export const MAX_DEFAULT_BREADTH = 8
+
+/**
+ * How many levels to open the chart under `rootId` with: as many as keep every column to
+ * `MAX_DEFAULT_BREADTH` boxes, up to `MAX_DEFAULT_LEVELS`, and always at least one. A wide recipe
+ * opens at its own inputs, a long thin chain further down.
+ */
+export function defaultLevels(tree: TreeNode[], rootId: string): number {
+  let levels = 1
+  for (let next = 2; next <= MAX_DEFAULT_LEVELS; next++) {
+    const chart = buildFlowChart(tree, rootId, next)
+    if (!chart || next > chart.depth) break
+    const breadth = new Map<number, number>()
+    for (const b of chart.boxes.values()) breadth.set(b.depth, (breadth.get(b.depth) ?? 0) + 1)
+    if (Math.max(...breadth.values()) > MAX_DEFAULT_BREADTH) break
+    levels = next
+  }
+  return levels
+}
+
 /** Boxes feeding each other round in a cycle (strongly connected, by Tarjan's), each with its net flows. */
 function findLoops(boxes: Map<string, FlowBox>, links: Link[], root: FlowBox): FlowLoop[] {
   const next = new Map<string, string[]>()

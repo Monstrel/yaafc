@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { BOX_H, BOX_W, HEAT_H, buildFlowChart, labelWidth } from './flowChart'
+import {
+  BOX_H,
+  BOX_W,
+  HEAT_H,
+  MAX_DEFAULT_BREADTH,
+  MAX_DEFAULT_LEVELS,
+  buildFlowChart,
+  defaultLevels,
+  labelWidth,
+} from './flowChart'
 import { buildCatalog } from './processes'
 import { solvePlan } from './solver'
 import type { TreeNode } from './tree'
@@ -239,5 +248,41 @@ describe('flow chart output colours', () => {
     expect(chart.edges.filter((e) => chart.boxes.get(e.from)!.kind === 'bus').every((e) => e.port === 'none')).toBe(
       true,
     )
+  })
+})
+
+describe('flow chart levels to open with', () => {
+  const opened = (item: string) => {
+    const { tree } = solvePlan(plan({ targets: [{ item, rate: 1 }] }), catalog, mods)
+    const levels = defaultLevels(tree, tree[0].id)
+    return { levels, chart: buildFlowChart(tree, tree[0].id, levels)! }
+  }
+  const widest = (chart: ReturnType<typeof buildFlowChart>) => {
+    const columns = new Map<number, number>()
+    for (const b of chart!.boxes.values()) columns.set(b.depth, (columns.get(b.depth) ?? 0) + 1)
+    return Math.max(...columns.values())
+  }
+
+  it('opens a wide recipe at its own inputs', () => {
+    expect(opened('Sol').levels).toBe(1)
+  })
+
+  it('opens a long thin chain further down, up to the most levels', () => {
+    const { levels, chart } = opened('SteelIngot')
+    expect(levels).toBe(MAX_DEFAULT_LEVELS)
+    expect(chart.depth).toBeGreaterThan(levels)
+    expect(widest(chart)).toBeLessThanOrEqual(MAX_DEFAULT_BREADTH)
+  })
+
+  it('stops a level short of a column too wide to read', () => {
+    const { levels, chart } = opened('GoldIngot')
+    expect(widest(chart)).toBeLessThanOrEqual(MAX_DEFAULT_BREADTH)
+    const { tree } = solvePlan(plan({ targets: [{ item: 'GoldIngot', rate: 1 }] }), catalog, mods)
+    expect(widest(buildFlowChart(tree, tree[0].id, levels + 1))).toBeGreaterThan(MAX_DEFAULT_BREADTH)
+  })
+
+  it('opens a short chain whole', () => {
+    const { levels, chart } = opened('Vitae')
+    expect(levels).toBe(chart.depth)
   })
 })

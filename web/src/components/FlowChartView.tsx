@@ -12,6 +12,7 @@ import { itemName } from '../lib/gameData'
 import { fmt, fmtMachines, wholeMachines } from '../lib/format'
 import {
   buildFlowChart,
+  defaultLevels,
   type FlowBox,
   type FlowChart,
   type FlowEdge,
@@ -37,7 +38,6 @@ interface Props {
 }
 
 const PAD = 28
-const DEFAULT_LEVELS = 4
 
 const PORT_TEXT: Record<FlowPort, string> = {
   main: 'Gold: a machine’s product, from its gold output',
@@ -67,8 +67,12 @@ export function FlowChartView({ tree, rootId, built, onClose, onShow }: Props) {
   // Boxes cut off by the level limit open the chart from there: the way back is the trail.
   const [trail, setTrail] = useState<string[]>([rootId])
   const current = trail[trail.length - 1]
-  // A few levels to start with: a whole chain from raw materials is too big to read at once.
-  const [levels, setLevels] = useState<number | null>(DEFAULT_LEVELS)
+  // A few levels to start with, as many as stay narrow: a whole chain from raw materials is too big
+  // to read at once. The player's own pick lasts until the chart opens from another row.
+  const [picked, setPicked] = useState<{ root: string; levels: number | null } | null>(null)
+  const auto = useMemo(() => defaultLevels(tree, current), [tree, current])
+  const levels = picked?.root === current ? picked.levels : auto
+  const setLevels = (n: number | null) => setPicked({ root: current, levels: n })
   const chart = useMemo(() => buildFlowChart(tree, current, levels ?? undefined), [tree, current, levels])
   /** Levels shown, at most all of them. */
   const shown = chart ? Math.min(levels ?? chart.depth, chart.depth) : 0

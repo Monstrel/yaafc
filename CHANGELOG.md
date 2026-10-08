@@ -8,6 +8,12 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
+## 2026-10-08T20:35Z
+
+- The flow chart opens with as many levels as it can show while staying readable, instead of
+  always 4. Wide recipes like Sol open at just their own inputs, and long, thin chains open up to 6
+  levels deep. Opening the chart further down a branch picks the levels afresh for that row.
+
 ## 2026-10-08T19:35Z
 
 - Put a Cauldron recipe on your plan without saving it first: on the Cauldron page, every recipe
