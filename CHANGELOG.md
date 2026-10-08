@@ -8,6 +8,15 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
+## 2026-10-08T21:47Z
+
+- Fixed plans failing to solve when you made something from the overflow of Crude Gold Dust (and
+  other outputs your plan recovers). The new target now uses what overflows, including Crude Gold
+  Dust left over in rows that take it from the bus.
+- A target that uses an item's overflow only takes what's still left after your plan refines what
+  it can. Your plan no longer runs its machines harder to feed the target: if everything gets
+  recovered, the target makes none.
+
 ## 2026-10-08T20:35Z
 
 - The flow chart opens with as many levels as it can show while staying readable, instead of
