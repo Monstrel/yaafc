@@ -524,7 +524,7 @@ export function unfold(plan: Plan, catalog: ProcessCatalog, recovering = true): 
     expand(pending[i])
     roots.push(pending[i])
   }
-  if (recovering) recover(nodes, catalog, plan, child, create)
+  if (recovering) recover(nodes, catalog, plan, new Set([...consumes.keys(), ...supplied.keys()]), child, create)
   return { roots, targetRows, nodes }
 }
 
@@ -573,30 +573,40 @@ function rowDistance(a: string, b: string): number {
  * under the nearest row of it: the output feeds a `reclaim` row, the recipe runs on a recovery row
  * joining that row's supply, and each further step is a recovery row of its own. A step's other
  * inputs are made as usual. New rows can output more, so this repeats a few rounds.
+ * Overflow and supply targets (`sized`, their root rows) make only what's left once the rest of the
+ * plan has run, recovery included: the rest of the plan's outputs aren't recovered into their rows,
+ * and the item an overflow target takes is recovered as usual, the target taking what's left.
  */
 function recover(
   nodes: PlanNode[],
   catalog: ProcessCatalog,
   plan: Plan,
+  sized: Set<PlanNode>,
   child: (item: string, parent: PlanNode) => PlanNode,
   create: (item: string, id: string, depth: number, parent: PlanNode | undefined, fields: Partial<PlanNode>) => PlanNode,
 ) {
   const tried = new Set<string>()
+  const inSized = (n: PlanNode) => {
+    let r = n
+    while (r.parent) r = r.parent
+    return sized.has(r)
+  }
   for (let round = 0; round < MAX_RECOVERY_ROUNDS; round++) {
-    // Rows an output could be recovered into: rows making or taking an item for the plan's use.
+    // Rows an output could be recovered into: rows making or taking an item for the plan's use
+    // (for the rest of the plan's outputs, outside overflow and supply targets).
     const usedBy = new Map<string, PlanNode[]>()
+    const restUsedBy = new Map<string, PlanNode[]>()
     for (const n of nodes)
-      if ((n.kind === 'make' || n.kind === 'bus') && !n.recovers && !isPseudo(n.item))
+      if ((n.kind === 'make' || n.kind === 'bus') && !n.recovers && !isPseudo(n.item)) {
         usedBy.set(n.item, [...(usedBy.get(n.item) ?? []), n])
-    // Rows taking an item from other rows' outputs, and overflow targets taking the overflow of
-    // one: those outputs are used already.
-    const taken = new Set([
-      ...nodes.filter((n) => n.kind === 'reclaim').map((n) => n.item),
-      ...plan.targets.flatMap((t) => consumedBy(t) ?? []),
-    ])
+        if (!inSized(n)) restUsedBy.set(n.item, [...(restUsedBy.get(n.item) ?? []), n])
+      }
+    // Rows taking an item from other rows' outputs: those outputs are used already.
+    const taken = new Set(nodes.filter((n) => n.kind === 'reclaim').map((n) => n.item))
     let added = false
     for (const source of [...nodes]) {
       if (source.kind !== 'make') continue
+      const into = inSized(source) ? usedBy : restUsedBy
       for (const out of source.process!.outputs) {
         const item = out.item
         // Outputs the plan uses only in part still need a place for the rest.
@@ -604,9 +614,9 @@ function recover(
         const key = `${source.id}>${item}`
         if (tried.has(key)) continue
         tried.add(key)
-        for (const chain of chainsFrom(item, catalog, usedBy)) {
+        for (const chain of chainsFrom(item, catalog, into)) {
           // The nearest row of the item it ends in.
-          const row = usedBy
+          const row = into
             .get(chain.into)!
             .reduce((best, n) => (rowDistance(n.id, source.id) < rowDistance(best.id, source.id) ? n : best))
           build(row, chain.steps)

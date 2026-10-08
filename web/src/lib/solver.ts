@@ -273,11 +273,13 @@ interface Baseline {
   crafts: Map<string, number>
   /** Items per minute of its own item it makes that nothing uses. */
   overflow: Map<string, number>
+  /** Share of each row's side output recovery could take (see `overflowShare` in `solveRound`). */
+  shares: Map<string, number>
 }
 
 /**
- * How each row runs with the plan's overflow and supply targets taking nothing: ordinary targets of
- * nothing, so the rest of the plan is laid out and solved as it is without them.
+ * How each row runs with the plan's overflow and supply targets taking nothing: laid out as they
+ * are (so the rows are the same), the rest of the plan is solved as it is without them.
  */
 function baselineCrafts(
   plan: Plan,
@@ -286,19 +288,16 @@ function baselineCrafts(
   absorbing: Map<string, Absorbing>,
   floors: Map<string, number>,
 ): Baseline {
-  const without = {
-    ...plan,
-    targets: plan.targets.map((t) => (consumedBy(t) || suppliedBy(t) ? { item: t.item, rate: 0 } : t)),
-  }
   const crafts = new Map<string, number>()
   const overflow = new Map<string, number>()
+  const shares = new Map<string, number>()
   const visit = (n: TreeNode) => {
     if (n.run) crafts.set(n.id, n.run.craftsPerMinute)
     overflow.set(n.id, n.overflow)
     n.children.forEach(visit)
   }
-  solveRound(without, catalog, mods, absorbing, floors).tree.forEach(visit)
-  return { crafts, overflow }
+  solveRound(plan, catalog, mods, absorbing, floors, { sizing: false, sharesUsed: shares }).tree.forEach(visit)
+  return { crafts, overflow, shares }
 }
 
 /** The root row of a row's tree. */
@@ -358,7 +357,18 @@ function solveRound(
   mods: Modifiers,
   absorbing: Map<string, Absorbing>,
   floors: Map<string, number>,
-  recovering = true,
+  {
+    recovering = true,
+    sizing = true,
+    sharesUsed,
+  }: {
+    /** Recovers outputs nothing uses (see `unfold`). */
+    recovering?: boolean
+    /** Overflow and supply targets take what they can; else they take nothing (see `baselineCrafts`). */
+    sizing?: boolean
+    /** Filled with the share of each row's side output recovery could take, where it's capped. */
+    sharesUsed?: Map<string, number>
+  } = {},
 ): PlanResult {
   const shape = unfold(plan, catalog, recovering)
   const targets = resolveTargets(plan, shape, mods)
@@ -374,7 +384,7 @@ function solveRound(
     const item = consumedBy(plan.targets[planIndex[i]])
     const row = shape.targetRows[i]
     // A target sharing the row of an item built separately has no rows of its own.
-    if (!item || !row || !isTargetRow(row.id)) return
+    if (!sizing || !item || !row || !isTargetRow(row.id)) return
     takers.set(i, [])
   })
   for (const n of shape.nodes) {
@@ -395,7 +405,7 @@ function solveRound(
   const supplyRows = new Map<number, PlanNode[]>()
   targets.forEach((_, i) => {
     const row = shape.targetRows[i]
-    if (suppliedBy(plan.targets[planIndex[i]]) && row && isTargetRow(row.id)) supplyRows.set(i, [])
+    if (sizing && suppliedBy(plan.targets[planIndex[i]]) && row && isTargetRow(row.id)) supplyRows.set(i, [])
   })
   for (const n of shape.nodes) {
     const i = shape.targetRows.indexOf(rootOf(n))
@@ -450,12 +460,13 @@ function solveRound(
     const k = index.get(s)!
     equalities[`b:${k}`] = 0
     // An overflow target's rows of its item get only the overflow taken, and its other rows make no
-    // more than it needs. A row making an item an overflow target takes overflows into its pool. A
-    // row taking a capped item from the bus takes no more than it needs (the rest is for the others).
+    // more than it needs. A row of an item an overflow target takes overflows into its pool, whether
+    // it makes the item or gets more of other rows' by-products than it needs. A row taking a capped
+    // item from the bus takes no more than it needs (the rest is for the others).
     if (s.kind !== 'overflow' && !(s.kind === 'bus' && capped.has(s.item)) && (!inTaker.has(s) || floors.has(s.id)))
       columns[`s:${k}`] = {
         [`b:${k}`]: -1,
-        ...(s.kind === 'make' && takerOf.has(s.item) && { [`o:${s.item}`]: 1 }),
+        ...(takerOf.has(s.item) && { [`o:${s.item}`]: 1 }),
         cost: SURPLUS_COST,
       }
     if (s.kind === 'bus' && pooled.has(s.item)) columns[`i:${k}`] = { [`b:${k}`]: 1, [`g:${s.item}`]: -1, cost: 0 }
@@ -558,7 +569,18 @@ function solveRound(
       for (const b of t.byproducts) if (b.count > 0) overflowShare.set(`${t.id}>${b.item}`, b.overflow / b.count)
       t.children.forEach(visit)
     }
-    solveRound(plan, catalog, mods, absorbing, floors, false).tree.forEach(visit)
+    solveRound(plan, catalog, mods, absorbing, floors, { recovering: false, sizing }).tree.forEach(visit)
+    // Rows held as they are without the overflow and supply targets recover what they did there:
+    // measured with those targets, a held row's output could go to rows using it directly instead,
+    // leaving its recovery rows, held to their crafts too, nothing to run on.
+    if (held)
+      for (const n of shape.nodes)
+        if (n.kind === 'make' && !inTaker.has(n))
+          for (const o of n.process!.outputs) {
+            const key = `${n.id}>${o.item}`
+            overflowShare.set(key, held.shares.get(key) ?? 1)
+          }
+    if (sharesUsed) for (const [key, share] of overflowShare) sharesUsed.set(key, share)
   }
 
   for (const n of shape.nodes) {

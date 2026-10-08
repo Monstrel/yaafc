@@ -2140,6 +2140,40 @@ describe('overflow targets', () => {
     expect(r.targets[1]).toMatchObject({ rate: 0, overflow: { uses: true, taken: 0 } })
   })
 
+  it('takes only what the rest of the plan leaves once it has recovered what it can', () => {
+    // Gold Dust Athanors' failed crafts give Crude Gold Dust, which the plan refines back into Gold
+    // Dust: none overflows, so the target makes none, and the Athanors don't run harder to give it
+    // some. The plan's recovery rows are held as they are without the target too: measured with it,
+    // their Silver Powder went to rows using it directly, leaving them nothing to run on (the solver
+    // found no solution).
+    const gold = plan({ targets: [{ item: 'GoldDust3', rate: 10 }], producers: { GoldDust3: 'recipe:GoldDust3' } })
+    const before = solvePlan(gold, catalog, mods)
+    expect(surplus(before, 'GoldDust')).toBe(0)
+    expect(rows(before).some((n) => n.id === '0/GoldDust3/recover:GoldDust3@recipe:GoldDust3_Alt' && n.rate > 0)).toBe(true)
+    const r = solvePlan(using(gold, 'GoldDust2', 'GoldDust'), catalog, mods)
+    expectBalanced(r)
+    expect(r.targets[1]).toMatchObject({ rate: 0, overflow: { uses: true, taken: 0, unused: 0, runaway: false } })
+    expect(rows(r).every((n) => n.shortfall === 0)).toBe(true)
+    const machines = (x: PlanResult) => rows(x).filter((n) => n.id.startsWith('0/')).map((n) => [n.id, round1(n.machines)])
+    expect(machines(r)).toEqual(machines(before))
+  })
+
+  it('takes the by-products a row gets more of than it needs', () => {
+    // The Impure Gold Dust row takes Crude Gold Dust from the bus, and the Athanors' failed crafts
+    // give it more than it uses: the rest overflows to the target, not out of that row.
+    const gold = plan({
+      targets: [{ item: 'GoldDust3', rate: 10 }, { item: 'GoldDust2', rate: 1 }],
+      producers: { GoldDust3: 'recipe:GoldDust3' },
+      branches: { '1/GoldDust2/GoldDust': { producer: BUS, reuse: true } },
+    })
+    const crude = surplus(solvePlan(gold, catalog, mods), 'GoldDust')
+    expect(crude).toBeGreaterThan(0)
+    const r = solvePlan(using(gold, 'GoldDust2', 'GoldDust'), catalog, mods)
+    expectBalanced(r)
+    expect(r.targets[2].overflow).toMatchObject({ taken: expect.closeTo(crude), unused: 0 })
+    expect(surplus(r, 'GoldDust')).toBeCloseTo(0)
+  })
+
   it("makes none, saying why, when its recipes don't use the item", () => {
     const r = solvePlan(using(blast, 'Bandage'), catalog, mods)
     expectBalanced(r)
