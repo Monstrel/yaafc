@@ -21,6 +21,7 @@ import {
 } from '../lib/flowChart'
 import { buildingNameFor } from '../lib/plural'
 import type { TreeNode } from '../lib/tree'
+import { CheckIcon } from './CheckIcon'
 import { ItemIcon, ItemLabel } from './ItemIcon'
 import { MIN_ZOOM, usePanZoom, type Camera } from './usePanZoom'
 
@@ -28,6 +29,8 @@ interface Props {
   tree: TreeNode[]
   /** The row the chart was opened from. */
   rootId: string
+  /** Rows marked built in the player's game. */
+  built: ReadonlySet<string>
   onClose: () => void
   /** Shows a row in the production tree (the chart closes first). */
   onShow: (row: string) => void
@@ -53,7 +56,7 @@ const KIND_TEXT: Record<Exclude<FlowEdgeKind, 'feed'>, { glyph: string; name: st
  * right, what feeds it to the left, and the lines crossing branches (by-products, loops) in lanes
  * of their own, so a branch with loops still reads.
  */
-export function FlowChartView({ tree, rootId, onClose, onShow }: Props) {
+export function FlowChartView({ tree, rootId, built, onClose, onShow }: Props) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   // Open before the chart is fitted to it.
   useLayoutEffect(() => {
@@ -152,6 +155,8 @@ export function FlowChartView({ tree, rootId, onClose, onShow }: Props) {
   const width = (rate: number) => 1.5 + 5 * Math.sqrt(Math.max(0, rate) / maxRate)
   const crossKinds = new Set(chart?.edges.filter((e) => e.kind !== 'feed').map((e) => e.kind))
   const ports = new Set(chart?.edges.map((e) => e.port))
+  // Only machines get built: the boxes drawn from rows running some.
+  const isBuilt = (b: FlowBox) => b.kind === 'machines' && built.has(b.id)
   const fade = (on: boolean) => (lit && !on ? ' faded' : '')
 
   return (
@@ -279,6 +284,7 @@ export function FlowChartView({ tree, rootId, onClose, onShow }: Props) {
                 <Box
                   key={b.id}
                   box={b}
+                  built={isBuilt(b)}
                   style={{ left: PAD + b.x, top: PAD - chart.top + b.y - b.h / 2, width: b.w, height: b.h }}
                   faded={!!lit && !lit.boxes.has(b.id)}
                   onHover={(on) => setHover(on ? { box: b.id } : null)}
@@ -344,6 +350,14 @@ export function FlowChartView({ tree, rootId, onClose, onShow }: Props) {
                   made in the plan feeds into it.
                 </div>
               )}
+              {[...chart.boxes.values()].some(isBuilt) && (
+                <div>
+                  <span className="flow-built-check key" aria-hidden>
+                    <CheckIcon />
+                  </span>
+                  Built in your game, as ticked in the tree
+                </div>
+              )}
               <p className="flow-tip">
                 Thicker lines carry more. Hover a box or line to follow it; click a box to show its row in the tree.
               </p>
@@ -357,6 +371,7 @@ export function FlowChartView({ tree, rootId, onClose, onShow }: Props) {
 
 function Box({
   box: b,
+  built,
   style,
   faded,
   onHover,
@@ -364,6 +379,7 @@ function Box({
   onOpen,
 }: {
   box: FlowBox
+  built: boolean
   style: CSSProperties
   faded: boolean
   onHover: (on: boolean) => void
@@ -376,7 +392,7 @@ function Box({
   const tagged = b.more > 0 || !!b.elsewhere
   return (
     <div
-      className={`flow-box ${b.kind}${b.group ? ' group' : ''}${b.loop !== undefined ? ' in-loop' : ''}${b.heat ? ' heated' : ''}${tagged ? ' tagged' : ''}${faded ? ' faded' : ''}`}
+      className={`flow-box ${b.kind}${b.group ? ' group' : ''}${b.loop !== undefined ? ' in-loop' : ''}${b.heat ? ' heated' : ''}${built ? ' built' : ''}${tagged ? ' tagged' : ''}${faded ? ' faded' : ''}`}
       style={style}
       onPointerEnter={() => onHover(true)}
       onPointerLeave={() => onHover(false)}
@@ -414,6 +430,11 @@ function Box({
         {b.kind === 'outside' && <span className="flow-box-meta">{b.note}</span>}
       </button>
       {b.heat && <HeatSlab heat={b.heat} />}
+      {built && (
+        <span className="flow-built-check" role="img" aria-label="Built" title="Built in your game">
+          <CheckIcon />
+        </span>
+      )}
       {b.loop !== undefined && (
         <span className="flow-loop-badge on-box" title={`Part of loop ${b.loop + 1}`}>
           ↻{b.loop + 1}

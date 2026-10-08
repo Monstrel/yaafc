@@ -3492,6 +3492,28 @@ tr.unit-totals td.num {
   text-align: center;
 }
 
+/* A box whose row is ticked off as built in the tree. */
+.flow-built-check {
+  position: absolute;
+  top: -8px;
+  left: -8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--bg);
+  border-radius: 50%;
+  background: var(--green);
+  color: var(--bg);
+}
+
+.flow-built-check.key {
+  position: static;
+  flex: none;
+  margin: 0 5px;
+}
+
 .flow-box-more {
   position: absolute;
   left: 8px;

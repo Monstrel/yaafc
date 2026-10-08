@@ -21,6 +21,7 @@ import { ItemIcon, ItemLabel, SeedNote } from './ItemIcon'
 import { Money } from './Money'
 import { OverflowTargetForm } from './OverflowTargetForm'
 import { BusDraw, FoldedPick } from './FuelPick'
+import { CheckIcon } from './CheckIcon'
 import { FlowChartView } from './FlowChartView'
 import { HeatView } from './HeatView'
 import { ProducerSelect } from './ProducerSelect'
@@ -815,7 +816,15 @@ export function ProductionTree({
         )}
       </div>
 
-      {flowRoot && <FlowChartView tree={tree} rootId={flowRoot} onClose={() => setFlowRoot(null)} onShow={show} />}
+      {flowRoot && (
+        <FlowChartView
+          tree={tree}
+          rootId={flowRoot}
+          built={builtRows}
+          onClose={() => setFlowRoot(null)}
+          onShow={show}
+        />
+      )}
 
       <dialog ref={clearRef} className="tree-dialog">
         <h3>Clear all built marks?</h3>
@@ -1565,25 +1574,6 @@ function FlowIcon() {
       <rect x="1.5" y="10.5" width="4" height="3.5" rx="1" />
       <rect x="10.5" y="6.25" width="4" height="3.5" rx="1" />
       <path d="M5.5 3.75h1.5a1.5 1.5 0 0 1 1.5 1.5v5.5a1.5 1.5 0 0 1-1.5 1.5H5.5M8.5 8h2" />
-    </svg>
-  )
-}
-
-/** A tick: the row is built. */
-function CheckIcon() {
-  return (
-    <svg
-      viewBox="0 0 16 16"
-      width="12"
-      height="12"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.25"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <path d="m3.5 8.5 3 3 6-7" />
     </svg>
   )
 }
