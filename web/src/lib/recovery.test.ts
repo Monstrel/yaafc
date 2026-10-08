@@ -77,3 +77,22 @@ describe('recovering what machines output', () => {
     expect(chart.loops).toEqual([])
   })
 })
+
+describe('flow chart levels', () => {
+  it('keeps every line whose boxes are both shown, at any level limit', () => {
+    const { tree } = solvePlan(
+      plan({ targets: [{ item: 'GoldIngot', rate: 8.45 }], producers: { GoldDust3: 'recipe:GoldDust3' } }),
+      catalog,
+      mods,
+    )
+    const pure = tree.flatMap(all).find((n) => n.item === 'GoldDust5')!
+    const full = buildFlowChart(tree, pure.id)!
+    const key = (e: { from: string; to: string; item: string; kind: string }) => `${e.kind}:${e.from}>${e.to}:${e.item}`
+    for (let levels = 1; levels < full.depth; levels++) {
+      const cut = buildFlowChart(tree, pure.id, levels)!
+      const drawn = new Set(cut.edges.map(key))
+      const missing = full.edges.filter((e) => cut.boxes.has(e.from) && cut.boxes.has(e.to) && !drawn.has(key(e)))
+      expect(missing.map(key), `at ${levels} levels`).toEqual([])
+    }
+  })
+})

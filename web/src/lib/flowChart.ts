@@ -149,9 +149,11 @@ export function buildFlowChart(tree: TreeNode[], rootId: string, levels?: number
   /** Per tree row in the chart: the box its item goes into. */
   const consumerOf = new Map<string, string>()
   /** Loops and separate builds, joined up once every box is made. */
-  const pending: { from?: string; row: TreeNode; depth: number; kind: FlowEdgeKind; note: string }[] = []
+  // `hidden`: a row below the level limit, whose feed only shows as a line from a box in the chart.
+  const pending: { from?: string; row: TreeNode; depth: number; kind: FlowEdgeKind; note: string; hidden?: boolean }[] =
+    []
   /** Rows partly or wholly covered by other rows' by-products. */
-  const takers: { row: TreeNode; depth: number }[] = []
+  const takers: { row: TreeNode; depth: number; hidden?: boolean }[] = []
   let outside = 0
   const limit = levels ?? Infinity
 
@@ -220,17 +222,15 @@ export function buildFlowChart(tree: TreeNode[], rootId: string, levels?: number
       case 'produce': {
         const b = box({ id: c.id, row: c.id, kind: 'machines', item: c.item, rate: made(c), node: c, depth })
         attach(parent.id, b)
-        if (depth >= limit) b.more = countRows(c)
-        else addChildren(c, b, depth + 1)
+        if (depth >= limit) {
+          b.more = countRows(c)
+          addHidden(c, b, depth + 1)
+        } else addChildren(c, b, depth + 1)
         break
       }
-      case 'loop': {
-        // Made by the nearest row of its item further up the tree.
-        let up = parentId(c.id)
-        while (up !== null && !(rows.get(up)?.item === c.item && rows.get(up)?.kind === 'produce')) up = parentId(up)
-        pending.push({ from: up ?? undefined, row: c, depth, kind: 'loop', note: 'loop: made further up the tree' })
+      case 'loop':
+        pending.push({ from: loopSource(c), row: c, depth, kind: 'loop', note: 'loop: made further up the tree' })
         break
-      }
       case 'separate':
         pending.push({ from: c.groupId, row: c, depth, kind: 'separate', note: 'built separately' })
         break
@@ -250,6 +250,31 @@ export function buildFlowChart(tree: TreeNode[], rootId: string, levels?: number
       }
       joinRecoveries(c, parent, depth)
     }
+  }
+
+  /**
+   * The rows below a box the level limit leaves out: no boxes of their own, but what they take from
+   * boxes in the chart (by-products, loops back up, separate builds) still comes into it.
+   */
+  const addHidden = (n: TreeNode, into: FlowBox, depth: number) => {
+    for (const c of n.children) {
+      if (c.consolidated || c.recovery) continue
+      if (isTransparent(c)) {
+        addHidden(c, into, depth)
+        continue
+      }
+      consumerOf.set(c.id, into.id)
+      if (c.fromByproduct > EPS) takers.push({ row: c, depth, hidden: true })
+      if (c.kind === 'loop') pending.push({ from: loopSource(c), row: c, depth, kind: 'loop', note: '', hidden: true })
+      if (c.kind === 'separate') pending.push({ from: c.groupId, row: c, depth, kind: 'separate', note: '', hidden: true })
+    }
+  }
+
+  /** The row a loop row's item is made by: the nearest row of it further up the tree. */
+  const loopSource = (c: TreeNode) => {
+    let up = parentId(c.id)
+    while (up !== null && !(rows.get(up)?.item === c.item && rows.get(up)?.kind === 'produce')) up = parentId(up)
+    return up ?? undefined
   }
 
   /** Rows recovering outputs into a row's supply: beside it, feeding what it feeds. */
@@ -281,8 +306,10 @@ export function buildFlowChart(tree: TreeNode[], rootId: string, levels?: number
     if (n.fromBus > EPS)
       attach(b.id, box({ id: `${n.id}#bus`, row: n.id, kind: 'bus', item: n.item, rate: n.fromBus, depth: depth + 1 }))
     if (n.fromByproduct > EPS) takers.push({ row: n, depth: depth + 1 })
-    if (depth >= limit) b.more = countRows(n)
-    else addChildren(n, b, depth + 1)
+    if (depth >= limit) {
+      b.more = countRows(n)
+      addHidden(n, b, depth + 1)
+    } else addChildren(n, b, depth + 1)
     // With nothing above it in the chart, what's recovered into its supply comes into it.
     joinRecoveries(n, b, depth + 1)
     return b
@@ -294,6 +321,7 @@ export function buildFlowChart(tree: TreeNode[], rootId: string, levels?: number
   // separately elsewhere in the plan comes into the chart, by its first use here.
   for (let i = 0; i < pending.length; i++) {
     const p = pending[i]
+    if (p.hidden) continue
     const to = consumerOf.get(p.row.id)!
     const group = p.kind === 'separate' && p.from ? rows.get(p.from) : undefined
     if (group && !boxes.has(group.id)) boxes.get(to)!.children.push(hub(group, p.depth))
@@ -301,6 +329,12 @@ export function buildFlowChart(tree: TreeNode[], rootId: string, levels?: number
       links.push({ id: `${p.kind}:${p.row.id}`, from: p.from, to, item: p.row.item, rate: p.row.rate, kind: p.kind })
     else attach(to, outsideBox(p.row.item, p.row.rate, p.note, p.depth, p.from))
   }
+  // Rows below the level limit: only from boxes the chart has, once it has them all.
+  for (const p of pending)
+    if (p.hidden && p.from && boxes.has(p.from)) {
+      const to = consumerOf.get(p.row.id)!
+      links.push({ id: `${p.kind}:${p.row.id}`, from: p.from, to, item: p.row.item, rate: p.row.rate, kind: p.kind })
+    }
   // What items built separately send to uses the chart doesn't show.
   for (const b of boxes.values()) {
     if (!b.group) continue
@@ -310,7 +344,7 @@ export function buildFlowChart(tree: TreeNode[], rootId: string, levels?: number
     if (uses > 0 && rate > 1e-6) b.elsewhere = { rate, uses }
   }
   // By-products: into each taking row's box, from the rows whose side output covers it.
-  for (const { row, depth } of takers) {
+  for (const { row, depth, hidden } of takers) {
     const to = consumerOf.get(row.id)!
     let covered = 0
     for (const s of row.byproductSources) {
@@ -323,9 +357,9 @@ export function buildFlowChart(tree: TreeNode[], rootId: string, levels?: number
       covered += amount
       if (boxes.has(s.id))
         links.push({ id: `bp:${s.id}>${row.id}`, from: s.id, to, item: row.item, rate: amount, kind: 'byproduct' })
-      else attach(to, outsideBox(row.item, amount, `by-product of ${s.label}`, depth, s.id))
+      else if (!hidden) attach(to, outsideBox(row.item, amount, `by-product of ${s.label}`, depth, s.id))
     }
-    if (row.fromByproduct - covered > 1e-6)
+    if (!hidden && row.fromByproduct - covered > 1e-6)
       attach(to, outsideBox(row.item, row.fromByproduct - covered, 'by-products', depth))
   }
   // A crucible refining the by-products of the row below it takes them straight off that row.
