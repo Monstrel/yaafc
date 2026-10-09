@@ -153,6 +153,8 @@ const FLOW_COST = 1e-7
 // A crucible row's mixed feed takes the by-products below it after the rows of their own item do.
 const MIX_COST = 1e-5
 const SHORTFALL_ROW = 'shortfall'
+// Prefix of the shares a baseline solve records for recovery leaving its row (see `strays`).
+const LOCAL = 'local:'
 // Overflow an overflow target can't use is counted with shortfalls, so it uses all it can, but costs
 // less than any shortfall: falling short somewhere never stands in for leaving overflow unused (a
 // shortfall in a runaway loop would make it look like it settles).
@@ -359,11 +361,14 @@ function solveRound(
   floors: Map<string, number>,
   {
     recovering = true,
+    localOnly = false,
     sizing = true,
     sharesUsed,
   }: {
     /** Recovers outputs nothing uses (see `unfold`). */
     recovering?: boolean
+    /** Recovers a row's output only into its own supply, where it can go there (see `strays`). */
+    localOnly?: boolean
     /** Overflow and supply targets take what they can; else they take nothing (see `baselineCrafts`). */
     sizing?: boolean
     /** Filled with the share of each row's side output recovery could take, where it's capped. */
@@ -557,11 +562,12 @@ function solveRound(
 
   // Recovery takes only what would overflow: rows using an output as it is take it first. Where an
   // output goes both ways, the share of it that overflows without recovery caps what's recovered.
-  const isReclaim = (c: PlanNode) => c.kind === 'reclaim'
+  // Recovery rows count as recovery too, though they also take their own item from other rows' outputs.
+  const isRecovery = (c: PlanNode) => c.kind === 'reclaim' || !!c.recovers
   const sharedWith = (n: PlanNode, item: string) => (consumers.get(item) ?? []).filter((c) => n.reuse || c.reuseChosen)
   const contested = (n: PlanNode, item: string) => {
     const cs = sharedWith(n, item)
-    return cs.some(isReclaim) && cs.some((c) => !isReclaim(c))
+    return cs.some(isRecovery) && cs.some((c) => !isRecovery(c))
   }
   const overflowShare = new Map<string, number>()
   if (shape.nodes.some((n) => n.kind === 'make' && n.process!.outputs.some((o) => o.item !== n.item && contested(n, o.item)))) {
@@ -581,6 +587,39 @@ function solveRound(
             overflowShare.set(key, held.shares.get(key) ?? 1)
           }
     if (sharesUsed) for (const [key, share] of overflowShare) sharesUsed.set(key, share)
+  }
+
+  // Recovery keeps to the row whose machines output it: where an output can be recovered both back
+  // into its row's own supply and into other items, its row's own recovery takes it first, and the
+  // share of it that overflows with only that caps what goes elsewhere. Else a row could recover
+  // less of its own output and run harder to feed another item's recovery (Athanors making Gold Dust
+  // turning out Impure Gold Dust for a cauldron making Resonant Catalyst).
+  /** The row a recovery row's chain (or a reclaim row's) recovers into. */
+  const joins = (c: PlanNode) => {
+    let a = c
+    while (a.recovers || a.kind === 'reclaim') a = a.parent!
+    return supplierOf(a)
+  }
+  const strays = (n: PlanNode, item: string) => {
+    const cs = sharedWith(n, item).filter(isRecovery)
+    return cs.some((c) => joins(c) === n) && cs.some((c) => joins(c) !== n)
+  }
+  const localShare = new Map<string, number>()
+  if (!localOnly && shape.nodes.some((n) => n.kind === 'make' && n.process!.outputs.some((o) => o.item !== n.item && strays(n, o.item)))) {
+    const visit = (t: TreeNode) => {
+      for (const b of t.byproducts) if (b.count > 0) localShare.set(`${t.id}>${b.item}`, b.overflow / b.count)
+      t.children.forEach(visit)
+    }
+    solveRound(plan, catalog, mods, absorbing, floors, { localOnly: true, sizing }).tree.forEach(visit)
+    // As above: held rows recover where they did without the overflow and supply targets.
+    if (held)
+      for (const n of shape.nodes)
+        if (n.kind === 'make' && !inTaker.has(n))
+          for (const o of n.process!.outputs) {
+            const key = `${n.id}>${o.item}`
+            localShare.set(key, held.shares.get(`${LOCAL}${key}`) ?? 1)
+          }
+    if (sharesUsed) for (const [key, share] of localShare) sharesUsed.set(`${LOCAL}${key}`, share)
   }
 
   for (const n of shape.nodes) {
@@ -628,11 +667,20 @@ function solveRound(
         col[cap] = -(overflowShare.get(`${n.id}>${o.item}`) ?? 1) * o.count
         columns[`rqs:${k}:${o.item}`] = { [cap]: 1, cost: 0 }
       }
+      const stray = strays(n, o.item) ? `rl:${k}:${o.item}` : null
+      if (stray && !localOnly) {
+        equalities[stray] = 0
+        col[stray] = -(localShare.get(`${n.id}>${o.item}`) ?? 1) * o.count
+        columns[`rls:${k}:${o.item}`] = { [stray]: 1, cost: 0 }
+      }
       // A row making its own keeps to itself: its by-products only go where reuse was picked.
       for (const c of sharedWith(n, o.item)) {
+        const elsewhere = stray !== null && isRecovery(c) && joins(c) !== n
+        if (elsewhere && localOnly) continue
         const name = `f:${k}>${index.get(c)}`
         columns[name] = { [pool]: -1, [`b:${index.get(c)}`]: 1, cost: FLOW_COST * (1 + distance(n, c)) }
-        if (cap && isReclaim(c)) columns[name][cap] = 1
+        if (cap && isRecovery(c)) columns[name][cap] = 1
+        if (elsewhere) columns[name][stray] = 1
         if (extra in equalities && sameRun(n, c)) columns[name][extra] = -1
         flows.push({ name, from: n, to: c })
       }

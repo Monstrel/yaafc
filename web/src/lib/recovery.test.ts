@@ -78,6 +78,37 @@ describe('recovering what machines output', () => {
   })
 })
 
+describe('recovery keeping to its own row', () => {
+  // A saved cauldron recipe turns Impure Gold Dust into Resonant Catalyst: the Athanors' failed
+  // products could be recovered into it, but they climb back into their own Gold Dust first.
+  const saved = [{ id: 'rc', mode: 'normal' as const, inputs: ['Flax', 'Catalyst2', 'GoldDust2'], output: 'Catalyst3', createdAt: 0 }]
+  const withRecipe = buildCatalog({ saved, machines: {}, mods, fertilizer: null })
+  const { tree, status } = solvePlan(
+    plan({
+      targets: [
+        { item: 'GoldDust5', rate: 10 },
+        { item: 'Catalyst3', rate: 10 },
+      ],
+      producers: { GoldDust3: 'recipe:GoldDust3' },
+    }),
+    withRecipe,
+    mods,
+  )
+  const rows = tree.flatMap(all)
+
+  it('never runs a row harder to feed another item’s recovery', () => {
+    expect(status).toBe('ok')
+    // 20 Gold Dust a minute at 0.4 per craft, its failed products all climbing back into it.
+    const athanors = rows.find((n) => n.id === '0/GoldDust5/GoldDust3')!
+    expect(athanors.run!.craftsPerMinute).toBeCloseTo(50)
+    for (const b of athanors.byproducts) expect(b.to.every((t) => t.id.startsWith(athanors.id))).toBe(true)
+    // With nothing left over, Resonant Catalyst is made by its own machines.
+    const catalyst = rows.find((n) => n.id === '1/Catalyst3')!
+    expect(catalyst.run!.craftsPerMinute).toBeCloseTo(10)
+    expect(catalyst.fromRecovery).toBe(0)
+  })
+})
+
 describe('flow chart levels', () => {
   it('keeps every line whose boxes are both shown, at any level limit', () => {
     const { tree } = solvePlan(
