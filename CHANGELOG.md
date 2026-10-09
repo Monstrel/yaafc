@@ -8,6 +8,14 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
+## 2026-10-09T18:38Z
+
+- Fixed rows running far harder than needed so their failed products could make something
+  elsewhere in the plan. Gold Dust Athanors no longer turn out extra Impure Gold Dust for a
+  Cauldron recipe making Resonant Catalyst, which made the Resonant Catalyst row show its whole
+  rate from 0 machines. A row's failed products now refine back into its own item first, and only
+  what's left over goes to other recipes.
+
 ## 2026-10-08T21:47Z
 
 - Fixed plans failing to solve when you made something from the overflow of Crude Gold Dust (and
