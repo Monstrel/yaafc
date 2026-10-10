@@ -13,6 +13,7 @@ export type TreeNodeKind =
   | 'loop' // already produced further up this branch (cycle)
   | 'separate' // built separately: its machines are under the row `groupId`
   | 'overflow' // the plan's overflow of the item, taken by an overflow target
+  | 'gather' // shown only: what a row takes of an ingredient from several sources, the sources below it
 
 export interface TreeNode {
   /** Stable path id (item keys from the root), used for folding and per-branch choices. */

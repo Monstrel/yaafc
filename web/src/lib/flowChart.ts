@@ -11,10 +11,11 @@ import { parentId } from './unfold'
  */
 
 /**
- * What a box stands for: a row's machines, an item taken from the bus, or something coming from
- * outside the chart (a loop or by-product from rows not in it, an item built elsewhere, overflow).
+ * What a box stands for: a row's machines, an item taken from the bus, something coming from
+ * outside the chart (a loop or by-product from rows not in it, an item built elsewhere, overflow),
+ * or an item gathered from several of those before it goes on ('join').
  */
-export type FlowBoxKind = 'machines' | 'bus' | 'outside'
+export type FlowBoxKind = 'machines' | 'bus' | 'outside' | 'join'
 
 /**
  * What a heated row's machines sit on, drawn under its box: furnaces burning a solid fuel, or Steam
@@ -282,9 +283,31 @@ export function buildFlowChart(tree: TreeNode[], rootId: string, levels?: number
     }
   }
 
-  /** The boxes a row puts in the chart: its machines, the part from the bus, what comes from elsewhere. */
+  /**
+   * The boxes a row puts in the chart: its machines, the part from the bus, what comes from
+   * elsewhere. With several of those, a box gathers them first, so what `parent` takes of the item
+   * in all reads in one place.
+   */
   const addRow = (c: TreeNode, parent: FlowBox, depth: number) => {
-    const fuel = fuelRows.has(c.id)
+    const n = sourcesOf(c)
+    if (n < 2) return addFeeds(c, parent, depth, fuelRows.has(c.id))
+    const join = box({ id: `${c.id}#sources`, row: c.id, kind: 'join', item: c.item, rate: c.rate, note: `from ${n} sources`, depth })
+    attach(parent.id, join, fuelRows.has(c.id))
+    consumerOf.set(c.id, join.id)
+    addFeeds(c, join, depth + 1, false)
+  }
+  /** How many boxes feed a row's item into the one using it. */
+  const sourcesOf = (c: TreeNode) => {
+    if (c.kind !== 'produce' && c.kind !== 'bus' && c.kind !== 'byproduct') return 1
+    return (
+      Number(c.kind === 'produce' && made(c) > EPS) +
+      Number(c.fromBus > EPS) +
+      (c.fromByproduct > EPS ? Math.max(1, c.byproductSources.length) : 0) +
+      Number(c.kind !== 'produce' && c.shortfall > EPS) +
+      c.children.filter((r) => r.recovery).length
+    )
+  }
+  const addFeeds = (c: TreeNode, parent: FlowBox, depth: number, fuel: boolean) => {
     switch (c.kind) {
       case 'produce': {
         const b = box({ id: c.id, row: c.id, kind: 'machines', item: c.item, rate: made(c), node: c, depth })
@@ -391,7 +414,7 @@ export function buildFlowChart(tree: TreeNode[], rootId: string, levels?: number
   // and their outputs going into it as a loop).
   const beside = !start.consolidated && start.children.some((c) => c.recovery)
   const delivered = beside
-    ? box({ id: `${start.id}#out`, row: start.id, kind: 'outside', item: start.item, rate: start.rate, note: 'made and recovered', depth: -1 })
+    ? box({ id: `${start.id}#out`, row: start.id, kind: 'join', item: start.item, rate: start.rate, note: 'made and recovered', depth: -1 })
     : undefined
   const own = hub(start, 0, !delivered)
   if (delivered) {

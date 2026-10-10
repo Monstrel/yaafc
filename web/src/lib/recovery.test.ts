@@ -66,8 +66,10 @@ describe('recovering what machines output', () => {
     const chart = buildFlowChart(gold.tree, pure.id)!
     const into = (id: string) => chart.edges.filter((e) => e.to === id)
     const recovered = rows.find((n) => n.recovery && n.item === 'GoldDust3')!
-    // Both Gold Dust streams feed the Pure Gold Dust Refiners.
-    expect(into(pure.id).map((e) => e.from)).toEqual(expect.arrayContaining([athanors.id, recovered.id]))
+    // Both Gold Dust streams feed the Pure Gold Dust Refiners, gathered into one first.
+    const dust = `${athanors.id}#sources`
+    expect(into(dust).map((e) => e.from)).toEqual(expect.arrayContaining([athanors.id, recovered.id]))
+    expect(into(pure.id).map((e) => e.from)).toContain(dust)
     expect(chart.boxes.get(athanors.id)!.rate).toBeCloseTo(4.225)
     // The Athanors' failed products go up the Refiners on their blue outputs.
     const fails = chart.edges.filter((e) => e.from === athanors.id && e.kind === 'byproduct')
@@ -153,7 +155,7 @@ describe('a target of a number of machines', () => {
     const chart = buildFlowChart(tree, '0/GoldDust3')!
     expect(chart.loops).toEqual([])
     // What it delivers, fed by its own machines and by the recovery beside them.
-    expect(chart.root).toMatchObject({ kind: 'outside', item: 'GoldDust3', rate: expect.closeTo(3) })
+    expect(chart.root).toMatchObject({ kind: 'join', item: 'GoldDust3', rate: expect.closeTo(3) })
     const into = chart.edges.filter((e) => e.to === chart.root.id && e.kind === 'feed')
     expect(into.map((e) => [e.from, e.rate])).toEqual(
       expect.arrayContaining([

@@ -431,7 +431,7 @@ function Box({
           </span>
         )}
         {b.kind === 'bus' && <span className="flow-box-meta">plan input</span>}
-        {b.kind === 'outside' && <span className="flow-box-meta">{b.note}</span>}
+        {(b.kind === 'outside' || b.kind === 'join') && <span className="flow-box-meta">{b.note}</span>}
       </button>
       {b.heat && <HeatSlab heat={b.heat} />}
       {built && (

@@ -3675,6 +3675,11 @@ tr.unit-totals td.num {
   border-style: dashed;
 }
 
+/* An item gathered from several sources before it goes on. */
+.flow-box.join {
+  background: var(--panel-2);
+}
+
 .flow-box-main {
   flex: 1;
   min-width: 0;

@@ -1189,7 +1189,11 @@ function TreeRow({
         )}
       </td>
       <td>
-        {node.reusedBy ? (
+        {node.kind === 'gather' ? (
+          <span className="leaf-note" title="What the row above takes of it in all, from the rows below">
+            ⇉ from {node.children.length} sources
+          </span>
+        ) : node.reusedBy ? (
           <span className="leaf-note">♻ by-product of {sources}</span>
         ) : node.kind === 'loop' ? (
           <span className="leaf-note">↺ made further up this branch (loop)</span>
@@ -1894,6 +1898,8 @@ function viewOf(tree: TreeNode[], rootIds: (string | null)[]): { view: TreeNode[
 
 /** Line id suffix for the by-products covering part of a row. */
 const REUSED_LINE = '#reused'
+/** Row id suffix for the row gathering an ingredient's sources. */
+const GATHER_ROW = '#sources'
 
 /** Heat, Nutrients and Money rows: shown as a pick on the row they heat, feed or pay for, not rows of their own. */
 const isFolded = (n: TreeNode) => n.item === HEAT || n.item === NUTRIENTS || n.item === MONEY
@@ -1933,12 +1939,12 @@ function withReused(n: TreeNode): TreeNode {
     const whole = withReused(child)
     // Only the rows recovering into this one: those it shows beside it came from further down.
     const joining = new Set(child.consolidated ? [] : child.children.filter((r) => r.recovery).map((r) => r.id))
-    if (!joining.size) return withByproductLine(whole)
+    if (!joining.size) return gathered(whole, withByproductLine(whole))
     const recovered = whole.children.filter((r) => joining.has(r.id))
     const c = { ...whole, rate: whole.rate - whole.fromRecovery, children: whole.children.filter((r) => !joining.has(r.id)) }
     // A row taking only other rows' outputs, all of which come recovered: just the recovery rows.
     const empty = c.kind === 'byproduct' && !c.producer && c.rate <= 1e-9 && !c.children.length
-    return [...(empty ? [] : withByproductLine(c)), ...recovered]
+    return gathered(whole, [...(empty ? [] : withByproductLine(c)), ...recovered])
   })
   // Smallest branches first, so a leaf (a fuel off the bus, say) sits right under the row it feeds
   // rather than below a deep sibling. Rows gathered "with" it stay last, under their divider.
@@ -1954,6 +1960,16 @@ function withReused(n: TreeNode): TreeNode {
       .map((f) => ({ f, size: key(f) }))
       .sort((a, b) => a.size - b.size)
       .flatMap(({ f }) => f),
+  }
+
+  /**
+   * An ingredient's feeds: as they are when it has one, else under a row gathering them, so what
+   * the row above takes of it in all reads in one place (Silver Powder left over by one row, made
+   * by its own Athanors, and refined up from their failed crafts).
+   */
+  function gathered(whole: TreeNode, feeds: TreeNode[]): TreeNode[] {
+    if (feeds.length < 2) return feeds
+    return [{ ...blankRow(`${whole.id}${GATHER_ROW}`, feeds), item: whole.item, kind: 'gather', rate: whole.rate }]
   }
 
   /** A row, after the line for the part of it other rows' by-products cover, if any. */

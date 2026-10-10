@@ -61,10 +61,13 @@ describe('flow chart', () => {
     const [steel] = tree
     const chart = buildFlowChart(tree, steel.id)!
     const failed = chart.edges.find((e) => e.kind === 'byproduct')!
-    expect(failed).toMatchObject({ from: steel.id, to: steel.id, item: 'IronIngot' })
+    // Into the box gathering its Iron Ingots: those and the Iron Ingot row's own.
+    const iron = `${steel.children.find((c) => c.item === 'IronIngot')!.id}#sources`
+    expect(failed).toMatchObject({ from: steel.id, to: iron, item: 'IronIngot' })
     expect(failed.rate).toBeCloseTo(steel.byproducts.find((b) => b.item === 'IronIngot')!.count)
-    // Feeding itself makes a loop of one.
-    expect(chart.loops.map((l) => l.boxes)).toContainEqual([steel.id])
+    expect(chart.boxes.get(iron)).toMatchObject({ kind: 'join', note: 'from 2 sources' })
+    // Feeding itself makes a loop.
+    expect(chart.loops.map((l) => l.boxes)).toContainEqual([steel.id, iron])
   })
 
   it('stops at the level limit, counting the rows left out', () => {
