@@ -8,7 +8,7 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
-## 2026-10-09T18:38Z
+## 2026-10-10T00:06Z
 
 - Fixed rows running far harder than needed so their failed products could make something
   elsewhere in the plan. Gold Dust Athanors no longer turn out extra Impure Gold Dust for a
