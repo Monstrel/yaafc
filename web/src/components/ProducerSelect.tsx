@@ -428,7 +428,7 @@ function choiceTitle(c: Choice): string {
 
 function choiceDescription(c: Choice, item: string): string {
   const p = c.process
-  if (c.value === BUS) return c.coin ? 'Plan input: coins brought in' : 'Plan input: made outside this plan'
+  if (c.value === BUS) return c.coin ? 'Plan input: coins brought in' : 'Plan input: made outside this plan, for every row of it'
   if (!p) return choiceTitle(c)
   if (c.value === CRUCIBLE) return `${choiceTitle(c)}: refine any item`
   return `${processLabel(p, item)}: ${describe(materials(p))} → ${describe(p.outputs)}`
@@ -566,7 +566,7 @@ function ChoicePreview({ choice, item, shared }: { choice: Choice; item: string;
         <Money copper={choice.coin} suffix=" each, as an input" />
       </span>
     ) : (
-      <span className="recipe-preview muted">Made outside this plan, brought in as an input</span>
+      <span className="recipe-preview muted">Made outside this plan, brought in for every row of it</span>
     )
   if (p?.kind === 'buy')
     return (

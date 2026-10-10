@@ -41,6 +41,7 @@ import { heatNetworks } from './heatNetworks'
 import { setNetworkFuel, setNetworkSource } from './heatChoices'
 import {
   chooseProducer,
+  migrateInputs,
   setOutputAltar,
   clearBranchChoice,
   addProvider,
@@ -708,40 +709,47 @@ describe('producers per branch', () => {
   const sol = plan({ targets: [{ item: 'Sol', rate: 0.25 }] })
   const [first, second] = rows(solved(sol), 'FairyDust')
 
+  // Two targets of Coke: a row each.
+  const coke = plan({ targets: [{ item: 'Coke', rate: 10 }, { item: 'Coke', rate: 10 }] })
+
   it('applies a pick to its own branch only', () => {
-    const p = chooseProducer(sol, catalog, { item: 'FairyDust', producer: 'bus', row: first.id })
-    expect(p.branches).toEqual({ [first.id]: { producer: 'bus' } })
+    const p = chooseProducer(coke, catalog, { item: 'Coke', producer: 'recipe:Coke_Alt', row: '0/Coke' })
+    expect(p.branches).toEqual({ '0/Coke': { producer: 'recipe:Coke_Alt' } })
     const r = solved(p)
     expectBalanced(r)
-    const [a, b] = rows(r, 'FairyDust')
-    expect(a.kind).toBe('bus')
-    expect(a.ownChoice).toBe(true)
-    expect(b.kind).toBe('produce')
-    expect(b.ownChoice).toBe(false)
-    const dust = r.balances.find((x) => x.item === 'FairyDust')!
-    expect(dust.fromBus).toBeCloseTo(a.rate)
-    expect(dust.produced).toBeCloseTo(b.rate)
-  })
-
-  it('applies a pick everywhere on request, clearing branch picks', () => {
-    const branch = chooseProducer(sol, catalog, { item: 'FairyDust', producer: 'bus', row: first.id })
-    const p = chooseProducer(branch, catalog, { item: 'FairyDust', producer: 'bus', row: second.id, everywhere: true })
-    expect(p.producers.FairyDust).toBe('bus')
-    expect(p.branches).toEqual({})
-    // Every row takes it from plan inputs, after what's recovered into it from other rows' leftovers.
-    expect(rows(solved(p), 'FairyDust').every((n) => n.recovery || n.kind === 'bus')).toBe(true)
+    const [a, b] = r.tree
+    expect(a).toMatchObject({ producer: 'recipe:Coke_Alt', ownChoice: true })
+    expect(b).toMatchObject({ producer: 'recipe:Coke', ownChoice: false })
   })
 
   it("doesn't store a pick the row inherits anyway, and can clear one", () => {
-    const same = chooseProducer(sol, catalog, { item: 'FairyDust', producer: first.producer, row: first.id })
+    const same = chooseProducer(coke, catalog, { item: 'Coke', producer: 'recipe:Coke', row: '0/Coke' })
     expect(same.branches ?? {}).toEqual({})
-    const picked = chooseProducer(sol, catalog, { item: 'FairyDust', producer: 'bus', row: first.id })
-    expect(clearBranchChoice(picked, first.id).branches).toEqual({})
+    const picked = chooseProducer(coke, catalog, { item: 'Coke', producer: 'recipe:Coke_Alt', row: '0/Coke' })
+    expect(clearBranchChoice(picked, '0/Coke').branches).toEqual({})
+  })
+
+  it('takes an item in for every row of it, picked on any of them, and makes it everywhere again', () => {
+    const p = chooseProducer(sol, catalog, { item: 'FairyDust', producer: 'bus', row: first.id })
+    expect(p.producers.FairyDust).toBe('bus')
+    expect(p.branches ?? {}).toEqual({})
+    // Every row takes it from plan inputs, after what's recovered into it from other rows' leftovers.
+    expect(rows(solved(p), 'FairyDust').every((n) => n.recovery || n.kind === 'bus')).toBe(true)
+    const made = chooseProducer(p, catalog, { item: 'FairyDust', producer: 'recipe:FairyDust', row: second.id })
+    expect(made.producers.FairyDust).toBe('recipe:FairyDust')
+    expect(rows(solved(made), 'FairyDust').every((n) => n.kind === 'produce')).toBe(true)
+    // Plans saved with it taken in on one row only: taken in everywhere.
+    const legacy = plan({ ...sol, branches: { [first.id]: { producer: 'bus' } } })
+    expect(resolveChoice(legacy, catalog, 'FairyDust', second.id).producer).toBe('bus')
+    expect(migrateInputs(legacy)).toMatchObject({ producers: { FairyDust: 'bus' }, branches: {} })
+    expect(migrateInputs(sol)).toBeNull()
   })
 
   it('covers rows of the same item further down the branch, the deepest pick winning', () => {
-    const p = plan({ branches: { '0/WoodBoard': { producer: 'bus' }, '0/WoodBoard/X/WoodBoard/Y/WoodBoard': { producer: 'recipe:WoodBoard' } } })
-    expect(resolveChoice(p, catalog, 'WoodBoard', '0/WoodBoard/X/WoodBoard').producer).toBe('bus')
+    const p = plan({
+      branches: { '0/WoodBoard': { producer: 'recipe:GloomFungus' }, '0/WoodBoard/X/WoodBoard/Y/WoodBoard': { producer: 'recipe:WoodBoard' } },
+    })
+    expect(resolveChoice(p, catalog, 'WoodBoard', '0/WoodBoard/X/WoodBoard').producer).toBe('recipe:GloomFungus')
     expect(resolveChoice(p, catalog, 'WoodBoard', '0/WoodBoard/X/WoodBoard').own).toBe(false)
     expect(resolveChoice(p, catalog, 'Wood', '0/WoodBoard/Wood').producer).not.toBe('recipe:WoodBoard')
     expect(resolveChoice(p, catalog, 'WoodBoard', '0/WoodBoard/X/WoodBoard/Y/WoodBoard/Z/WoodBoard').producer).toBe(
@@ -845,7 +853,7 @@ describe('forgetting choices', () => {
   it('drops built marks on rows that left the plan or run no machines', () => {
     const p = plan({ targets: [{ item: 'Coke', rate: 1 }], ...choices, built: ['0/Coke', '0/Gone'] })
     expect(pruneChoices(p, catalog)!.built).toEqual(['0/Coke'])
-    const bought = plan({ targets: [{ item: 'Coke', rate: 1 }], ...choices, producers: { Coke: 'import' }, built: ['0/Coke'] })
+    const bought = plan({ targets: [{ item: 'Coke', rate: 1 }], ...choices, producers: { CharcoalPowder: 'bus' }, built: ['0/Coke/CharcoalPowder'] })
     expect(pruneChoices(bought, catalog)!.built).toBeUndefined()
   })
 })
@@ -1581,10 +1589,25 @@ describe('taking items from the bus', () => {
     expect(money.purchases.some((l) => l.item === 'CokePowder')).toBe(false)
   })
 
+  it('takes in only what the plan says: what nothing makes is a shortfall until it does', () => {
+    // Nothing makes Automatic Cashiers; the Paradox Crucible can refine them into Mors.
+    const mors = plan({ targets: [{ item: 'Mors', rate: 1 }], producers: { Mors: 'paradox:CashRegister' } })
+    const short = solvePlan(mors, catalog, mods)
+    const cashier = short.tree[0].children.find((c) => c.item === 'CashRegister')!
+    expect(cashier).toMatchObject({ kind: 'bus', producer: '', fromBus: 0 })
+    expect(cashier.shortfall).toBeGreaterThan(0)
+    expect(short.balances.find((b) => b.item === 'CashRegister')).toMatchObject({ fromBus: 0 })
+    const taken = solvePlan({ ...mors, producers: { ...mors.producers, CashRegister: 'bus' } }, catalog, mods)
+    expectBalanced(taken)
+    expect(taken.tree[0].children.find((c) => c.item === 'CashRegister')).toMatchObject({ producer: 'bus', shortfall: 0 })
+  })
+
   it('reads plans that bought what portals never sold as taking it from the bus', () => {
-    const p = plan({ targets: [{ item: 'FairyDust', rate: 5 }], producers: { FairyDust: 'import' } })
-    expect(resolveChoice(p, catalog, 'FairyDust', '0/FairyDust').producer).toBe('bus')
-    expect(solvePlan(p, catalog, mods).balances.find((b) => b.item === 'FairyDust')).toMatchObject({ fromBus: 5 })
+    const p = plan({ targets: [{ item: 'FairyTear', rate: 5 }], producers: { FairyDust: 'import' } })
+    expect(resolveChoice(p, catalog, 'FairyDust', '0/FairyTear/FairyDust').producer).toBe('bus')
+    const dust = solvePlan(p, catalog, mods).balances.find((b) => b.item === 'FairyDust')!
+    expect(dust.fromBus).toBeGreaterThan(0)
+    expect(dust.produced).toBe(0)
   })
 
   describe('Fertile Catalyst both loaded into Advanced Athanors and spread on nurseries', () => {
@@ -1999,15 +2022,15 @@ describe("the bus's capped supply", () => {
     return { result, line: ledgers(p, result).find((l) => l.item === 'Catalyst2')!, balance: result.balances.find((b) => b.item === 'Catalyst2')! }
   }
 
-  it('lets rows take up to what the bus carries, and falls short past it', () => {
+  it('takes what the plan needs past a cap, saying by how much', () => {
     const open = fc(coke)
-    expect(open.line).toMatchObject({ bus: expect.closeTo(0.25), cap: null })
+    expect(open.line).toMatchObject({ bus: expect.closeTo(0.25), cap: null, overCap: 0 })
     const { result, line, balance } = fc(setBusSupply(coke, 'Catalyst2', 0.1))
-    expect(line).toMatchObject({ bus: expect.closeTo(0.1), cap: 0.1 })
-    expect(balance.deficit).toBeCloseTo(0.15)
-    expect(result.tree[0].children.find((c) => c.item === 'Catalyst2')).toMatchObject({ fromBus: expect.closeTo(0.1), shortfall: expect.closeTo(0.15) })
-    // Plenty on the bus: as if uncapped.
-    expect(fc(setBusSupply(coke, 'Catalyst2', 5)).balance.deficit).toBe(0)
+    expect(line).toMatchObject({ bus: expect.closeTo(0.25), cap: 0.1, overCap: expect.closeTo(0.15) })
+    expect(balance.deficit).toBe(0)
+    expect(result.tree[0].children.find((c) => c.item === 'Catalyst2')).toMatchObject({ fromBus: expect.closeTo(0.25), shortfall: 0 })
+    // Plenty on the bus: nothing to say.
+    expect(fc(setBusSupply(coke, 'Catalyst2', 5)).line.overCap).toBe(0)
     expect(setBusSupply(setBusSupply(coke, 'Catalyst2', 5), 'Catalyst2', undefined)).toEqual(coke)
   })
 

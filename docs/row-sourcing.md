@@ -175,7 +175,15 @@ should pass under the new stages. The Sol "every fuel" test only got slower (abo
 ## Steps
 
 1. Solver stages and rule 1 together (rule 1 alone breaks the held-crafts machinery). Done.
-2. Declared inputs: plan model, migration, no import on undeclared rows, shortfalls instead.
+2. Declared inputs: plan model, migration, no import on undeclared rows, shortfalls instead. Done:
+   a declared input is `producers[item] = 'bus'` (`isInput` in unfold.ts, which also reads plans
+   saved with per-row picks; `migrateInputs` moves those when the plan opens). Picking "Plan input"
+   on a row declares the item; picking a recipe on a row of a declared item makes it everywhere.
+   Rows paying, burning or spreading keep per-row picks; a target's own row always makes its item.
+   An item nothing makes and the plan doesn't take in is a shortfall row (`unsupplied`) with a
+   "Take it in as a plan input" action. Caps bind only for supply targets; elsewhere the ledger's
+   `overCap` warns. Not done: flagging a migrated plan once, and an "Add an input" picker in the
+   inputs panel (rows' menus declare inputs instead).
 3. Interface: inputs panel, shortfall action, cap warnings; recipe menu without plan inputs.
 4. Changelog, then deploy.
 

@@ -160,7 +160,7 @@ export function buildTree(roots: PlanNode[], flows: Map<PlanNode, RowFlows>, mod
       id: n.id,
       item: n.item,
       rate: f.rate,
-      producer: n.kind === 'bus' ? BUS : (n.process?.id ?? ''),
+      producer: n.kind === 'bus' && !n.unsupplied ? BUS : (n.process?.id ?? ''),
       ownChoice: n.ownChoice,
       mine: n.mine,
       defaultCatalysts: n.defaultCatalysts,

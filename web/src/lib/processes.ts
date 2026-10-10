@@ -845,7 +845,8 @@ export function defaultProducer(catalog: ProcessCatalog, item: string, asTarget 
   const all = catalog.byProduct.get(item) ?? []
   // Bought only when nothing makes it, and before running a recipe only for its failed crafts.
   const buy = all.find((p) => p.kind === 'buy')
-  return (rank(all.filter(open)) ?? rank(all) ?? buy ?? failing(all.filter(open)) ?? failing(all))?.id ?? 'bus'
+  // Nothing makes it: '' (coins aside, the plan has to take it in).
+  return (rank(all.filter(open)) ?? rank(all) ?? buy ?? failing(all.filter(open)) ?? failing(all))?.id ?? ''
 }
 
 /**

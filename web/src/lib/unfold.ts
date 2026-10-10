@@ -58,6 +58,11 @@ export interface PlanNode {
    * row but an overflow or supply target's rows of the item it takes, which have only that.
    */
   takesLeftovers: boolean
+  /**
+   * A `bus` row of an item nothing in the plan can make and the plan doesn't take in: only other
+   * rows' leftovers supply it, and the rest is a shortfall.
+   */
+  unsupplied?: boolean
   /** Row that supplies a `loop` or `separate` row. */
   ref?: PlanNode
   /** For a `separate` row: the item whose row gathers it (none: the top of the plan). */
@@ -98,7 +103,7 @@ export const consumedBy = (t: PlanTarget) => (t.unit === 'overflow' && t.consume
 export const suppliedBy = (t: PlanTarget) => (t.unit === 'supply' && t.consumes ? t.consumes : null)
 
 export interface ResolvedChoice {
-  /** Process id, 'import' or 'bus'. */
+  /** Process id, 'import' or 'bus'; '' when nothing makes the item and the plan doesn't take it in. */
   producer: string
   process?: Process
   /** Picked for this row itself. */
@@ -173,9 +178,20 @@ const current = (catalog: ProcessCatalog, item: string, producer: string) =>
  * too: the plan makes it with boilers only when asked (a net-surplus target of it, or a branch
  * pick).
  */
-const isBurned = (id: string) => {
+export const isBurned = (id: string) => {
   const above = parentId(id)
   return above !== null && [HEAT, NUTRIENTS, MONEY].includes(rowItem(above))
+}
+
+/**
+ * Whether the plan takes `item` in from outside (a plan input), for every row of it but rows paying,
+ * burning or spreading it (they pick their own) and a target's own row (the plan makes its targets).
+ * The player says so plan-wide, or on a row (plans saved before inputs were per item).
+ */
+export function isInput(plan: Plan, item: string): boolean {
+  if (isPseudo(item)) return false
+  if (plan.producers[item] === BUS) return true
+  return Object.entries(plan.branches ?? {}).some(([id, pick]) => pick.producer === BUS && rowItem(id) === item && !isBurned(id) && !isTargetRow(id))
 }
 
 /**
@@ -223,7 +239,7 @@ export function myDefault(catalog: ProcessCatalog, item: string): MyDefault | un
  */
 export function planChoice(plan: Plan, catalog: ProcessCatalog, item: string, asTarget = false): MyDefault & { mine: boolean } {
   const choice = plan.producers[item] && current(catalog, item, plan.producers[item])
-  if ((choice === BUS && !isPseudo(item)) || (choice && makes(catalog.byId.get(choice), item)))
+  if ((choice === BUS && !isPseudo(item) && !asTarget) || (choice && makes(catalog.byId.get(choice), item)))
     return { producer: choice, mine: false }
   const mine = myDefault(catalog, item)
   if (mine) return { ...mine, mine: true }
@@ -247,18 +263,22 @@ export function resolveChoice(
   inherited = false,
 ): ResolvedChoice {
   const allowed = (producer: string) => !(underBoiler(item, id) && producer === STEAM_HEAT_ID)
+  const burned = isBurned(id)
+  // Every row of an item the plan takes in imports it, whatever its branch picks.
+  if (!burned && !isTargetRow(id) && isInput(plan, item)) return { producer: BUS, own: false, mine: false, ...NO_SETUP }
   for (let at = inherited ? parentId(id) : id; at !== null; at = parentId(at)) {
     const pick = plan.branches?.[at]
     if (!pick || rowItem(at) !== item || !allowed(pick.producer)) continue
     const producer = current(catalog, item, pick.producer)
     if (producer === BUS) {
-      if (isPseudo(item)) continue
+      // Only rows paying, burning or spreading pick it apart from the rest (see `isInput`).
+      if (isPseudo(item) || !burned) continue
       return { producer: BUS, own: at === id, mine: false, ...NO_SETUP }
     }
     const p = catalog.byId.get(producer)
     if (makes(p, item)) return onRow(p!, pick.machine, at === id)
   }
-  if (isBurned(id)) return { producer: BUS, own: false, mine: false, ...NO_SETUP }
+  if (burned) return { producer: BUS, own: false, mine: false, ...NO_SETUP }
   let choice = planChoice(plan, catalog, item, isTargetRow(id))
   if (!allowed(choice.producer)) {
     const boilers = plan.producers[BOILER_HEAT]
@@ -266,7 +286,9 @@ export function resolveChoice(
     choice = { producer: burns, mine: false }
   }
   const p = catalog.byId.get(choice.producer)
-  if (!p) return { producer: BUS, own: false, mine: choice.mine, ...NO_SETUP }
+  // Nothing makes it: coins are always at hand (money comes in), anything else only if the plan
+  // takes it in, and it doesn't.
+  if (!p) return { producer: choice.producer === BUS ? BUS : '', own: false, mine: choice.mine, ...NO_SETUP }
   const defaults = choice.mine
     ? {
         defaultCatalysts: choice.catalysts ?? [],
@@ -405,7 +427,7 @@ export function unfold(plan: Plan, catalog: ProcessCatalog): PlanShape {
 
   /** A row taken from the bus. */
   const leaf = (item: string, id: string, depth: number, parent: PlanNode | undefined, choice: ResolvedChoice) =>
-    create(item, id, depth, parent, { kind: 'bus', ...picked(choice) })
+    create(item, id, depth, parent, { kind: 'bus', ...(!choice.producer && { unsupplied: true }), ...picked(choice) })
 
   const child = (item: string, parent: PlanNode): PlanNode => {
     const id = `${parent.id}/${item}`

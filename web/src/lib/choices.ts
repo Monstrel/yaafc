@@ -3,7 +3,7 @@ import { DEFAULT_BANK_STACK, defaultMachine, defaultProducer, type ProcessCatalo
 import { separationKey, separationsOf } from './separate'
 import type { TreeNode } from './tree'
 import { blankTarget, type MyDefault, type MyDefaults, type Plan } from './types'
-import { parentId, planProducer, resolveChoice, rowItem, unfold } from './unfold'
+import { BUS, isBurned, isInput, isTargetRow, parentId, planProducer, resolveChoice, rowItem, unfold } from './unfold'
 
 export interface ProducerPick {
   item: string
@@ -32,6 +32,11 @@ function withoutProducer(branches: Plan['branches'], drop: (id: string) => boole
  */
 export function chooseProducer(plan: Plan, catalog: ProcessCatalog, pick: ProducerPick): Plan {
   const { item, producer, machine, row } = pick
+  // Plan inputs are per item: taking one in on a row takes it in for every row of it, and making
+  // it on a row of an item taken in makes it everywhere. Rows paying, burning or spreading it pick
+  // their own, and a target's own row always makes it.
+  if (row && !pick.everywhere && !isBurned(row) && !isTargetRow(row) && (producer === BUS || isInput(plan, item)))
+    return chooseProducer(plan, catalog, { ...pick, everywhere: true })
   if (!row || pick.everywhere)
     return {
       ...plan,
@@ -129,6 +134,24 @@ export function migrateCatalysts(plan: Plan, catalog: ProcessCatalog): Plan | nu
     if (list?.length && !rowCatalysts[n.id]) rowCatalysts[n.id] = list
   }
   return { ...rest, rowCatalysts }
+}
+
+/**
+ * Plans saved before plan inputs were per item could take an item in on some rows and make it on
+ * others: takes it in everywhere (rows paying, burning or spreading it keep their own picks, and
+ * targets still make theirs). Returns null when there's nothing to move.
+ */
+export function migrateInputs(plan: Plan): Plan | null {
+  const perRow = (id: string) => !isBurned(id) && !isTargetRow(id)
+  const items = new Set(
+    Object.entries(plan.branches ?? {}).flatMap(([id, pick]) => (pick.producer === BUS && perRow(id) ? [rowItem(id)] : [])),
+  )
+  if (!items.size) return null
+  return {
+    ...plan,
+    producers: { ...plan.producers, ...Object.fromEntries([...items].map((item) => [item, BUS])) },
+    branches: withoutProducer(plan.branches, (id) => items.has(rowItem(id)) && perRow(id)),
+  }
 }
 
 /**

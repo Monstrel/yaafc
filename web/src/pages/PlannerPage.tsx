@@ -47,6 +47,7 @@ import {
   linkToSupply,
   migrateCatalysts,
   migrateFeedback,
+  migrateInputs,
   moveTarget,
   removeTarget,
   setAltar,
@@ -157,6 +158,7 @@ export function PlannerPage({
   useEffect(() => {
     if (migrateCatalysts(plan, catalog)) onUpdatePlan(null, (p) => migrateCatalysts(p, catalog) ?? p)
     else if (migrateFeedback(plan, catalog)) onUpdatePlan(null, (p) => migrateFeedback(p, catalog) ?? p)
+    else if (migrateInputs(plan)) onUpdatePlan(null, (p) => migrateInputs(p) ?? p)
     else if (pruneChoices(plan, catalog)) onUpdatePlan(null, (p) => pruneChoices(p, catalog) ?? p)
   }, [plan, catalog, onUpdatePlan])
   // result.targets skips rows with no item chosen yet; line them back up with the rows.
@@ -1187,7 +1189,10 @@ function ItemIn({
         </li>
         {ledger.absorbedBy === null && (
           <li>
-            <label className="ledger-what bus-cap" title="How much of it comes in: the plan's rows share that and fall short past it. Empty: as much as they take.">
+            <label
+              className="ledger-what bus-cap"
+              title="How much of it comes in: a target can use what the plan leaves of it, and the plan warns when it needs more. Empty: as much as it takes."
+            >
               <span className="hint-inline">supply</span>
               <input
                 type="number"
@@ -1223,6 +1228,11 @@ function ItemIn({
           }}
           onCancel={() => setUsing(false)}
         />
+      )}
+      {ledger.overCap > 0 && (
+        <p className="rate negative">
+          needs {fmt(ledger.bus)}/min, {fmt(ledger.cap!)}/min comes in: {fmt(ledger.overCap)}/min short
+        </p>
       )}
       {ledger.short > 0 && (
         <p className="rate negative">

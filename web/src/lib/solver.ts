@@ -446,9 +446,10 @@ function solveRound(
     columns[`fb:${item}`] = { [bal(row)]: -1, [`g:${item}`]: 1, cost: 0 }
   }
 
-  // The bus's capped supplies (where the plan doesn't make the item in their place): rows taking
-  // one share what the bus carries, falling short past it, and a supply target takes what's left.
-  const capped = new Map([...caps].filter(([item]) => !pooled.has(item)))
+  // Capped plan inputs a supply target takes what's left of (where the plan doesn't make the item in
+  // their place): rows taking one share the cap, falling short past it, and the target takes the
+  // rest. Elsewhere a cap sizes nothing: rows take what they need (the ledger warns past it).
+  const capped = new Map([...caps].filter(([item]) => !pooled.has(item) && supplyTaker.has(item)))
   for (const [item, cap] of capped) {
     equalities[`bc:${item}`] = cap
     columns[`bu:${item}`] = { [`bc:${item}`]: 1, cost: supplyTaker.has(item) ? UNUSED_SUPPLY_COST : 0 }
@@ -470,7 +471,9 @@ function solveRound(
         ...(takerOf.has(s.item) && { [`o:${s.item}`]: 1 }),
         cost: SURPLUS_COST,
       }
-    if (s.kind === 'bus' && pooled.has(s.item)) columns[`i:${k}`] = { [`b:${k}`]: 1, [`g:${s.item}`]: -1, cost: 0 }
+    // Nothing makes it and the plan doesn't take it in: what other rows leave of it, else a shortfall.
+    if (s.unsupplied) columns[`d:${k}`] = { [`b:${k}`]: 1, cost: deficitCost(s) }
+    else if (s.kind === 'bus' && pooled.has(s.item)) columns[`i:${k}`] = { [`b:${k}`]: 1, [`g:${s.item}`]: -1, cost: 0 }
     else if (s.kind === 'bus' && capped.has(s.item)) {
       columns[`i:${k}`] = { [`b:${k}`]: 1, [`bc:${s.item}`]: 1, cost: IMPORT_COST }
       columns[`d:${k}`] = { [`b:${k}`]: 1, cost: deficitCost(s) }
@@ -855,7 +858,7 @@ function solveRound(
     const missing = need - made - received.reduce((sum, d) => sum + d.amount, 0) - fromRecovery
     const short = missing > tol ? missing : 0
     // Rows taking an item from the bus get what it carries; past a capped supply, they fall short.
-    const drew = n.kind !== 'bus' ? 0 : capped.has(n.item) ? Math.min(short, cleaned(v(`i:${index.get(n)}`), tol)) : short
+    const drew = n.kind !== 'bus' || n.unsupplied ? 0 : capped.has(n.item) ? Math.min(short, cleaned(v(`i:${index.get(n)}`), tol)) : short
     rowFlows.set(n, {
       // A recovery row running only on what the held passes left room for is noise: it isn't shown.
       rate: n.recovers && need <= noise ? 0 : need,

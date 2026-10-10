@@ -14,7 +14,7 @@ import { branchIds, onOverflow, type TreeNode } from '../lib/tree'
 import { heatNetworks, type HeatNetwork } from '../lib/heatNetworks'
 import type { ItemLedger } from '../lib/ledger'
 import { rememberChanges, rowsById, type ProducerPick } from '../lib/choices'
-import { parentId, rowItem } from '../lib/unfold'
+import { isTargetRow, parentId, rowItem } from '../lib/unfold'
 import type { Separation, Unitizing } from '../lib/types'
 import { unitChoices, wholePerCopy, type UnitScales } from '../lib/units'
 import type { Modifiers } from '../lib/upgrades'
@@ -1228,6 +1228,8 @@ function TreeRow({
                 // What a row burns or spreads follows its branch only: plan-wide picks are for ingredients.
                 branch={{ rows: burned ? 1 : rows, own: node.ownChoice, mine: node.mine, onReset: () => onResetProducer(node.id) }}
                 reuse={reuse}
+                // A target's own row always makes it: plan inputs are for the rows using it.
+                noImport={isTargetRow(node.id)}
                 onFind={isCauldronTarget(node.item) ? () => onFindCauldron(node) : undefined}
                 compact
               />
@@ -1464,7 +1466,24 @@ function TreeRow({
               />
             )}
             {p?.license && node.kind === 'produce' && <div className="note-line">needs the {p.license}</div>}
-            {node.shortfall > 0 && <div className="note-line warn-text">short by {fmt(node.shortfall)}/min</div>}
+            {node.shortfall > 0 && (
+              <div className="note-line warn-text">
+                short by {fmt(node.shortfall)}/min
+                {node.kind === 'bus' && !node.producer && (
+                  <>
+                    {': nothing in the plan makes it · '}
+                    <button
+                      type="button"
+                      className="tree-link"
+                      title="Bring it in from outside the plan, for every row of it"
+                      onClick={() => onProducer({ item: node.item, producer: 'bus', row: node.id })}
+                    >
+                      Take it in as a plan input
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
             {node.kind === 'produce' &&
               Object.entries(p?.inputStacks ?? {}).map(([item, stack]) => (
                 <div key={item} className="note-line">

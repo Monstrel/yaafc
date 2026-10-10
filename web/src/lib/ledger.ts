@@ -39,6 +39,8 @@ export interface ItemLedger {
   bus: number
   /** Items per minute the bus carries of it, where the plan caps it; null for as much as the plan takes. */
   cap: number | null
+  /** Items per minute the plan takes in past `cap`: it needs more than that comes in. */
+  overCap: number
   /** Items per minute nothing covers (a net-surplus target whose own chain uses more than it gives). */
   short: number
 }
@@ -122,6 +124,7 @@ export function ledgers(plan: Plan, result: PlanResult): ItemLedger[] {
         absorbedBy,
         bus: absorbedBy === null ? remaining : 0,
         cap: plan.busSupply?.[item] ?? null,
+        overCap: absorbedBy === null && plan.busSupply?.[item] !== undefined ? Math.max(0, remaining - plan.busSupply[item]) : 0,
         short: absorbedBy === null ? 0 : remaining,
       }
     })
