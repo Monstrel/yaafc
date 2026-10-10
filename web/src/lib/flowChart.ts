@@ -455,7 +455,10 @@ export function buildFlowChart(tree: TreeNode[], rootId: string, levels?: number
   for (const { row, depth, hidden } of takers) {
     const to = consumerOf.get(row.id)!
     let covered = 0
+    // Targets fed back: what they make of the row's own item (not a by-product of theirs).
+    const fed = row.byproductSources.filter((s) => rows.get(s.id)?.item === row.item)
     for (const s of row.byproductSources) {
+      if (fed.includes(s)) continue
       const amount =
         rows
           .get(s.id)
@@ -468,8 +471,11 @@ export function buildFlowChart(tree: TreeNode[], rootId: string, levels?: number
       else if (!hidden)
         attach(to, outsideBox(row.item, amount, `by-product of ${s.label}`, depth, s.id), fuelRows.has(row.id))
     }
-    if (!hidden && row.fromByproduct - covered > 1e-6)
-      attach(to, outsideBox(row.item, row.fromByproduct - covered, 'by-products', depth), fuelRows.has(row.id))
+    const rest = row.fromByproduct - covered
+    if (rest > 1e-6 && fed.length === 1 && boxes.has(fed[0].id))
+      link({ id: `fb:${fed[0].id}>${row.id}`, from: fed[0].id, to, item: row.item, rate: rest, kind: 'byproduct' }, row.id)
+    else if (!hidden && rest > 1e-6)
+      attach(to, outsideBox(row.item, rest, fed.length ? fed.map((s) => s.label).join(', ') : 'by-products', depth, fed[0]?.id), fuelRows.has(row.id))
   }
   // A crucible refining the by-products of the row below it takes them straight off that row.
   for (const b of boxes.values())

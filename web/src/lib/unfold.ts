@@ -537,7 +537,14 @@ const MAX_RECOVERY_ROUNDS = 3
 /** Processes that can recover outputs: crafting recipes (saved cauldron ones too) and nurseries. */
 const RECOVERING = new Set(['recipe', 'cauldron', 'nursery'])
 
-/** Per item, the processes that take it in, for finding recovery chains. */
+/**
+ * Whether a process can be a step of a recovery chain from `item`: it takes in only that (and heat).
+ * A step needing other ingredients would build chains of their own to recover a leftover (Malachite
+ * Athanors run for the Crude Shard of their failed crafts, on Clay Powder made for them).
+ */
+const recoversFrom = (p: Process, item: string) => p.inputs.every((s) => s.item === item || isPseudo(s.item))
+
+/** Per item, the processes that take it in, and only it, for finding recovery chains. */
 const takersCache = new WeakMap<ProcessCatalog, Map<string, Process[]>>()
 function takersOf(catalog: ProcessCatalog, item: string): Process[] {
   let index = takersCache.get(catalog)
@@ -545,7 +552,8 @@ function takersOf(catalog: ProcessCatalog, item: string): Process[] {
     index = new Map()
     for (const p of catalog.byId.values()) {
       if (!RECOVERING.has(p.kind) || catalog.reach(p) > catalog.tier) continue
-      for (const s of p.inputs) if (!isPseudo(s.item)) index.set(s.item, [...(index.get(s.item) ?? []), p])
+      const input = p.inputs.find((s) => !isPseudo(s.item))?.item
+      if (input && recoversFrom(p, input)) index.set(input, [...(index.get(input) ?? []), p])
     }
     takersCache.set(catalog, index)
   }
@@ -652,7 +660,7 @@ function recover(
     const pick = plan.branches?.[id]?.producer
     const picked = pick ? catalog.byId.get(pick) : undefined
     const process =
-      picked && picked.inputs.some((s) => s.item === step.input) && picked.outputs.some((o) => o.item === at.item)
+      picked && recoversFrom(picked, step.input) && picked.outputs.some((o) => o.item === at.item)
         ? picked
         : step.process
     const rr = create(at.item, id, at.depth + 1, at, { kind: 'make', process, recovers: true })

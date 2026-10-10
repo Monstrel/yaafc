@@ -94,7 +94,12 @@ export function ledgers(plan: Plan, result: PlanResult): ItemLedger[] {
   const absorbing = absorbers(plan)
   // result.targets skips targets with no item yet.
   let resolved = 0
-  const made = plan.targets.map((t) => (t.item ? (result.targets[resolved++]?.made ?? 0) : 0))
+  // Less what the plan's rows making its item took of it already (see `ResolvedTarget.fedIn`).
+  const made = plan.targets.map((t) => {
+    if (!t.item) return 0
+    const r = result.targets[resolved++]
+    return (r?.made ?? 0) - (r?.fedIn ?? 0)
+  })
 
   return [...busDraws(result.tree)]
     .filter(([item]) => !isMoney(item))

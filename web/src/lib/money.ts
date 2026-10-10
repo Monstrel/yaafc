@@ -126,6 +126,11 @@ export function moneyLedger(plan: Plan, result: PlanResult, ledgers: ItemLedger[
       const o = find(s.item, s.target)
       if (o && s.used > 0) o.used.plan = s.used
     }
+  // So did what rows making a fed-back target's item took of it in the solve.
+  resolvedAt.forEach((r, i) => {
+    const o = r?.fedIn ? find(r.item, i) : undefined
+    if (o) o.used.plan = (o.used.plan ?? 0) + r!.fedIn!
+  })
 
   // Fed-back coins cover the money need at face value: overflow first, then targets in order.
   let remaining = need

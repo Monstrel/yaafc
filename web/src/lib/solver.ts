@@ -6,7 +6,7 @@ import { craftsPerMachine } from './machineRate'
 import { paradoxId, runKey, type Process, type ProcessCatalog } from './processes'
 import { NO_FLOWS, buildTree, onOverflow, type ByproductRoute, type RowFlows, type TreeNode } from './tree'
 import type { Plan } from './types'
-import { absorbers, supplyAhead } from './ledger'
+import { absorbers, supplyAhead, targetFedBack } from './ledger'
 import { consumedBy, isTargetRow, suppliedBy, unfold, type PlanNode, type PlanShape } from './unfold'
 import type { Modifiers } from './upgrades'
 
@@ -50,6 +50,8 @@ export interface ResolvedTarget {
   overflow?: OverflowUse
   /** For a supply target: what it takes of the bus's supply. */
   supply?: SupplyUse
+  /** Fed back: items per minute of what it makes that the plan's rows making its item take first. */
+  fedIn?: number
 }
 
 /** What a supply target takes of the bus's capped supply of an item. */
@@ -158,7 +160,8 @@ const MIX_COST = 1e-5
 const SHORTFALL_ROW = 'shortfall'
 const LEAVING_ROW = 'leaving'
 const SPILL_ROW = 'spill'
-// What a row takes beyond what it needs counts this many times what it spills (see the passes).
+// What a row takes beyond what it needs, and what a recovery row's other outputs overflow, count
+// this many times what other rows spill (see the passes).
 const EXCESS_WEIGHT = 1000
 // Overflow an overflow target can't use is counted with shortfalls, so it uses all it can, but costs
 // less than any shortfall: falling short somewhere never stands in for leaving overflow unused (a
@@ -522,7 +525,8 @@ function solveRound(
   for (const s of supplies) if (s.takesLeftovers) consumers.set(s.item, [...(consumers.get(s.item) ?? []), s])
   const toAltar = (n: PlanNode, item: string) => !!plan.altarOutputs?.[n.id]?.includes(item)
   const sharedWith = (n: PlanNode, item: string) => (toAltar(n, item) ? [] : (consumers.get(item) ?? []))
-  const flows: { name: string; from: PlanNode; to: PlanNode }[] = []
+  // `fed`: from a fed-back target's output, not a row's by-products.
+  const flows: { name: string; from: PlanNode; to: PlanNode; fed?: boolean }[] = []
 
   // Rows held to their crafts: rounded up, or as they are without the plan's overflow targets.
   const fixedOf = (n: PlanNode) =>
@@ -539,6 +543,30 @@ function solveRound(
       columns[`scs:${k}`] = { [`sc:${k}`]: 1, cost: 0 }
     }
   const heldToCrafts = (n: PlanNode) => floors.has(n.id) || fixedOf(n) !== undefined
+  // Fed-back targets (by index among the targets with an item) and the rows making their item
+  // elsewhere in the plan, which take what they make first (see `fedFrom` below). A net-surplus
+  // target grows to cover the plan's use instead.
+  // Targets after it (in order) of its item feed nothing: it covers all the plan takes.
+  const netTargets = new Map([...absorbing].map(([item, a]) => [item, a.target]))
+  const fedUsers = new Map<number, PlanNode[]>()
+  targets.forEach((t, i) => {
+    const row = shape.targetRows[i]
+    const net = netTargets.get(t.item)
+    if (!row || !isTargetRow(row.id) || (net !== undefined && i >= net) || !targetFedBack(plan, plan.targets[planIndex[i]])) return
+    const users = supplies.filter(
+      (c) => c.item === t.item && c.kind === 'make' && c.takesLeftovers && !c.recovers && !isTargetRow(c.id) && rootOf(c) !== row,
+    )
+    if (users.length) fedUsers.set(i, users)
+  })
+  // Rows held to their crafts that take a fed-back target's output, and the rows below them, run up
+  // to those crafts: what the target makes covers the rest.
+  const easing = new Set<PlanNode>()
+  const ease = (n: PlanNode) => {
+    if (easing.has(n)) return
+    easing.add(n)
+    n.children.forEach(ease)
+  }
+  for (const users of fedUsers.values()) users.forEach(ease)
   const sameRun = (n: PlanNode, c: PlanNode) => c.kind === 'make' && c.process!.id === n.process!.id
   // Rows whose by-products can go to rows running something else (see `e:` below).
   const sharing = new Set(
@@ -595,6 +623,8 @@ function solveRound(
   // Per column, the items per minute it takes of a row's output away from the row, where its own
   // recovery could take it (see the passes below).
   const leaving = new Map<string, number>()
+  // Columns of what recovery rows' other outputs overflow (see the passes below).
+  const recoveryOverflow = new Set<string>()
   // Per column of a row's output it sends to Knowledge Altars, the item.
   const altared = new Map<string, string>()
 
@@ -610,6 +640,7 @@ function solveRound(
     if (fixed !== undefined) {
       equalities[`h:${k}`] = fixed
       col[`h:${k}`] = 1
+      if (easing.has(n) && !machineRows.has(n)) columns[`hs:${k}`] = { [`h:${k}`]: 1, cost: 0 }
     }
     const floor = floors.get(n.id)
     if (floor) {
@@ -627,6 +658,10 @@ function solveRound(
       const altar = toAltar(n, o.item)
       if (altar) altared.set(`ps:${k}:${o.item}`, o.item)
       columns[`ps:${k}:${o.item}`] = { [pool]: -1, ...(!altar && takerOf.has(o.item) && { [`o:${o.item}`]: 1 }), cost: SURPLUS_COST }
+      // A recovery row turns leftovers into something the plan uses: what its other outputs overflow
+      // counts as much as a row taking more than it needs (see the passes), so it doesn't trade one
+      // leftover for another unless nothing else can be done.
+      if (n.recovers && !altar) recoveryOverflow.add(`ps:${k}:${o.item}`)
       // By-products are what a row makes running for what it's used for: those of crafts beyond that
       // only go to rows running the same process, which would make them the same way (Gentian Nectar
       // from the Gentian row's nurseries). Rows with a producer of their own make the rest
@@ -655,6 +690,33 @@ function solveRound(
       const c = n.children[j]
       if (c) add(col, bal(c), -s.count)
     })
+  }
+
+  // A target fed back is one more leftover: rows making its item elsewhere in the plan take what it
+  // makes before they run their own recipe (Crude Shard refined from the plan's leftover Sand, the
+  // Quartz crushers making the rest). It makes what it's set to; what they don't take goes out. A
+  // net-surplus target grows to cover the plan's use instead (`pooled`), and rows taking the item
+  // from the bus are covered in the ledger.
+  const fedFrom = new Map<number, string[]>()
+  for (const [i, users] of fedUsers) {
+    const t = targets[i]
+    const row = shape.targetRows[i]!
+    // What it hands on is no more than it makes: its rate, or what the solve sizes it to.
+    const cap = `fbc:${i}`
+    const sized = [`tm:${i}`, `t:${i}`, `ts:${i}`].find((name) => name in columns)
+    equalities[cap] = sized ? 0 : t.rate
+    if (sized) columns[sized][cap] = -1
+    columns[`fbs:${i}`] = { [cap]: 1, cost: 0 }
+    fedFrom.set(
+      i,
+      users.map((c) => {
+        const name = `fbk:${i}>${index.get(c)}`
+        // Targets in order: the first fed back is taken first, as in the ledger.
+        columns[name] = { [cap]: 1, [`b:${index.get(c)}`]: 1, cost: FLOW_COST * (1 + distance(row, c) + 1000 * i) }
+        flows.push({ name, from: row, to: c, fed: true })
+        return name
+      }),
+    )
   }
 
   // A crucible row's mixed feed: it also refines the by-products of the row making its input as
@@ -710,7 +772,7 @@ function solveRound(
   for (const f of flows) if (isRecovery(f.to) && !ownRecovery(f.from, f.to)) spill.set(f.name, 1)
   for (const [name, col] of Object.entries(columns)) {
     const taken = Object.keys(col).some((row) => row.startsWith('o:'))
-    if (name.startsWith('ps:') && !taken && !altared.has(name)) spill.set(name, 1)
+    if (name.startsWith('ps:') && !taken && !altared.has(name)) spill.set(name, recoveryOverflow.has(name) ? EXCESS_WEIGHT : 1)
     if (name.startsWith('s:') && !taken) spill.set(name, EXCESS_WEIGHT)
   }
   const stages: [string, Map<string, number>][] = [
@@ -788,6 +850,11 @@ function solveRound(
       takenBy: by !== undefined && by !== i && rows.length > 0 ? planIndex[by] : null,
     }
   }
+  // What the plan's rows take of each fed-back target's output.
+  for (const [i, names] of fedFrom) {
+    const x = names.reduce((t, name) => t + v(name), 0)
+    targets[i].fedIn = cleaned(x, RELATIVE_NOISE * Math.max(1, x))
+  }
   for (const i of machineCrafts.keys()) {
     const x = v(`tm:${i}`)
     targets[i].rate = targets[i].made = cleaned(x, RELATIVE_NOISE * Math.max(1, x))
@@ -824,12 +891,12 @@ function solveRound(
     const s = supplierOf(n)
     demand.set(s, (demand.get(s) ?? 0) + (own.get(n) ?? 0))
   }
-  const drawn = new Map<PlanNode, { from: PlanNode; amount: number }[]>()
+  const drawn = new Map<PlanNode, { from: PlanNode; amount: number; fed?: boolean }[]>()
   const sent = new Map<PlanNode, { to: PlanNode; item: string; amount: number; direct?: boolean }[]>()
   for (const f of flows) {
     const amount = v(f.name)
     if (amount <= 0) continue
-    drawn.set(f.to, [...(drawn.get(f.to) ?? []), { from: f.from, amount }])
+    drawn.set(f.to, [...(drawn.get(f.to) ?? []), { from: f.from, amount, fed: f.fed }])
     sent.set(f.from, [...(sent.get(f.from) ?? []), { to: f.to, item: f.to.item, amount }])
   }
   for (const n of mixes.keys())
@@ -888,7 +955,7 @@ function solveRound(
       rate: n.recovers && need <= noise ? 0 : need,
       crafts: x,
       fromByproduct,
-      byproductSources: draws.map((d) => ({ id: d.from.id, label: sourceLabel(d.from) })),
+      byproductSources: draws.map((d) => ({ id: d.from.id, label: d.fed ? `the ${itemName(d.from.item)} target, fed back` : sourceLabel(d.from) })),
       fromRecovery: cleaned(fromRecovery, Math.max(tol, noise)),
       fromBus: drew,
       shortfall: short - drew > tol ? short - drew : 0,
@@ -932,7 +999,8 @@ function solveRound(
     }
     return b
   }
-  for (const t of targets) of(t.item).target += t.rate
+  // What the plan's rows take of a fed-back target's output stays in the plan.
+  for (const t of targets) of(t.item).target += t.rate - (t.fedIn ?? 0)
   for (const item of pooled.keys()) {
     of(item).produced += v(`fa:${item}`)
     of(item).deficit += v(`d:g:${item}`)

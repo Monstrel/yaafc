@@ -174,6 +174,32 @@ describe('a target of a number of machines', () => {
   })
 })
 
+describe('recovery taking only leftovers', () => {
+  const recoveries = (r: ReturnType<typeof solvePlan>) => r.tree.flatMap(all).filter((n) => n.recovery && n.rate > 0)
+
+  it('never builds ingredients of its own to recover a leftover', () => {
+    // Crude Shard crushed from Quartz: Malachite Athanors could recover Impure Copper Powder into
+    // Crude Shard by failing, but only on Clay Powder made for them, overflowing the Malachite.
+    const r = solvePlan(plan({ targets: [{ item: 'GoldDust3', rate: 3 }], producers: { Shard1: 'recipe:Shard1_Alt' } }), catalog, mods)
+    expect(r.status).toBe('ok')
+    for (const n of recoveries(r)) {
+      const materials = n.run!.process.inputs.filter((s) => !s.item.startsWith('@'))
+      expect(new Set(materials.map((s) => s.item)).size).toBe(1)
+      expect(n.children.filter((c) => !c.item.startsWith('@')).every((c) => c.kind === 'byproduct')).toBe(true)
+    }
+    expect(r.runs.some((run) => run.process.id === 'recipe:Malachite')).toBe(false)
+    expect(r.balances.find((b) => b.item === 'Malachite')?.surplus ?? 0).toBe(0)
+  })
+
+  it("doesn't turn a leftover into coins through a chain of production", () => {
+    // Quicksilver's Crude Silver Powder Athanors leave Silver Powder over: it overflows, rather than
+    // running Gold Dust Athanors (on Volcanic Ash and Quicksilver made for them) towards Gold Coins.
+    const r = solvePlan(plan({ targets: [{ item: 'Mercury', rate: 10 }] }), catalog, mods)
+    expect(r.runs.some((run) => run.process.id === 'recipe:GoldDust3')).toBe(false)
+    expect(r.balances.find((b) => b.item === 'SilverPowder3')?.surplus).toBeGreaterThan(0)
+  })
+})
+
 describe('flow chart levels', () => {
   it('keeps every line whose boxes are both shown, at any level limit', () => {
     const { tree } = solvePlan(

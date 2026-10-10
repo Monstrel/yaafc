@@ -1675,16 +1675,22 @@ describe('feeding output back in place of the bus', () => {
   })
 
   it('takes fed-back targets in target order, then the bus', () => {
-    const l = planks({ ...base, feedbackItems: ['WoodBoard'] })
-    const [first, second] = l.sources
-    expect(first.used).toBeCloseTo(1) // all of it, before the second target
-    expect(second.used).toBeCloseTo(l.need - 1)
+    // The Steel's Charcoal chain makes 400 Planks a minute: they come from the targets first, the
+    // first one before the second, and what's left of those covers the burning.
+    const fed = { ...base, feedbackItems: ['WoodBoard'] }
+    const r = solvePlan(fed, catalog, mods)
+    expect(r.targets[0].fedIn).toBeCloseTo(1) // all of it, before the second target
+    expect(r.targets[1].fedIn).toBeCloseTo(399)
+    const l = planks(fed)
+    expect(l.sources).toEqual([expect.objectContaining({ target: 1, amount: expect.closeTo(1e5 - 399), used: expect.closeTo(l.need) })])
     expect(l.covered).toBeCloseTo(l.need)
     expect(l.bus).toBe(0)
 
-    const moved = planks(moveTarget({ ...base, feedbackItems: ['WoodBoard'] }, 1, 0))
-    expect(moved.sources[0]).toMatchObject({ target: 0, amount: 1e5 })
-    expect(moved.sources[1].used).toBe(0) // the big target covers it all now
+    const moved = moveTarget(fed, 1, 0)
+    const m = solvePlan(moved, catalog, mods)
+    expect(m.targets[0].fedIn).toBeCloseTo(400) // the big target covers it all now
+    expect(m.targets[1].fedIn ?? 0).toBe(0)
+    expect(planks(moved).sources.find((s) => s.target === 1)?.used ?? 0).toBe(0)
   })
 
   it('lets a target set its own feedback, and dropping it again restores the plan', () => {
@@ -1692,7 +1698,7 @@ describe('feeding output back in place of the bus', () => {
     const optedOut = setTargetFeedback(fed, 1, false)
     expect(optedOut.targets[1].feedback).toBe(false)
     const l = planks(optedOut)
-    expect(l.sources[1]).toMatchObject({ fedBack: false, used: 0 })
+    expect(l.sources.find((s) => s.target === 1)).toMatchObject({ fedBack: false, used: 0 })
     expect(l.bus).toBeGreaterThan(0)
     expect(setTargetFeedback(optedOut, 1, true)).toEqual(fed)
     // Turning the item off keeps the target's own setting.
@@ -1700,10 +1706,15 @@ describe('feeding output back in place of the bus', () => {
     expect(setItemFeedback(setItemFeedback(base, 'WoodBoard', true), 'WoodBoard', false)).toEqual({ ...base, feedbackItems: undefined })
   })
 
-  it('never changes the factory', () => {
+  it('changes the factory only where rows making the item take it', () => {
     const off = solvePlan(base, catalog, mods)
     const on = solvePlan({ ...base, feedbackItems: ['WoodBoard'] }, catalog, mods)
-    expect(on.runs.map((r) => r.machines)).toEqual(off.runs.map((r) => r.machines))
+    // The Plank Table Saws (and the Logs they cut) give way to the targets' Planks; nothing else moves.
+    const planking = new Set(['recipe:WoodBoard', 'buy:Wood'])
+    const machines = (r: PlanResult) => new Map(r.runs.filter((x) => !planking.has(x.process.id)).map((x) => [x.key, x.machines]))
+    expect(machines(on)).toEqual(machines(off))
+    const saws = (r: PlanResult) => r.runs.find((x) => x.process.id === 'recipe:WoodBoard')?.machines ?? 0
+    expect(saws(on)).toBeLessThan(saws(off))
   })
 
   it('moves feedback from plans saved per use to the items they fed back', () => {
@@ -1772,14 +1783,14 @@ describe('net-surplus targets', () => {
   })
 
   it('covers only what the fed-back targets ahead of it leave', () => {
+    // The target ahead of it goes to the Planks the Steel's Charcoal chain makes; it covers the burning.
     const alone = solved(fed([{ item: 'WoodBoard', rate: 50, unit: 'net' }, steel]))
-    const { fuel } = solved(fed([{ item: 'WoodBoard', rate: 100 }, steel, { item: 'WoodBoard', rate: 50, unit: 'net' }]))
-    const [ahead, net] = fuel.sources
-    expect(ahead.used).toBeCloseTo(100)
-    expect(net.target).toBe(2)
-    expect(net.used).toBeCloseTo(fuel.need - 100)
+    const { result, fuel } = solved(fed([{ item: 'WoodBoard', rate: 100 }, steel, { item: 'WoodBoard', rate: 50, unit: 'net' }]))
+    expect(result.targets[0].fedIn).toBeCloseTo(100)
+    const net = fuel.sources.find((s) => s.target === 2)!
+    expect(net.used).toBeCloseTo(fuel.need)
     expect(net.amount - net.used).toBeCloseTo(50)
-    expect(net.amount).toBeCloseTo(alone.fuel.sources[0].amount - 100)
+    expect(net.amount).toBeCloseTo(alone.fuel.sources[0].amount)
   })
 
   it('leaves the targets after it unburned', () => {
@@ -2200,6 +2211,30 @@ describe('overflow targets', () => {
     expectBalanced(r)
     expect(r.targets[2].overflow).toMatchObject({ taken: expect.closeTo(crude), unused: 0 })
     expect(surplus(r, 'GoldDust')).toBeCloseTo(0)
+  })
+
+  it('feeds back what it makes to the rows making its item, which take it first', () => {
+    // Crude Shard crushed from Quartz leaves the Salt rows' Sand over: a Crude Shard target using it,
+    // refining the Sand, fed back, covers part of the Crude Shard the plan uses. The crushers make
+    // the rest, though overflow targets hold the plan's rows at what they run without them.
+    const quartz = plan({ targets: [{ item: 'GoldDust3', rate: 3 }], producers: { Shard1: 'recipe:Shard1_Alt' } })
+    const crushers = (r: PlanResult) => r.runs.find((x) => x.process.id === 'recipe:Shard1_Alt')?.craftsPerMinute ?? 0
+    const before = solvePlan(quartz, catalog, mods)
+    const sand = surplus(before, 'Sand')
+    expect(sand).toBeGreaterThan(0)
+    const fed = setTargetFeedback(
+      chooseProducer(using(quartz, 'Shard1', 'Sand'), catalog, { item: 'Shard1', producer: 'recipe:Shard1', row: '1/Shard1' }),
+      1,
+      true,
+    )
+    const r = solvePlan(fed, catalog, mods)
+    expectBalanced(r)
+    // 128 Sand refine into a Crude Shard.
+    expect(r.targets[1]).toMatchObject({ rate: expect.closeTo(sand / 128), fedIn: expect.closeTo(sand / 128) })
+    expect(surplus(r, 'Sand')).toBe(0)
+    expect(crushers(r) * 80).toBeCloseTo(crushers(before) * 80 - sand / 128)
+    const out = moneyLedger(fed, r, ledgers(fed, r)).outputs.find((o) => o.item === 'Shard1')
+    expect(out?.toBus ?? 0).toBe(0)
   })
 
   it("makes none, saying why, when its recipes don't use the item", () => {
