@@ -1,5 +1,6 @@
 import { startTransition, useEffect, useMemo, useState } from 'react'
-import { NUTRIENTS } from './gameData'
+import { MAX_TIER, NUTRIENTS } from './gameData'
+import { summarizePlan, type PlanSummary } from './planSummary'
 import { buildCatalog, type ProcessCatalog, type ProcessContext } from './processes'
 import type { SolveRequest } from './solve.worker'
 import type { PlanResult } from './solver'
@@ -89,4 +90,90 @@ export function usePlanModel(plan: Plan, progress: Progress, saved: SavedRecipe[
   }, [toSolve, context])
   const result = solved?.planId === plan.id ? solved.result : null
   return { mods, catalog, result }
+}
+
+// The overview's solves queue in a worker of their own: unlike the open plan's, none may be skipped.
+let summaryWorker: Worker | undefined
+let summaryQueue: Promise<unknown> = Promise.resolve()
+
+function summarizeInWorker(request: SolveRequest): Promise<PlanSummary> {
+  const run = summaryQueue.then(
+    () =>
+      new Promise<PlanSummary>((resolve) => {
+        summaryWorker ??= new Worker(new URL('./solve.worker.ts', import.meta.url), { type: 'module' })
+        summaryWorker.onmessage = (e: MessageEvent<PlanSummary>) => resolve(e.data)
+        summaryWorker.onerror = (e) => {
+          // The worker didn't load (or the solver failed to start): start a fresh one next time.
+          summaryWorker?.terminate()
+          summaryWorker = undefined
+          const message = e.message || 'The solver failed to start'
+          const failed: PlanResult = { status: 'error', message, targets: [], runs: [], balances: [], tree: [] }
+          resolve(summarizePlan(request.plan, failed, request.context.mods, request.context.tier ?? MAX_TIER))
+        }
+        summaryWorker.postMessage({ ...request, summarize: true } satisfies SolveRequest)
+      }),
+  )
+  summaryQueue = run
+  return run
+}
+
+/** Summaries worked out so far, per plan id, with what they were worked out from: kept while the overview is closed. */
+const summaries = new Map<string, { key: string; summary: PlanSummary }>()
+
+/** A plan's summary, and whether it's still for the plan as it is (else a newer one is on its way). */
+export interface SummaryState {
+  summary: PlanSummary
+  current: boolean
+}
+
+/**
+ * Every plan's summary (see planSummary.ts), solved one at a time in the background: the open
+ * plan first, then the rest in order. Plans that haven't changed since they were last summarized
+ * aren't solved again. A plan missing from the map hasn't been summarized yet.
+ */
+export function usePlanSummaries(
+  plans: Plan[],
+  openId: string,
+  progress: Progress,
+  saved: SavedRecipe[],
+  mine: MyDefaults,
+): Map<string, SummaryState> {
+  const mods = useMemo(() => modifiers(progress.upgrades), [progress.upgrades])
+  // Upgrades, saved recipes and defaults change every plan's catalog.
+  const shared = useMemo(() => JSON.stringify([progress, saved, mine]), [progress, saved, mine])
+  const jobs = useMemo(
+    () =>
+      plans.map((p) => {
+        // Built marks change nothing the plan makes.
+        const { built: _, ...plan } = p
+        return { plan, key: shared + JSON.stringify(plan) }
+      }),
+    [plans, shared],
+  )
+  const [, setDone] = useState(0)
+  useEffect(() => {
+    const ids = new Set(jobs.map((j) => j.plan.id))
+    for (const id of summaries.keys()) if (!ids.has(id)) summaries.delete(id)
+    let stopped = false
+    const order = [...jobs.filter((j) => j.plan.id === openId), ...jobs.filter((j) => j.plan.id !== openId)]
+    void (async () => {
+      for (const { plan, key } of order) {
+        if (stopped) return
+        if (summaries.get(plan.id)?.key === key) continue
+        const context = { saved, machines: plan.machines, mods, fertilizer: planFertilizer(plan), tier: progress.tier, mine }
+        const summary = await summarizeInWorker({ plan, context })
+        summaries.set(plan.id, { key, summary })
+        if (!stopped) setDone((n) => n + 1)
+      }
+    })()
+    return () => {
+      stopped = true
+    }
+  }, [jobs, openId, saved, mods, progress.tier, mine])
+  const states = new Map<string, SummaryState>()
+  for (const { plan, key } of jobs) {
+    const s = summaries.get(plan.id)
+    if (s) states.set(plan.id, { summary: s.summary, current: s.key === key })
+  }
+  return states
 }

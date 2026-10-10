@@ -1,13 +1,14 @@
-import { startTransition, useEffect, useMemo, useOptimistic, useRef, useState, type ReactNode } from 'react'
+import { startTransition, useEffect, useEffectEvent, useMemo, useOptimistic, useRef, useState, type ReactNode } from 'react'
 import { ItemIcon, ItemLabel } from '../components/ItemIcon'
 import { ItemPicker } from '../components/ItemPicker'
 import { AltarDetail, Exp } from '../components/Exp'
 import { Money } from '../components/Money'
 import { OverflowTargetForm } from '../components/OverflowTargetForm'
+import { PlanOverview } from '../components/PlanOverview'
 import { ProducerSelect, TierTag } from '../components/ProducerSelect'
 import { BookmarkIcon, ProductionTree, type TargetSlot } from '../components/ProductionTree'
 import { ledgers, targetFedBack, type DrawUse, type ItemLedger } from '../lib/ledger'
-import { useFlip } from '../lib/flip'
+import { releaseScrollAnchor, useFlip } from '../lib/flip'
 import { setNetworkFuel, setNetworkSource } from '../lib/heatChoices'
 import type { HeatNetwork } from '../lib/heatNetworks'
 import {
@@ -26,7 +27,7 @@ import {
 } from '../lib/gameData'
 import { KNOWLEDGE_ALTAR, altarsBuilt, altarsFor, altarYield, type AltarYield } from '../lib/altar'
 import { fmt, fmtMachines, fmtSeconds, wholeMachines } from '../lib/format'
-import { buildingCounts, checkLogistics, resourceUsers, type LogisticsCheck, type ResourceUser } from '../lib/logistics'
+import { checkLogistics, resourceUsers, type LogisticsCheck, type ResourceUser } from '../lib/logistics'
 import { fedOverflow, moneyLedger, type BusUse, type MoneyLedger, type OutputRow, type OutputSource } from '../lib/money'
 import { STEAM_HEAT_ID, defaultProducer, processTitle, type ProcessCatalog } from '../lib/processes'
 import type { PlanModel } from '../lib/planModel'
@@ -70,8 +71,9 @@ import { buildingNameFor, machineNameFor, noun } from '../lib/plural'
 import { BOILER_HEAT, BUS, IMPORT, parentId, planProducer, rowItem } from '../lib/unfold'
 import { dropUnits, setUnits, unitScales } from '../lib/units'
 import type { TreeNode } from '../lib/tree'
+import { altarMods, planBuildings } from '../lib/planSummary'
 import { usePersistentState } from '../lib/store'
-import { blankTarget, type MyDefaults, type Plan, type PlanTarget, type Progress, type Separation } from '../lib/types'
+import { blankTarget, type MyDefaults, type Plan, type PlanTarget, type Progress, type SavedRecipe, type Separation } from '../lib/types'
 import { PLANNER_UPGRADES, maxLevel, upgradeLevel, type Modifiers } from '../lib/upgrades'
 
 /** What each planner upgrade series currently does, shown under its name. */
@@ -95,6 +97,8 @@ interface Props {
   /** How the player likes to make items, for every plan. */
   myDefaults: MyDefaults
   onMyDefaults: (label: string, defaults: MyDefaults) => void
+  /** Saved cauldron recipes, which every plan's rows can use (for summarizing them all). */
+  saved: SavedRecipe[]
   onSelectPlan: (id: string) => void
   /** Null for upkeep the app does by itself, which is never a step of its own to undo. */
   onUpdatePlan: (label: string | null, update: (p: Plan) => Plan) => void
@@ -130,6 +134,7 @@ export function PlannerPage({
   onProgress,
   myDefaults,
   onMyDefaults,
+  saved,
   onSelectPlan,
   onUpdatePlan,
   onNewPlan,
@@ -275,6 +280,26 @@ export function PlannerPage({
   const [sideOpen, setSideOpen] = usePersistentState<boolean>('planner-side', true, (v) => (typeof v === 'boolean' ? v : undefined), {
     perTab: true,
   })
+  // Whether every plan shows, in place of the open one.
+  const [overview, setOverview] = usePersistentState<boolean>('plan-overview', false, (v) => (typeof v === 'boolean' ? v : undefined), {
+    perTab: true,
+  })
+  /** Back to the open plan, from its top: the card picked may have been far down the overview. */
+  const closeOverview = () => {
+    setOverview(false)
+    releaseScrollAnchor()
+    const top = main.current?.getBoundingClientRect().top ?? 0
+    if (top < 0) scrollBy(0, top)
+  }
+  const onOverviewKey = useEffectEvent((e: KeyboardEvent) => {
+    if (e.key === 'Escape' && !e.defaultPrevented) closeOverview()
+  })
+  useEffect(() => {
+    if (!overview) return
+    const listener = (e: KeyboardEvent) => onOverviewKey(e)
+    addEventListener('keydown', listener)
+    return () => removeEventListener('keydown', listener)
+  }, [overview])
   const [added, setAdded] = useState<{ plan: string; index: number } | null>(null)
   const addTarget = () => {
     // A plan with only its blank target uses that one: show it instead of adding another.
@@ -411,7 +436,7 @@ export function PlannerPage({
   // Overflow the plan feeds back in place of the bus or into its money isn't overflow: it gets used.
   const fed = useMemo(() => fedOverflow(money), [money])
   // The plan's upgrades when its research tier has the Knowledge Altar, else null.
-  const altar = machineTier(KNOWLEDGE_ALTAR) <= catalog.tier ? mods : null
+  const altar = altarMods(mods, catalog.tier)
   // What's left of each item's overflow that Knowledge Altars could break down, when the plan has them.
   const altarLeft = useMemo(() => {
     if (!altar) return null
@@ -425,12 +450,10 @@ export function PlannerPage({
 
   // Whole machines per building type, as built: each tree row rounds up on its own, and so do the
   // Knowledge Altars breaking down each item's overflow.
-  const buildings = useMemo(() => {
-    const counts = buildingCounts(result.tree, logistics, units.copies)
-    const altars = altar ? money.outputs.reduce((t, o) => t + altarsBuilt(o.item, o.altar, altar), 0) : 0
-    if (altars > 0) counts.push({ name: machinesByKey.get(KNOWLEDGE_ALTAR)?.name ?? 'Knowledge Altar', count: altars, atFullSpeed: altars })
-    return counts
-  }, [result.tree, logistics, units, money, altar])
+  const buildings = useMemo(
+    () => planBuildings(result.tree, logistics, units.copies, money, altar),
+    [result.tree, logistics, units, money, altar],
+  )
   const totalMachines = buildings.reduce((t, b) => t + b.count, 0)
   const altarOverflow = (item: string, on: boolean) =>
     onUpdatePlan(`${on ? 'Break down' : 'Stop breaking down'} ${itemName(item)} overflow at Knowledge Altars`, (p) => setAltar(p, item, on))
@@ -493,255 +516,288 @@ export function PlannerPage({
 
         <main className="planner-main" ref={main}>
           <div className="plan-bar panel">
-            <select value={plan.id} onChange={(e) => onSelectPlan(e.target.value)} aria-label="Plan">
-              {plans.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {planTitle(p)}
-                </option>
-              ))}
-            </select>
-            <input
-              className="plan-name"
-              value={namedAfterTargets(plan) ? '' : plan.name}
-              placeholder={targetsName(plan)}
-              title="Leave empty to name the plan after what it makes"
-              onChange={(e) => onUpdatePlan('Rename plan', (p) => ({ ...p, name: e.target.value }))}
-              aria-label="Plan name"
-            />
-            <button onClick={onNewPlan}>New</button>
-            <button onClick={onDuplicatePlan}>Duplicate</button>
-            <button className="danger" onClick={onDeletePlan} disabled={plans.length <= 1}>
-              Delete
+            <button
+              className={overview ? 'plans-toggle primary' : 'plans-toggle'}
+              aria-pressed={overview}
+              onClick={() => setOverview((o) => !o)}
+              title={overview ? `Back to “${planTitle(plan)}” (Esc)` : 'See every plan’s inputs and outputs, and switch plans'}
+            >
+              <span aria-hidden>▦</span> All plans <span className="pill">{plans.length}</span>
             </button>
+            {overview ? (
+              <>
+                <span className="plan-bar-note hint-inline">Pick a plan to open it.</span>
+                <button
+                  onClick={() => {
+                    onNewPlan()
+                    closeOverview()
+                  }}
+                >
+                  New
+                </button>
+              </>
+            ) : (
+              <>
+                <input
+                  className="plan-name"
+                  value={namedAfterTargets(plan) ? '' : plan.name}
+                  placeholder={targetsName(plan)}
+                  title="Leave empty to name the plan after what it makes"
+                  onChange={(e) => onUpdatePlan('Rename plan', (p) => ({ ...p, name: e.target.value }))}
+                  aria-label="Plan name"
+                />
+                <button onClick={onNewPlan}>New</button>
+                <button onClick={onDuplicatePlan}>Duplicate</button>
+                <button className="danger" onClick={onDeletePlan} disabled={plans.length <= 1}>
+                  Delete
+                </button>
+              </>
+            )}
           </div>
 
-          {result.status !== 'ok' && <div className="panel warning" data-flip="unsolved">Could not solve this plan: {result.message}</div>}
-
-          {!model.result ? (
-            <div className="panel empty-state" aria-busy>
-              <p>Solving…</p>
-            </div>
+          {overview ? (
+            <PlanOverview
+              plans={plans}
+              openId={plan.id}
+              progress={progress}
+              saved={saved}
+              myDefaults={myDefaults}
+              onOpen={(id) => {
+                onSelectPlan(id)
+                closeOverview()
+              }}
+            />
           ) : (
             <>
-              <section className="summary" data-flip="summary">
-                <div className="stat">
-                  <span className="stat-glyph">🔥</span>
-                  <div>
-                    <div className="stat-value">{fmt((heat?.consumed ?? 0) / 60)} P/s</div>
-                    <div className="stat-label">heat</div>
-                  </div>
+              {result.status !== 'ok' && <div className="panel warning" data-flip="unsolved">Could not solve this plan: {result.message}</div>}
+
+              {!model.result ? (
+                <div className="panel empty-state" aria-busy>
+                  <p>Solving…</p>
                 </div>
-                <div className="stat">
-                  <ItemIcon item="GoldCoin" size={32} />
-                  <div>
-                    <div className="stat-value">
-                      <Money copper={money.cost} suffix="/min" />
-                    </div>
-                    <div className="stat-label">cost: portal purchases and coins</div>
-                  </div>
-                </div>
-                {money.value > 0 && (
-                  <div className="stat">
-                    <span className="stat-glyph">⚖</span>
-                    <div>
-                      <div className="stat-value">
-                        <Money copper={money.value} suffix="/min" />
-                      </div>
-                      <div className="stat-label">
-                        sale value ·{' '}
-                        <span className={money.value >= money.cost ? 'positive' : 'negative'}>
-                          {money.value >= money.cost ? '+' : '−'}
-                          <Money copper={Math.abs(money.value - money.cost)} suffix="/min" />
-                        </span>{' '}
-                        margin
+              ) : (
+                <>
+                  <section className="summary" data-flip="summary">
+                    <div className="stat">
+                      <span className="stat-glyph">🔥</span>
+                      <div>
+                        <div className="stat-value">{fmt((heat?.consumed ?? 0) / 60)} P/s</div>
+                        <div className="stat-label">heat</div>
                       </div>
                     </div>
-                  </div>
-                )}
-                <div className="stat">
-                  <span className="stat-glyph">⚙</span>
-                  <div>
-                    <div className="stat-value">{fmt(totalMachines)}</div>
-                    <div className="stat-label">machines</div>
-                  </div>
-                </div>
-              </section>
-
-              {deficits.length > 0 && (
-                <div className="panel warning" data-flip="deficits">
-                  <strong>Can't be met.</strong> The chosen recipes can't supply these items (usually a loop that consumes as much
-                  as it makes, or more than comes in of them as inputs). Pick a different recipe for them, or raise their input supply:
-                  <ul>
-                    {deficits.map((d) => (
-                      <li key={d.item}>
-                        <ItemLabel item={d.item} /> short by {fmt(d.deficit)}/min
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {runaways.length > 0 && (
-                <div className="panel warning" data-flip="runaways">
-                  <strong>Overflow loop runs away.</strong> These overflow targets overflow at least as much as they take, so
-                  they would need an endless factory. They make nothing until their recipes change or they become standard
-                  targets:
-                  <ul>
-                    {runaways.map(({ index, item }) => (
-                      <li key={index}>
-                        <TargetLink index={index} onShow={showTarget} /> · <ItemLabel item={plan.targets[index].item} /> from{' '}
-                        <ItemLabel item={item} /> overflow
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {beyond.length > 0 && (
-                <div className="panel notice" data-flip="beyond">
-                  <strong>Beyond research tier {tierName(catalog.tier)}.</strong> These steps need research you haven&apos;t
-                  reached yet. Pick another recipe for them, or plan ahead for the tier:
-                  <ul className="flow-list notice-list">
-                    {beyond.map((b) => (
-                      <li key={b.item}>
-                        <ItemLabel item={b.item} />
-                        <TierTag tier={b.tier} />
-                        <span className="hint-inline">{b.what}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {beltLimited.length > 0 && (
-                <div className="panel notice" data-flip="belts">
-                  <strong>Input belts can&apos;t keep up.</strong> At {fmt(mods.beltSpeed)} items/min per belt these machines
-                  need more input belts than they have, so they run starved and you need more of them:
-                  <ul className="logistics-list">
-                    {beltLimited.map((c) => (
-                      <LogisticsLine
-                        key={c.key}
-                        check={c}
-                        label={result.runs.find((r) => r.key === c.key)?.process.label ?? c.key}
-                      />
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              <BusPanel
-                ledgers={ledger}
-                money={money}
-                defaults={
-                  <PlanDefaults heat={planDefault(HEAT)} boilers={boilerDefault()} nutrients={planDefault(NUTRIENTS)} money={planDefault(MONEY)} />
-                }
-                overflowFrom={overflowSources}
-                onFeedback={(item, target, on) =>
-                  onUpdatePlan(`${on ? 'Feed back' : 'Stop feeding back'} ${itemName(item)}`, (p) =>
-                    target === null ? setItemFeedback(p, item, on) : setTargetFeedback(p, target, on),
-                  )
-                }
-                onProvide={(item) => {
-                  onUpdatePlan(`Add target for ${itemName(item)}`, (p) => addProvider(p, item))
-                  showTarget(plan.targets.length)
-                }}
-                onUseOverflow={(item, consumes) => {
-                  onUpdatePlan(`Use overflow of ${itemName(item)}`, (p) => addOverflowTarget(p, item, consumes))
-                  showTarget(plan.targets.length)
-                }}
-                onAltar={altarOverflow}
-                onCap={(item, cap) => onUpdatePlan(`Change input supply of ${itemName(item)}`, (p) => setBusSupply(p, item, cap))}
-                onUseSupply={(item, consumes) => {
-                  onUpdatePlan(`Use input supply of ${itemName(item)}`, (p) => addSupplyTarget(p, item, consumes))
-                  showTarget(plan.targets.length)
-                }}
-                onShowTarget={showTarget}
-                onShowRow={showRow}
-                altar={altar}
-              />
-
-              <section className="panel tree-panel" data-flip="tree">
-                <h2 data-flip="tree-title">Production</h2>
-                <ProductionTree
-                  key={plan.id}
-                  planId={plan.id}
-                  tree={result.tree}
-                  ledger={ledger}
-                  onNetworkFuel={setNetworkBurn}
-                  onNetworkSource={setNetworkSupply}
-                  catalog={catalog}
-                  onProducer={setProducer}
-                  onResetProducer={resetProducer}
-                  onFindCauldron={onFindCauldron}
-                  onReuse={setReuse}
-                  onRemember={remember}
-                  onForget={unsave}
-                  onCatalysts={setCatalysts}
-                  onHeight={setHeight}
-                  onStack={setStack}
-                  onSeparate={setSeparate}
-                  onSeparateShared={
-                    canSeparate ? () => onUpdatePlan('Build shared items separately', (p) => separateShared(p, catalog)) : undefined
-                  }
-                  onMergeSingles={canMerge ? () => onUpdatePlan('Merge single-use builds', (p) => mergeSingleUses(p, catalog)) : undefined}
-                  logistics={logistics}
-                  mods={mods}
-                  roundUp={plan.roundUp ?? NO_ROWS}
-                  fed={fed}
-                  onUseOverflow={(item, consumes) => {
-                    onUpdatePlan(`Use overflow of ${itemName(item)}`, (p) => addOverflowTarget(p, item, consumes))
-                    showTarget(plan.targets.length)
-                  }}
-                  altarLeft={altarLeft}
-                  onAltar={altarOverflow}
-                  onRoundUp={(row, on) => onUpdatePlan(`${on ? 'Round up' : 'Stop rounding up'} ${rowName(row)}`, (p) => setRoundUp(p, row, on))}
-                  onMixedFeed={(row, on, inherited) =>
-                    onUpdatePlan(`${on ? 'Mix by-products into' : 'Stop mixing by-products into'} ${rowName(row)}`, (p) =>
-                      setMixedFeed(p, row, on, inherited),
-                    )
-                  }
-                  units={units}
-                  onUnits={(row, unit) =>
-                    onUpdatePlan(`Build ${rowName(row)} ${unit ? 'in units' : 'as one line'}`, (p) => setUnits(p, row, unit))
-                  }
-                  built={plan.built ?? NO_ROWS}
-                  onBuilt={(rows, on) =>
-                    onUpdatePlan(
-                      `${on ? 'Check off' : 'Uncheck'} ${rows.length === 1 ? rowName(rows[0]) : `${rows.length} rows`}`,
-                      (p) => setBuilt(p, rows, on),
-                    )
-                  }
-                  targets={plan.targets.map(targetSlot)}
-                  onAddTarget={addTarget}
-                  shownTarget={shownTarget}
-                  shownRow={shownRow}
-                />
-              </section>
-
-              <div className="two-col" data-flip="totals">
-                <section className="panel">
-                  <h2>Buildings</h2>
-                  <ul className="flow-list">
-                    {buildings.map((b) => {
-                      const slowed = b.count > b.atFullSpeed
-                      return (
-                        <li key={b.name}>
-                          <span className="building-name">{b.name}</span>
-                          {slowed && <span className="hint-inline">{fmt(b.atFullSpeed)} at full speed →</span>}
-                          <span className={slowed ? 'rate belt-limited' : 'rate'}>{fmt(b.count)}</span>
-                        </li>
-                      )
-                    })}
-                  </ul>
-                </section>
-                {heatUsers.length + nutrientUsers.length > 0 && (
-                  <section className="panel">
-                    <h2>Heat &amp; nutrients used</h2>
-                    <ResourceUsers title="🔥 Heat" users={heatUsers} unit="P/s" />
-                    <ResourceUsers title="🌱 Nutrients" users={nutrientUsers} unit="nutrients/s" />
+                    <div className="stat">
+                      <ItemIcon item="GoldCoin" size={32} />
+                      <div>
+                        <div className="stat-value">
+                          <Money copper={money.cost} suffix="/min" />
+                        </div>
+                        <div className="stat-label">cost: portal purchases and coins</div>
+                      </div>
+                    </div>
+                    {money.value > 0 && (
+                      <div className="stat">
+                        <span className="stat-glyph">⚖</span>
+                        <div>
+                          <div className="stat-value">
+                            <Money copper={money.value} suffix="/min" />
+                          </div>
+                          <div className="stat-label">
+                            sale value ·{' '}
+                            <span className={money.value >= money.cost ? 'positive' : 'negative'}>
+                              {money.value >= money.cost ? '+' : '−'}
+                              <Money copper={Math.abs(money.value - money.cost)} suffix="/min" />
+                            </span>{' '}
+                            margin
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    <div className="stat">
+                      <span className="stat-glyph">⚙</span>
+                      <div>
+                        <div className="stat-value">{fmt(totalMachines)}</div>
+                        <div className="stat-label">machines</div>
+                      </div>
+                    </div>
                   </section>
-                )}
-              </div>
+
+                  {deficits.length > 0 && (
+                    <div className="panel warning" data-flip="deficits">
+                      <strong>Can't be met.</strong> The chosen recipes can't supply these items (usually a loop that consumes as much
+                      as it makes, or more than comes in of them as inputs). Pick a different recipe for them, or raise their input supply:
+                      <ul>
+                        {deficits.map((d) => (
+                          <li key={d.item}>
+                            <ItemLabel item={d.item} /> short by {fmt(d.deficit)}/min
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {runaways.length > 0 && (
+                    <div className="panel warning" data-flip="runaways">
+                      <strong>Overflow loop runs away.</strong> These overflow targets overflow at least as much as they take, so
+                      they would need an endless factory. They make nothing until their recipes change or they become standard
+                      targets:
+                      <ul>
+                        {runaways.map(({ index, item }) => (
+                          <li key={index}>
+                            <TargetLink index={index} onShow={showTarget} /> · <ItemLabel item={plan.targets[index].item} /> from{' '}
+                            <ItemLabel item={item} /> overflow
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {beyond.length > 0 && (
+                    <div className="panel notice" data-flip="beyond">
+                      <strong>Beyond research tier {tierName(catalog.tier)}.</strong> These steps need research you haven&apos;t
+                      reached yet. Pick another recipe for them, or plan ahead for the tier:
+                      <ul className="flow-list notice-list">
+                        {beyond.map((b) => (
+                          <li key={b.item}>
+                            <ItemLabel item={b.item} />
+                            <TierTag tier={b.tier} />
+                            <span className="hint-inline">{b.what}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {beltLimited.length > 0 && (
+                    <div className="panel notice" data-flip="belts">
+                      <strong>Input belts can&apos;t keep up.</strong> At {fmt(mods.beltSpeed)} items/min per belt these machines
+                      need more input belts than they have, so they run starved and you need more of them:
+                      <ul className="logistics-list">
+                        {beltLimited.map((c) => (
+                          <LogisticsLine
+                            key={c.key}
+                            check={c}
+                            label={result.runs.find((r) => r.key === c.key)?.process.label ?? c.key}
+                          />
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  <BusPanel
+                    ledgers={ledger}
+                    money={money}
+                    defaults={
+                      <PlanDefaults heat={planDefault(HEAT)} boilers={boilerDefault()} nutrients={planDefault(NUTRIENTS)} money={planDefault(MONEY)} />
+                    }
+                    overflowFrom={overflowSources}
+                    onFeedback={(item, target, on) =>
+                      onUpdatePlan(`${on ? 'Feed back' : 'Stop feeding back'} ${itemName(item)}`, (p) =>
+                        target === null ? setItemFeedback(p, item, on) : setTargetFeedback(p, target, on),
+                      )
+                    }
+                    onProvide={(item) => {
+                      onUpdatePlan(`Add target for ${itemName(item)}`, (p) => addProvider(p, item))
+                      showTarget(plan.targets.length)
+                    }}
+                    onUseOverflow={(item, consumes) => {
+                      onUpdatePlan(`Use overflow of ${itemName(item)}`, (p) => addOverflowTarget(p, item, consumes))
+                      showTarget(plan.targets.length)
+                    }}
+                    onAltar={altarOverflow}
+                    onCap={(item, cap) => onUpdatePlan(`Change input supply of ${itemName(item)}`, (p) => setBusSupply(p, item, cap))}
+                    onUseSupply={(item, consumes) => {
+                      onUpdatePlan(`Use input supply of ${itemName(item)}`, (p) => addSupplyTarget(p, item, consumes))
+                      showTarget(plan.targets.length)
+                    }}
+                    onShowTarget={showTarget}
+                    onShowRow={showRow}
+                    altar={altar}
+                  />
+
+                  <section className="panel tree-panel" data-flip="tree">
+                    <h2 data-flip="tree-title">Production</h2>
+                    <ProductionTree
+                      key={plan.id}
+                      planId={plan.id}
+                      tree={result.tree}
+                      ledger={ledger}
+                      onNetworkFuel={setNetworkBurn}
+                      onNetworkSource={setNetworkSupply}
+                      catalog={catalog}
+                      onProducer={setProducer}
+                      onResetProducer={resetProducer}
+                      onFindCauldron={onFindCauldron}
+                      onReuse={setReuse}
+                      onRemember={remember}
+                      onForget={unsave}
+                      onCatalysts={setCatalysts}
+                      onHeight={setHeight}
+                      onStack={setStack}
+                      onSeparate={setSeparate}
+                      onSeparateShared={
+                        canSeparate ? () => onUpdatePlan('Build shared items separately', (p) => separateShared(p, catalog)) : undefined
+                      }
+                      onMergeSingles={canMerge ? () => onUpdatePlan('Merge single-use builds', (p) => mergeSingleUses(p, catalog)) : undefined}
+                      logistics={logistics}
+                      mods={mods}
+                      roundUp={plan.roundUp ?? NO_ROWS}
+                      fed={fed}
+                      onUseOverflow={(item, consumes) => {
+                        onUpdatePlan(`Use overflow of ${itemName(item)}`, (p) => addOverflowTarget(p, item, consumes))
+                        showTarget(plan.targets.length)
+                      }}
+                      altarLeft={altarLeft}
+                      onAltar={altarOverflow}
+                      onRoundUp={(row, on) => onUpdatePlan(`${on ? 'Round up' : 'Stop rounding up'} ${rowName(row)}`, (p) => setRoundUp(p, row, on))}
+                      onMixedFeed={(row, on, inherited) =>
+                        onUpdatePlan(`${on ? 'Mix by-products into' : 'Stop mixing by-products into'} ${rowName(row)}`, (p) =>
+                          setMixedFeed(p, row, on, inherited),
+                        )
+                      }
+                      units={units}
+                      onUnits={(row, unit) =>
+                        onUpdatePlan(`Build ${rowName(row)} ${unit ? 'in units' : 'as one line'}`, (p) => setUnits(p, row, unit))
+                      }
+                      built={plan.built ?? NO_ROWS}
+                      onBuilt={(rows, on) =>
+                        onUpdatePlan(
+                          `${on ? 'Check off' : 'Uncheck'} ${rows.length === 1 ? rowName(rows[0]) : `${rows.length} rows`}`,
+                          (p) => setBuilt(p, rows, on),
+                        )
+                      }
+                      targets={plan.targets.map(targetSlot)}
+                      onAddTarget={addTarget}
+                      shownTarget={shownTarget}
+                      shownRow={shownRow}
+                    />
+                  </section>
+
+                  <div className="two-col" data-flip="totals">
+                    <section className="panel">
+                      <h2>Buildings</h2>
+                      <ul className="flow-list">
+                        {buildings.map((b) => {
+                          const slowed = b.count > b.atFullSpeed
+                          return (
+                            <li key={b.name}>
+                              <span className="building-name">{b.name}</span>
+                              {slowed && <span className="hint-inline">{fmt(b.atFullSpeed)} at full speed →</span>}
+                              <span className={slowed ? 'rate belt-limited' : 'rate'}>{fmt(b.count)}</span>
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    </section>
+                    {heatUsers.length + nutrientUsers.length > 0 && (
+                      <section className="panel">
+                        <h2>Heat &amp; nutrients used</h2>
+                        <ResourceUsers title="🔥 Heat" users={heatUsers} unit="P/s" />
+                        <ResourceUsers title="🌱 Nutrients" users={nutrientUsers} unit="nutrients/s" />
+                      </section>
+                    )}
+                  </div>
+                </>
+              )}
             </>
           )}
         </main>

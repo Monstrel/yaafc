@@ -336,6 +336,7 @@ export default function App() {
             setProgress(update)
           }}
           myDefaults={myDefaults}
+          saved={saved}
           onMyDefaults={(label, defaults) => {
             history.name(label)
             setMyDefaults(defaults)

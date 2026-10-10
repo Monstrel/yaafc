@@ -1109,6 +1109,179 @@ td.under {
   font-weight: 600;
 }
 
+.plans-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.plans-toggle.primary .pill {
+  background: rgb(0 0 0 / 0.18);
+  color: inherit;
+}
+
+.plan-bar-note {
+  flex: 1;
+}
+
+/* Every plan at a glance, in place of the open one. */
+.plan-overview {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* The title's button stretches over the card, so the whole card opens the plan. */
+.plan-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition:
+    border-color 0.15s,
+    opacity 0.15s;
+}
+
+.plan-card:hover,
+.plan-card:focus-within {
+  border-color: var(--accent);
+}
+
+.plan-card-open {
+  border-color: var(--violet);
+}
+
+/* Changed since it was summarized: a fresh summary is on its way. */
+.plan-card-stale {
+  opacity: 0.6;
+}
+
+.plan-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+
+.plan-card-title {
+  margin: 0;
+  font-size: 16px;
+  min-width: 0;
+}
+
+.plan-card-link {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.plan-card-link::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius);
+}
+
+.plan-card-link:focus-visible {
+  outline: none;
+}
+
+.plan-card-link:focus-visible::after {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.plan-card-size {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.plan-card p {
+  margin: 0;
+}
+
+.plan-card-problems {
+  font-size: 13px;
+}
+
+/* Narrow enough that each rate stays beside its item on a wide card. */
+.plan-card-flow {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 320px));
+  gap: 16px 48px;
+}
+
+.plan-card-flow h4 {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.plan-card-lines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 13px;
+}
+
+.plan-card-lines li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.plan-card-what {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.plan-card-what .item-label {
+  min-width: 0;
+}
+
+.plan-card-what .name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plan-card-lines .rate {
+  font-variant-numeric: tabular-nums;
+}
+
+.plan-card-total {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
+.plan-card-total + .plan-card-total {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+@media (max-width: 480px) {
+  .plan-card-flow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .planner-layout {
   display: grid;
   grid-template-columns: 340px minmax(0, 1fr);

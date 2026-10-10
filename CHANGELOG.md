@@ -8,6 +8,13 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
+## 2026-10-10T16:11Z
+
+- See all your plans at once: the plan picker at the top of the planner is now an "All plans"
+  button. It lists every plan with what it takes in and puts out, how many machines it builds, and
+  anything it can't supply or overflow nothing uses. Click a plan to open it, or press Esc to go
+  back to the one you had open. Your upgrades stay alongside, and changing them updates every plan.
+
 ## 2026-10-10T15:45Z
 
 - The planner no longer assumes your factory runs on a bus. The Bus panel's title is gone, and its
