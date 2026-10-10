@@ -8,6 +8,37 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
+## 2026-10-10T21:36Z
+
+- Rows always use what other rows leave over before they make or bring in their item, so leftovers
+  don't back up your machines. The "Reuse by-products first" switch is gone: to keep a by-product
+  out of the rest of the plan, use the new "Send to Knowledge Altars" link on its "also makes"
+  line, and the rows using that item make their own.
+- Every output of a recipe counts the same. An item only ever made by failed crafts, like the Crude
+  Silver Powder that Quicksilver takes, is now made in the plan by the recipe that fails into it,
+  instead of quietly becoming a plan input.
+- Machines refine their own failed crafts back up first: Gold Dust Athanors recover their Impure
+  and Crude Gold Dust before other rows get any. Recovery only refines leftovers now; it no longer
+  builds whole production chains to use one.
+- Plan inputs apply to every row of an item: choosing "Plan input" on one row takes the item in
+  everywhere, and picking a recipe on any of them makes it everywhere again. Rows burning,
+  spreading or paying with an item still choose their own, and a target always makes its item.
+  Plans that took an item in on some rows and made it on others now take it in everywhere.
+- Something nothing in the plan can make shows as a shortfall with a "Take it in as a plan input"
+  link, rather than becoming an input by itself.
+- A plan input's supply only sizes a "Use the rest…" target now. Otherwise the plan takes what it
+  needs, and the input says how far past its supply that goes.
+- A target set by a number of machines runs them in full, and also delivers what's recovered into
+  it. Before, recovery shrank the machines.
+- A target fed back now supplies the rows making its item elsewhere in the plan before they make
+  their own, so you can build a long recovery yourself: for example a Crude Shard target using the
+  leftover Sand, fed back, with Quartz crushers making the rest.
+- Recovery sits beside the row it adds to, in the tree and the flow chart, rather than looking like
+  one of its ingredients. Where a recipe takes an ingredient from several places, one row (and one
+  flow chart box) shows the total, with each source under it.
+- Rows sending a by-product along are named for what they make: leftover Silver Powder reads "from
+  Crude Silver Powder", not "from Silver Powder".
+
 ## 2026-10-10T17:48Z
 
 - A plan that takes a while to work out now shows a spinner: in the plan name box while the plan
