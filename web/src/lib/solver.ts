@@ -31,7 +31,10 @@ export interface ItemBalance {
   drawn: number
   /** Shortfall the chosen producers can't cover (e.g. a loop that doesn't sustain itself). */
   deficit: number
+  /** Made but used nowhere: overflow. */
   surplus: number
+  /** Sent to Knowledge Altars by the rows making it, as it comes out (not overflow: it's dealt with). */
+  altar: number
 }
 
 /** A target converted to items per minute. */
@@ -153,8 +156,10 @@ const FLOW_COST = 1e-7
 // A crucible row's mixed feed takes the by-products below it after the rows of their own item do.
 const MIX_COST = 1e-5
 const SHORTFALL_ROW = 'shortfall'
-// Prefix of the shares a baseline solve records for recovery leaving its row (see `strays`).
-const LOCAL = 'local:'
+const LEAVING_ROW = 'leaving'
+const SPILL_ROW = 'spill'
+// What a row takes beyond what it needs counts this many times what it spills (see the passes).
+const EXCESS_WEIGHT = 1000
 // Overflow an overflow target can't use is counted with shortfalls, so it uses all it can, but costs
 // less than any shortfall: falling short somewhere never stands in for leaving overflow unused (a
 // shortfall in a runaway loop would make it look like it settles).
@@ -275,8 +280,6 @@ interface Baseline {
   crafts: Map<string, number>
   /** Items per minute of its own item it makes that nothing uses. */
   overflow: Map<string, number>
-  /** Share of each row's side output recovery could take (see `overflowShare` in `solveRound`). */
-  shares: Map<string, number>
 }
 
 /**
@@ -292,14 +295,13 @@ function baselineCrafts(
 ): Baseline {
   const crafts = new Map<string, number>()
   const overflow = new Map<string, number>()
-  const shares = new Map<string, number>()
   const visit = (n: TreeNode) => {
     if (n.run) crafts.set(n.id, n.run.craftsPerMinute)
     overflow.set(n.id, n.overflow)
     n.children.forEach(visit)
   }
-  solveRound(plan, catalog, mods, absorbing, floors, { sizing: false, sharesUsed: shares }).tree.forEach(visit)
-  return { crafts, overflow, shares }
+  solveRound(plan, catalog, mods, absorbing, floors, { sizing: false }).tree.forEach(visit)
+  return { crafts, overflow }
 }
 
 /** The root row of a row's tree. */
@@ -360,25 +362,13 @@ function solveRound(
   absorbing: Map<string, Absorbing>,
   floors: Map<string, number>,
   {
-    recovering = true,
-    localOnly,
     sizing = true,
-    sharesUsed,
   }: {
-    /** Recovers outputs nothing uses (see `unfold`). */
-    recovering?: boolean
-    /**
-     * Recovers a row's output only into its own supply, where it can go there (see `strays`): set to
-     * the solving round's baseline and recovery caps, which this round shares.
-     */
-    localOnly?: { held: Baseline | null; overflowShare: Map<string, number> }
     /** Overflow and supply targets take what they can; else they take nothing (see `baselineCrafts`). */
     sizing?: boolean
-    /** Filled with the share of each row's side output recovery could take, where it's capped. */
-    sharesUsed?: Map<string, number>
   } = {},
 ): PlanResult {
-  const shape = unfold(plan, catalog, recovering)
+  const shape = unfold(plan, catalog)
   const targets = resolveTargets(plan, shape, mods)
   const index = new Map(shape.nodes.map((n, k) => [n, k]))
   const bal = (n: PlanNode) => `b:${index.get(supplierOf(n))}`
@@ -429,9 +419,8 @@ function solveRound(
   // Overflow and supply targets take what the rest of the plan overflows or leaves as it is without
   // them: its targets' rows run as they would (running one harder could soak up the overflow or
   // supply into a surplus of its own).
-  const held = localOnly
-    ? localOnly.held
-    : takerOf.size || supplyTaker.size
+  const held =
+    takerOf.size || supplyTaker.size
       ? baselineCrafts(plan, catalog, mods, absorbing, floors)
       : null
 
@@ -505,9 +494,12 @@ function solveRound(
     columns[`d:o:${item}`] = { [`o:${item}`]: -1, cost: UNUSED_OVERFLOW_COST }
   }
 
-  // By-product pools: what one row makes of each side output, shared out to rows of that item.
+  // By-product pools: what one row makes of each side output, shared out to rows of that item,
+  // unless the row sends it to Knowledge Altars as it comes out.
   const consumers = new Map<string, PlanNode[]>()
-  for (const s of supplies) if (s.reuse) consumers.set(s.item, [...(consumers.get(s.item) ?? []), s])
+  for (const s of supplies) if (s.takesLeftovers) consumers.set(s.item, [...(consumers.get(s.item) ?? []), s])
+  const toAltar = (n: PlanNode, item: string) => !!plan.altarOutputs?.[n.id]?.includes(item)
+  const sharedWith = (n: PlanNode, item: string) => (toAltar(n, item) ? [] : (consumers.get(item) ?? []))
   const flows: { name: string; from: PlanNode; to: PlanNode }[] = []
 
   // Rows held to their crafts: rounded up, or as they are without the plan's overflow targets.
@@ -532,7 +524,7 @@ function solveRound(
         n.kind === 'make' &&
         !heldToCrafts(n) &&
         n.process!.outputs.some(
-          (o) => o.item !== n.item && (consumers.get(o.item) ?? []).some((c) => (n.reuse || c.reuseChosen) && !sameRun(n, c)),
+          (o) => o.item !== n.item && sharedWith(n, o.item).some((c) => !sameRun(n, c)),
         ),
     ),
   )
@@ -567,67 +559,21 @@ function solveRound(
     })
   }
 
-  // Recovery takes only what would overflow: rows using an output as it is take it first. Where an
-  // output goes both ways, the share of it that overflows without recovery caps what's recovered.
-  // Recovery rows count as recovery too, though they also take their own item from other rows' outputs.
+  // Recovery rows (and the reclaim rows under them) take other rows' outputs to turn them back into
+  // an item the plan uses.
   const isRecovery = (c: PlanNode) => c.kind === 'reclaim' || !!c.recovers
-  const sharedWith = (n: PlanNode, item: string) => (consumers.get(item) ?? []).filter((c) => n.reuse || c.reuseChosen)
-  const contested = (n: PlanNode, item: string) => {
-    const cs = sharedWith(n, item)
-    return cs.some(isRecovery) && cs.some((c) => !isRecovery(c))
-  }
-  const overflowShare = localOnly?.overflowShare ?? new Map<string, number>()
-  if (!localOnly && shape.nodes.some((n) => n.kind === 'make' && n.process!.outputs.some((o) => o.item !== n.item && contested(n, o.item)))) {
-    const visit = (t: TreeNode) => {
-      for (const b of t.byproducts) if (b.count > 0) overflowShare.set(`${t.id}>${b.item}`, b.overflow / b.count)
-      t.children.forEach(visit)
-    }
-    solveRound(plan, catalog, mods, absorbing, floors, { recovering: false, sizing }).tree.forEach(visit)
-    // Rows held as they are without the overflow and supply targets recover what they did there:
-    // measured with those targets, a held row's output could go to rows using it directly instead,
-    // leaving its recovery rows, held to their crafts too, nothing to run on.
-    if (held)
-      for (const n of shape.nodes)
-        if (n.kind === 'make' && !inTaker.has(n))
-          for (const o of n.process!.outputs) {
-            const key = `${n.id}>${o.item}`
-            overflowShare.set(key, held.shares.get(key) ?? 1)
-          }
-    if (sharesUsed) for (const [key, share] of overflowShare) sharesUsed.set(key, share)
-  }
-
-  // Recovery keeps to the row whose machines output it: where an output can be recovered both back
-  // into its row's own supply and into other items, its row's own recovery takes it first, and the
-  // share of it that overflows with only that caps what goes elsewhere. Else a row could recover
-  // less of its own output and run harder to feed another item's recovery (Athanors making Gold Dust
-  // turning out Impure Gold Dust for a cauldron making Resonant Catalyst).
   /** The row a recovery row's chain (or a reclaim row's) recovers into. */
   const joins = (c: PlanNode) => {
     let a = c
     while (a.recovers || a.kind === 'reclaim') a = a.parent!
     return supplierOf(a)
   }
-  const strays = (n: PlanNode, item: string) => {
-    const cs = sharedWith(n, item).filter(isRecovery)
-    return cs.some((c) => joins(c) === n) && cs.some((c) => joins(c) !== n)
-  }
-  const localShare = new Map<string, number>()
-  if (!localOnly && shape.nodes.some((n) => n.kind === 'make' && n.process!.outputs.some((o) => o.item !== n.item && strays(n, o.item)))) {
-    const visit = (t: TreeNode) => {
-      for (const b of t.byproducts) if (b.count > 0) localShare.set(`${t.id}>${b.item}`, b.overflow / b.count)
-      t.children.forEach(visit)
-    }
-    solveRound(plan, catalog, mods, absorbing, floors, { localOnly: { held, overflowShare }, sizing }).tree.forEach(visit)
-    // As above: held rows recover where they did without the overflow and supply targets.
-    if (held)
-      for (const n of shape.nodes)
-        if (n.kind === 'make' && !inTaker.has(n))
-          for (const o of n.process!.outputs) {
-            const key = `${n.id}>${o.item}`
-            localShare.set(key, held.shares.get(`${LOCAL}${key}`) ?? 1)
-          }
-    if (sharesUsed) for (const [key, share] of localShare) sharesUsed.set(`${LOCAL}${key}`, share)
-  }
+  const ownRecovery = (n: PlanNode, c: PlanNode) => isRecovery(c) && joins(c) === n
+  // Per column, the items per minute it takes of a row's output away from the row, where its own
+  // recovery could take it (see the passes below).
+  const leaving = new Map<string, number>()
+  // Per column of a row's output it sends to Knowledge Altars, the item.
+  const altared = new Map<string, string>()
 
   for (const n of shape.nodes) {
     if (n.kind !== 'make') continue
@@ -654,7 +600,10 @@ function solveRound(
       const pool = `p:${k}:${o.item}`
       equalities[pool] = 0
       add(col, pool, o.count)
-      columns[`ps:${k}:${o.item}`] = { [pool]: -1, ...(takerOf.has(o.item) && { [`o:${o.item}`]: 1 }), cost: SURPLUS_COST }
+      // Sent to Knowledge Altars: all of it goes there, none to an overflow target.
+      const altar = toAltar(n, o.item)
+      if (altar) altared.set(`ps:${k}:${o.item}`, o.item)
+      columns[`ps:${k}:${o.item}`] = { [pool]: -1, ...(!altar && takerOf.has(o.item) && { [`o:${o.item}`]: 1 }), cost: SURPLUS_COST }
       // By-products are what a row makes running for what it's used for: those of crafts beyond that
       // only go to rows running the same process, which would make them the same way (Gentian Nectar
       // from the Gentian row's nurseries). Rows with a producer of their own make the rest
@@ -668,26 +617,13 @@ function solveRound(
         columns[`ps:${k}:${o.item}`][extra] = -1
         columns[`es:${k}:${o.item}`] = { [extra]: 1, cost: 0 }
       }
-      const cap = contested(n, o.item) ? `rq:${k}:${o.item}` : null
-      if (cap) {
-        equalities[cap] = 0
-        col[cap] = -(overflowShare.get(`${n.id}>${o.item}`) ?? 1) * o.count
-        columns[`rqs:${k}:${o.item}`] = { [cap]: 1, cost: 0 }
-      }
-      const stray = strays(n, o.item) ? `rl:${k}:${o.item}` : null
-      if (stray && !localOnly) {
-        equalities[stray] = 0
-        col[stray] = -(localShare.get(`${n.id}>${o.item}`) ?? 1) * o.count
-        columns[`rls:${k}:${o.item}`] = { [stray]: 1, cost: 0 }
-      }
-      // A row making its own keeps to itself: its by-products only go where reuse was picked.
-      for (const c of sharedWith(n, o.item)) {
-        const elsewhere = stray !== null && isRecovery(c) && joins(c) !== n
-        if (elsewhere && localOnly) continue
+      const shared = sharedWith(n, o.item)
+      const local = shared.some((c) => ownRecovery(n, c))
+      if (local) leaving.set(`ps:${k}:${o.item}`, 1)
+      for (const c of shared) {
         const name = `f:${k}>${index.get(c)}`
         columns[name] = { [pool]: -1, [`b:${index.get(c)}`]: 1, cost: FLOW_COST * (1 + distance(n, c)) }
-        if (cap && isRecovery(c)) columns[name][cap] = 1
-        if (elsewhere) columns[name][stray] = 1
+        if (local && !ownRecovery(n, c)) leaving.set(name, 1)
         if (extra in equalities && sameRun(n, c)) columns[name][extra] = -1
         flows.push({ name, from: n, to: c })
       }
@@ -711,12 +647,13 @@ function solveRound(
     for (const item of n.mix) {
       const q = catalog.byId.get(paradoxId(item))
       const pool = `p:${index.get(source)}:${item}`
-      if (!q || !(pool in equalities)) continue
+      if (!q || !(pool in equalities) || altared.has(`ps:${index.get(source)}:${item}`)) continue
       const name = `m:${k}:${item}`
       const col: Record<string, number> = { [pool]: -q.inputs[0].count, [`b:${k}`]: 1, cost: CRAFT_COST * Math.max(q.seconds, 1) + MIX_COST }
       if (heat) add(col, bal(heat), -(q.inputs.find((s) => s.item === HEAT)?.count ?? 0))
       for (const row of [`h:${k}`, `r:${k}`]) if (row in equalities) col[row] = 1
       columns[name] = col
+      if (leaving.has(`ps:${index.get(source)}:${item}`)) leaving.set(name, q.inputs[0].count)
       parts.push({ item, process: q, name, source })
     }
     if (parts.length) mixes.set(n, parts)
@@ -731,25 +668,52 @@ function solveRound(
     tree: buildTree(shape.roots, new Map(), mods),
   })
 
-  // Two passes, so a shortfall is only ever reported when the chosen producers really can't cover
+  // Passes in turn, so a shortfall is only ever reported when the chosen producers really can't cover
   // it. In one pass, deficits were just expensive: a big enough plan (Sol burns millions of P and
   // tens of thousands of fuel and fertilizer items a minute) cost more than giving up on the target.
-  // Pass 1 minimizes the depth-weighted shortfall alone; pass 2 holds it there and minimizes the
-  // real costs.
-  const isDeficit = (name: string) => name.startsWith('d:')
-  const phase1 = solveLP({
-    equalities,
-    columns: Object.fromEntries(
-      Object.entries(columns).map(([name, { cost, ...rows }]) => [name, { ...rows, cost: isDeficit(name) ? cost : 0 }]),
-    ),
-  })
-  if (phase1.status !== 'optimal') return fail(phase1.status, phase1.message)
-  let shortfall = 0
-  for (const [name, x] of phase1.values) if (isDeficit(name)) shortfall += x * columns[name].cost
-  // Σ cost·deficit + slack = cap, with a little room for solver tolerance.
-  equalities[SHORTFALL_ROW] = shortfall * (1 + 1e-6) + 1e-6
-  for (const name of Object.keys(columns)) if (isDeficit(name)) columns[name][SHORTFALL_ROW] = columns[name].cost
-  columns[`slack:${SHORTFALL_ROW}`] = { [SHORTFALL_ROW]: 1, cost: 0 }
+  // Pass 1 minimizes the depth-weighted shortfall alone; the last pass holds it there and minimizes
+  // the real costs. Between them, each pass settles one rule of where outputs go, held in turn (by
+  // cost alone, they lost to whatever was cheaper):
+  //   - Locality: a row's outputs go to its own recovery first, and only what that can't take
+  //     leaves it (Athanors making Gold Dust refine their failed crafts back up, rather than turning
+  //     them out for a cauldron making Resonant Catalyst).
+  //   - Then rows using what's left as it is take it, before other rows' recovery does or it
+  //     overflows: the pass minimizes what goes those two ways. A row taking more than it needs
+  //     counts many times over, so no row runs harder to take more.
+  // What's left over costs nothing to take (its source runs no harder for it), so the last pass has
+  // rows take it before they import or make their item.
+  const deficits = new Map(Object.entries(columns).flatMap(([name, { cost }]) => (name.startsWith('d:') ? [[name, cost]] : [])))
+  const spill = new Map<string, number>()
+  for (const f of flows) if (isRecovery(f.to) && !ownRecovery(f.from, f.to)) spill.set(f.name, 1)
+  for (const [name, col] of Object.entries(columns)) {
+    const taken = Object.keys(col).some((row) => row.startsWith('o:'))
+    if (name.startsWith('ps:') && !taken && !altared.has(name)) spill.set(name, 1)
+    if (name.startsWith('s:') && !taken) spill.set(name, EXCESS_WEIGHT)
+  }
+  const stages: [string, Map<string, number>][] = [
+    [SHORTFALL_ROW, deficits],
+    [LEAVING_ROW, leaving],
+    [SPILL_ROW, spill],
+  ]
+  // Items per minute a held pass's room could still move: flows and recovery below it are noise.
+  let noise = 0
+  for (const [row, weights] of stages) {
+    if (!weights.size) continue
+    const phase = solveLP({
+      equalities,
+      columns: Object.fromEntries(Object.entries(columns).map(([name, { cost: _cost, ...rows }]) => [name, { ...rows, cost: weights.get(name) ?? 0 }])),
+    })
+    if (phase.status !== 'optimal') return fail(phase.status, phase.message)
+    let total = 0
+    for (const [name, x] of phase.values) total += x * (weights.get(name) ?? 0)
+    // Σ weight·x + slack = what the pass reached, with a little room for solver tolerance. What the
+    // later passes can still shift within that room is noise (see `noise`).
+    const room = total * 1e-6 + 1e-6
+    equalities[row] = total + room
+    if (row !== SHORTFALL_ROW) noise += room
+    for (const [name, w] of weights) if (columns[name]) columns[name][row] = w
+    columns[`slack:${row}`] = { [row]: 1, cost: 0 }
+  }
 
   const solution = solveLP({ equalities, columns })
   if (solution.status !== 'optimal') return fail(solution.status, solution.message)
@@ -763,7 +727,10 @@ function solveRound(
   // A net-surplus target's row also makes what the plan takes of it in place of the bus.
   for (const [item, a] of pooled) targets[a.target].made += v(`fb:${item}`)
   // An overflow target makes what the overflow it takes comes to.
-  const taken = (i: number) => (takers.get(i) ?? []).reduce((t, leaf) => t + v(`od:${index.get(leaf)}`), 0)
+  const taken = (i: number) => {
+    const x = (takers.get(i) ?? []).reduce((t, leaf) => t + v(`od:${index.get(leaf)}`), 0)
+    return cleaned(x, RELATIVE_NOISE * Math.max(1, x))
+  }
   const unused = (item: string) => {
     const x = v(`d:o:${item}`)
     return cleaned(x, RELATIVE_NOISE * Math.max(1, x + taken(takerOf.get(item)!)))
@@ -772,7 +739,7 @@ function solveRound(
   for (const [i, leaves] of takers) {
     const item = consumedBy(plan.targets[planIndex[i]])!
     const by = takerOf.get(item)
-    targets[i].rate = targets[i].made = v(`t:${i}`)
+    targets[i].rate = targets[i].made = cleaned(v(`t:${i}`), RELATIVE_NOISE * Math.max(1, v(`t:${i}`)))
     targets[i].overflow = {
       item,
       uses: leaves.length > 0,
@@ -849,13 +816,15 @@ function solveRound(
     const out: Record<string, ByproductRoute> = {}
     for (const o of n.process!.outputs) {
       if (o.item === n.item || o.item.startsWith('@')) continue
-      const tol = RELATIVE_NOISE * Math.max(1, o.count * x)
+      const tol = Math.max(RELATIVE_NOISE * Math.max(1, o.count * x), noise)
       out[o.item] = {
         to: (sent.get(n) ?? [])
           .filter((s) => s.item === o.item && s.amount > tol)
           .sort((a, b) => b.amount - a.amount)
           .map((s) => ({ id: s.to.id, amount: s.amount, ...(s.direct && { direct: true }) })),
-        overflow: cleaned(v(`ps:${k}:${o.item}`), tol),
+        ...(altared.has(`ps:${k}:${o.item}`)
+          ? { overflow: 0, toAltar: true, altar: cleaned(v(`ps:${k}:${o.item}`), tol) }
+          : { overflow: cleaned(v(`ps:${k}:${o.item}`), tol), altar: 0 }),
       }
     }
     return out
@@ -878,22 +847,25 @@ function solveRound(
           ? v(`od:${index.get(n)}`)
           : 0
     const tol = RELATIVE_NOISE * Math.max(1, need, made)
-    const draws = (drawn.get(n) ?? []).filter((d) => d.amount > tol * 1e-2).sort((a, b) => b.amount - a.amount)
+    const received = (drawn.get(n) ?? []).filter((d) => d.amount > tol * 1e-2)
+    // Shown: draws above what the held passes left room for (noise there isn't a real feed).
+    const draws = received.filter((d) => d.amount > noise).sort((a, b) => b.amount - a.amount)
     const fromByproduct = draws.reduce((sum, d) => sum + d.amount, 0)
     const fromRecovery = recovered.get(n) ?? 0
-    const missing = need - made - fromByproduct - fromRecovery
+    const missing = need - made - received.reduce((sum, d) => sum + d.amount, 0) - fromRecovery
     const short = missing > tol ? missing : 0
     // Rows taking an item from the bus get what it carries; past a capped supply, they fall short.
     const drew = n.kind !== 'bus' ? 0 : capped.has(n.item) ? Math.min(short, cleaned(v(`i:${index.get(n)}`), tol)) : short
     rowFlows.set(n, {
-      rate: need,
+      // A recovery row running only on what the held passes left room for is noise: it isn't shown.
+      rate: n.recovers && need <= noise ? 0 : need,
       crafts: x,
       fromByproduct,
       byproductSources: draws.map((d) => ({ id: d.from.id, label: d.from.process!.label })),
-      fromRecovery: cleaned(fromRecovery, tol),
+      fromRecovery: cleaned(fromRecovery, Math.max(tol, noise)),
       fromBus: drew,
       shortfall: short - drew > tol ? short - drew : 0,
-      overflow: cleaned(v(`s:${index.get(n)}`), tol),
+      overflow: cleaned(v(`s:${index.get(n)}`), Math.max(tol, noise)),
       byproductRoutes: n.kind === 'make' ? routes(n, x) : {},
       ...(parts.length && { mix: [{ process: n.process!, crafts: x }, ...parts.map((m) => ({ process: m.process, crafts: m.crafts }))] }),
     })
@@ -928,7 +900,7 @@ function solveRound(
   const of = (item: string) => {
     let b = balance.get(item)
     if (!b) {
-      b = { item, target: 0, produced: 0, consumed: 0, fromBus: 0, drawn: 0, deficit: 0, surplus: 0 }
+      b = { item, target: 0, produced: 0, consumed: 0, fromBus: 0, drawn: 0, deficit: 0, surplus: 0, altar: 0 }
       balance.set(item, b)
     }
     return b
@@ -949,8 +921,9 @@ function solveRound(
     if (!pooled.has(n.item)) b.fromBus += f.fromBus
     b.deficit += f.shortfall
   }
+  for (const [name, item] of altared) of(item).altar += cleaned(v(name), RELATIVE_NOISE * Math.max(1, v(name)))
   for (const b of balance.values()) {
-    let net = b.produced - b.consumed + b.fromBus + b.deficit - b.target
+    let net = b.produced - b.consumed + b.fromBus + b.deficit - b.target - b.altar
     if (Math.abs(net) <= RELATIVE_NOISE * Math.max(1, b.produced, b.consumed)) net = 0
     b.surplus = Math.max(0, net)
   }

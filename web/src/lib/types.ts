@@ -49,13 +49,6 @@ export interface BranchChoice {
   producer: ProducerChoice
   /** Machine to run it on, when it can run on several (else the plan-wide pick). */
   machine?: string
-  /**
-   * Whether the rows take other rows' by-products of the item first: false makes all of it with
-   * `producer`, keeping to itself; true was picked, so it also takes by-products from rows that make
-   * their own (with `producer` '' when only this was picked). Absent = as above (else the plan's
-   * `noReuse`, else reuse, but not from rows that make their own).
-   */
-  reuse?: boolean
 }
 
 export interface Plan {
@@ -104,8 +97,11 @@ export interface Plan {
   rowHeights?: Record<string, number>
   /** Items the production tree builds separately, gathering their uses instead of a copy per branch. */
   separate?: Separation[]
-  /** Items whose rows make all of it themselves, taking no other rows' by-products (unless a branch says so). */
-  noReuse?: string[]
+  /**
+   * Outputs a row's machines send to Knowledge Altars as they come out, per tree row id: no other
+   * row takes them, and no recovery refines them back up, so rows using the item make their own.
+   */
+  altarOutputs?: Record<string, string[]>
   /** Tree row ids that run on a whole number of machines, rounded up; the extra output overflows. */
   roundUp?: string[]
   /**

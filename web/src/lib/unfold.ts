@@ -53,13 +53,11 @@ export interface PlanNode {
   defaultStack: number
   /** A crucible row refines the by-products below it unless it sets its own (a saved default's, else not). */
   defaultMixed: boolean
-  /** The row takes other rows' by-products of its item first (else it makes all of it). */
-  reuse: boolean
   /**
-   * Reuse was picked for the row (or a row of its item above it): it also takes by-products from
-   * rows that make their own, which share them with no one else.
+   * The row takes what other rows' machines output of its item, before making or importing it: every
+   * row but an overflow or supply target's rows of the item it takes, which have only that.
    */
-  reuseChosen: boolean
+  takesLeftovers: boolean
   /** Row that supplies a `loop` or `separate` row. */
   ref?: PlanNode
   /** For a `separate` row: the item whose row gathers it (none: the top of the plan). */
@@ -130,23 +128,6 @@ const picked = (c: ResolvedChoice) => ({
 export const parentId = (id: string) => {
   const k = id.lastIndexOf('/')
   return k < 0 ? null : id.slice(0, k)
-}
-
-/**
- * Whether a row of `item` takes other rows' by-products of it first: the nearest branch pick of the
- * item that says (on the row or above it), else the plan-wide setting. Reusing is the default.
- */
-export function reusesByproducts(plan: Plan, item: string, id: string): boolean {
-  return reuseChosen(plan, item, id) ?? !plan.noReuse?.includes(item)
-}
-
-/** The reuse setting of the nearest branch pick of `item` that has one, on the row or above it. */
-export function reuseChosen(plan: Plan, item: string, id: string): boolean | undefined {
-  for (let at: string | null = id; at !== null; at = parentId(at)) {
-    const pick = plan.branches?.[at]
-    if (pick?.reuse !== undefined && rowItem(at) === item) return pick.reuse
-  }
-  return undefined
 }
 
 /** Whether a row id is a target's own row (`0/Sol`), not an ingredient or a separate build. */
@@ -358,9 +339,9 @@ interface Frame {
  * already run further up its branch loops back to that row instead; an item built separately gets
  * a row gathering its uses (at the top of the plan, or after the children of its anchor rows) and
  * a `separate` row pointing there wherever it's used. Outputs nothing uses are recovered where
- * they can be (see `recover`), unless `recovering` is off.
+ * they can be (see `recover`).
  */
-export function unfold(plan: Plan, catalog: ProcessCatalog, recovering = true): PlanShape {
+export function unfold(plan: Plan, catalog: ProcessCatalog): PlanShape {
   const seps = separationsOf(plan.separate)
   const top = new Map(seps.filter((s) => !s.anchor).map((s) => [s.item, s]))
   // Single-row anchors first, so they win over every-row ones for the same item.
@@ -386,8 +367,7 @@ export function unfold(plan: Plan, catalog: ProcessCatalog, recovering = true): 
       ownChoice: false,
       mine: false,
       ...NO_SETUP,
-      reuse: reusesByproducts(plan, item, id),
-      reuseChosen: reuseChosen(plan, item, id) === true,
+      takesLeftovers: true,
       children: [],
       ...fields,
     }
@@ -430,8 +410,8 @@ export function unfold(plan: Plan, catalog: ProcessCatalog, recovering = true): 
   const child = (item: string, parent: PlanNode): PlanNode => {
     const id = `${parent.id}/${item}`
     const depth = parent.depth + 1
-    if (item === linked) return create(item, id, depth, parent, { kind: 'overflow', reuse: false, reuseChosen: false })
-    if (item === linkedBus) return create(item, id, depth, parent, { kind: 'bus', reuse: false, reuseChosen: false })
+    if (item === linked) return create(item, id, depth, parent, { kind: 'overflow', takesLeftovers: false })
+    if (item === linkedBus) return create(item, id, depth, parent, { kind: 'bus', takesLeftovers: false })
     const choice = resolveChoice(plan, catalog, item, id)
     if (!choice.process) return leaf(item, id, depth, parent, choice)
     for (let a: PlanNode | undefined = parent; a; a = a.parent)
@@ -524,7 +504,7 @@ export function unfold(plan: Plan, catalog: ProcessCatalog, recovering = true): 
     expand(pending[i])
     roots.push(pending[i])
   }
-  if (recovering) recover(nodes, catalog, plan, new Set([...consumes.keys(), ...supplied.keys()]), child, create)
+  recover(nodes, catalog, plan, new Set([...consumes.keys(), ...supplied.keys()]), child, create)
   return { roots, targetRows, nodes }
 }
 
@@ -658,7 +638,7 @@ function recover(
     for (const s of process.inputs)
       rr.children.push(
         s.item === step.input
-          ? create(s.item, `${id}/${s.item}`, rr.depth + 1, rr, { kind: 'reclaim', reuse: true, reuseChosen: true })
+          ? create(s.item, `${id}/${s.item}`, rr.depth + 1, rr, { kind: 'reclaim' })
           : child(s.item, rr),
       )
     return rr

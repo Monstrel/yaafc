@@ -3,7 +3,7 @@ import { DEFAULT_BANK_STACK, defaultMachine, defaultProducer, type ProcessCatalo
 import { separationKey, separationsOf } from './separate'
 import type { TreeNode } from './tree'
 import { blankTarget, type MyDefault, type MyDefaults, type Plan } from './types'
-import { parentId, planProducer, resolveChoice, reusesByproducts, rowItem, unfold } from './unfold'
+import { parentId, planProducer, resolveChoice, rowItem, unfold } from './unfold'
 
 export interface ProducerPick {
   item: string
@@ -19,33 +19,9 @@ export interface ProducerPick {
 const without = <T>(rows: Record<string, T> | undefined, drop: (id: string) => boolean) =>
   rows && Object.fromEntries(Object.entries(rows).filter(([id]) => !drop(id)))
 
-/**
- * Rows' picks with their producer and machine dropped where `drop` says, keeping any reuse setting:
- * taking by-products first is chosen apart from the producer that makes the rest.
- */
+/** Rows' picks dropped where `drop` says. */
 function withoutProducer(branches: Plan['branches'], drop: (id: string) => boolean): Plan['branches'] {
-  return (
-    branches &&
-    Object.fromEntries(
-      Object.entries(branches).flatMap(([id, pick]) =>
-        !drop(id) ? [[id, pick]] : pick.reuse === undefined ? [] : [[id, { producer: '', reuse: pick.reuse }]],
-      ),
-    )
-  )
-}
-
-/** Rows' picks with their reuse setting dropped where `drop` says, keeping the producer. */
-function withoutReuse(branches: Plan['branches'], drop: (id: string) => boolean): Plan['branches'] {
-  return (
-    branches &&
-    Object.fromEntries(
-      Object.entries(branches).flatMap(([id, pick]) => {
-        if (!drop(id)) return [[id, pick]]
-        const { reuse: _, ...rest } = pick
-        return rest.producer ? [[id, rest]] : []
-      }),
-    )
-  )
+  return branches && Object.fromEntries(Object.entries(branches).filter(([id]) => !drop(id)))
 }
 
 /**
@@ -94,7 +70,7 @@ export function ownPicks(plan: Plan, catalog: ProcessCatalog, item: string): str
     .map(([id]) => id)
 }
 
-/** Drops every row's own pick of `item`'s producer, so they all follow the plan's (reuse settings stay). */
+/** Drops every row's own pick of `item`'s producer, so they all follow the plan's. */
 export const followDefault = (plan: Plan, item: string): Plan => ({
   ...plan,
   branches: withoutProducer(plan.branches, (id) => rowItem(id) === item),
@@ -105,28 +81,6 @@ function withItem(list: string[] | undefined, item: string, on: boolean): string
   const rest = (list ?? []).filter((k) => k !== item)
   const next = on ? [...rest, item] : rest
   return next.length ? next : undefined
-}
-
-/**
- * Whether rows of `item` take other rows' by-products of it first, their producer making the rest
- * (off: it makes all of it, keeping to itself). Everywhere, it's the plan-wide setting and clears
- * the item's branch settings; on a row it covers the row's branch, and on, it also takes them from
- * rows that make their own. Producers stay as they were.
- */
-export function chooseReuse(plan: Plan, item: string, on: boolean, row?: string): Plan {
-  if (!row)
-    return {
-      ...plan,
-      noReuse: withItem(plan.noReuse, item, !on),
-      branches: withoutReuse(plan.branches, (id) => rowItem(id) === item),
-    }
-  const next = {
-    ...plan,
-    branches: withoutReuse(plan.branches, (id) => (id === row || id.startsWith(`${row}/`)) && rowItem(id) === item),
-  }
-  // Off where it's off anyway: nothing to store.
-  if (!on && !reusesByproducts(next, item, row)) return next
-  return { ...next, branches: { ...next.branches, [row]: { producer: '', ...next.branches?.[row], reuse: on } } }
 }
 
 const sameSet = (a: string[], b: string[]) => a.length === b.length && a.every((k) => b.includes(k))
@@ -198,6 +152,17 @@ export const setItemFeedback = (plan: Plan, item: string, on: boolean): Plan => 
   ...plan,
   feedbackItems: withItem(plan.feedbackItems, item, on),
 })
+
+/**
+ * Whether a row's machines send one of their other outputs to Knowledge Altars as it comes out:
+ * nothing else takes it then, so rows using the item make their own.
+ */
+export function setOutputAltar(plan: Plan, row: string, item: string, on: boolean): Plan {
+  const { [row]: items, ...rest } = plan.altarOutputs ?? {}
+  const next = withItem(items, item, on)
+  const altarOutputs = next ? { ...rest, [row]: next } : rest
+  return { ...plan, altarOutputs: Object.keys(altarOutputs).length ? altarOutputs : undefined }
+}
 
 /** Whether the plan breaks down what's left of an item's overflow at Knowledge Altars. */
 export const setAltar = (plan: Plan, item: string, on: boolean): Plan => ({
@@ -568,7 +533,7 @@ const sameSetup = (catalog: ProcessCatalog, a: MyDefault, b: MyDefault) =>
   (a.stack ?? DEFAULT_BANK_STACK) === (b.stack ?? DEFAULT_BANK_STACK) &&
   !!a.mixed === !!b.mixed
 
-/** Drops a row's own producer pick, so it follows the rows above it (or the plan) again; reuse stays as set. */
+/** Drops a row's own producer pick, so it follows the rows above it (or the plan) again. */
 export function clearBranchChoice(plan: Plan, row: string): Plan {
   return { ...plan, branches: withoutProducer(plan.branches, (id) => id === row) }
 }
@@ -606,8 +571,6 @@ export function pruneChoices(plan: Plan, catalog: ProcessCatalog): Plan | null {
   const b = keep(plan.branches, (id) => rows.has(id))
   const separate = plan.separate && separationsOf(plan.separate).filter((s) => gathering.has(separationKey(s)))
   const s = separate?.length !== plan.separate?.length
-  const noReuse = plan.noReuse?.filter((item) => items.has(item))
-  const r = noReuse?.length !== plan.noReuse?.length
   // Fed-back items stay while the plan still makes them (as a row's item or a side output).
   const made = new Set([...items, ...nodes.flatMap((n) => n.process?.outputs.map((o) => o.item) ?? [])])
   const feedbackItems = plan.feedbackItems?.filter((item) => made.has(item))
@@ -623,6 +586,18 @@ export function pruneChoices(plan: Plan, catalog: ProcessCatalog): Plan | null {
   const mixable = new Set(nodes.flatMap((n) => (n.mixable?.length ? [n.id] : [])))
   const x = keep(plan.mixedFeed, (id) => mixable.has(id))
   const units = keep(plan.units, (id) => running.has(id))
+  // Outputs sent to Knowledge Altars stay with a row while its machines still make them.
+  const outputs = new Map(nodes.flatMap((n): [string, string[]][] => (n.kind === 'make' ? [[n.id, n.process!.outputs.map((o) => o.item)]] : [])))
+  let r = false
+  const altarOutputs =
+    plan.altarOutputs &&
+    Object.fromEntries(
+      Object.entries(plan.altarOutputs).flatMap(([id, items]) => {
+        const kept = items.filter((item) => outputs.get(id)?.includes(item))
+        if (kept.length !== items.length) r = true
+        return kept.length ? [[id, kept]] : []
+      }),
+    )
   // Only machines get built: marks stay with rows that run some.
   const built = plan.built?.filter((id) => running.has(id))
   const d = built?.length !== plan.built?.length
@@ -640,7 +615,7 @@ export function pruneChoices(plan: Plan, catalog: ProcessCatalog): Plan | null {
     rowStacks: k.record && Object.keys(k.record).length ? k.record : undefined,
     branches: b.record,
     separate,
-    noReuse: noReuse?.length ? noReuse : undefined,
+    altarOutputs: altarOutputs && Object.keys(altarOutputs).length ? altarOutputs : undefined,
     feedbackItems: feedbackItems?.length ? feedbackItems : undefined,
     altarItems: altarItems?.length ? altarItems : undefined,
     roundUp: roundUp?.length ? roundUp : undefined,

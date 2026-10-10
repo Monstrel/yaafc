@@ -13,7 +13,7 @@ import { FoldedPick, SourcePick } from './FuelPick'
 import { releaseScrollAnchor } from '../lib/flip'
 import { ItemLabel } from './ItemIcon'
 import { ProducerSelect } from './ProducerSelect'
-import { reuseOption } from './rowPicks'
+import { reuseInfo } from './rowPicks'
 
 interface Props {
   networks: HeatNetwork[]
@@ -23,8 +23,6 @@ interface Props {
   mods: Modifiers
   onProducer: (pick: ProducerPick) => void
   onResetProducer: (row: string) => void
-  onReuse: (item: string, on: boolean, row?: string) => void
-  separateByproducts: Map<string, string[]>
   /** Rows per item using a producer of their own. */
   rowsOf: Map<string, number>
   /** Shows a row in the production tree. */
@@ -194,8 +192,6 @@ function Use({
   catalog,
   onProducer,
   onResetProducer,
-  onReuse,
-  separateByproducts,
   rowsOf,
 }: Omit<Props, 'networks' | 'ledger' | 'mods' | 'onNetworkFuel' | 'onNetworkSource'> & { flip: string; use: HeatUse }) {
   const { row, heatRow, fuelRow, trail } = use
@@ -219,7 +215,7 @@ function Use({
         <FoldedPick row={heatRow} host={row.item} rows={rowsOf.get(HEAT) ?? 1} carrier={false} {...pickProps} />
         {(fuelRow.kind === 'bus' || fuelRow.kind === 'produce') && (
           <div>
-            <SourcePick node={fuelRow} reuse={reuseOption(fuelRow, separateByproducts, onReuse)} {...pickProps} />
+            <SourcePick node={fuelRow} reuse={reuseInfo(fuelRow)} {...pickProps} />
           </div>
         )}
       </td>

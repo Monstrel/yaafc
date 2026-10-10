@@ -65,10 +65,9 @@ function target(v: unknown): PlanTarget | undefined {
 function branch(v: unknown): BranchChoice | undefined {
   if (!isObj(v)) return undefined
   const producer = str(v.producer)
-  if (producer === undefined) return undefined
-  return defined({
-    producer,
-    machine: str(v.machine), reuse: bool(v.reuse) })
+  // Plans saved with "reuse by-products first" picked alone ('' producer): that switch is gone.
+  if (!producer) return undefined
+  return defined({ producer, machine: str(v.machine) })
 }
 
 function separation(v: unknown): Separation | undefined {
@@ -117,7 +116,7 @@ function plan(v: unknown, newId: () => string): Plan | undefined {
     rowHeights: record(v.rowHeights, num),
     rowStacks: record(v.rowStacks, num),
     separate: list(v.separate, separation),
-    noReuse: strings(v.noReuse),
+    altarOutputs: record(v.altarOutputs, strings),
     roundUp: strings(v.roundUp),
     mixedFeed: record(v.mixedFeed, bool),
     units: record(v.units, unitizing),

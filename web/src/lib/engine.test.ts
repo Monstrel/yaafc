@@ -41,7 +41,7 @@ import { heatNetworks } from './heatNetworks'
 import { setNetworkFuel, setNetworkSource } from './heatChoices'
 import {
   chooseProducer,
-  chooseReuse,
+  setOutputAltar,
   clearBranchChoice,
   addProvider,
   addOverflowTarget,
@@ -92,7 +92,7 @@ function plan(partial: Partial<Plan>): Plan {
 function expectBalanced(result: PlanResult) {
   expect(result.status).toBe('ok')
   for (const b of result.balances) {
-    const net = b.produced - b.consumed + b.fromBus + b.deficit - b.surplus
+    const net = b.produced - b.consumed + b.fromBus + b.deficit - b.surplus - b.altar
     const scale = Math.max(1, b.produced, b.consumed)
     expect(Math.abs(net - b.target) / scale).toBeLessThan(1e-6)
   }
@@ -302,17 +302,20 @@ describe('production tree', () => {
   })
 
   it('says at the source where by-products go and what overflows', () => {
-    // Nectar only comes with Gentian: the Gentian row runs for the Nectar, so its own Gentian overflows.
+    // Nectar only comes with Gentian. Each row runs for the row it feeds: the Gentian row's Nectar
+    // goes to the Nectar row, whose own nurseries make the rest and overflow their Gentian.
     const [gentian, nectar] = solvePlan(
       plan({ targets: [{ item: 'Gentian', rate: 1 }, { item: 'GentianNectar', rate: 100 }] }),
       catalog,
       mods,
     ).tree
     const side = gentian.byproducts.find((b) => b.item === 'GentianNectar')!
-    expect(side.to).toEqual([{ id: nectar.id, amount: expect.closeTo(100) }])
+    expect(side.to).toEqual([{ id: nectar.id, amount: expect.closeTo(side.count) }])
     expect(side.overflow).toBe(0)
     expect(gentian.rate).toBeCloseTo(1)
-    expect(gentian.overflow).toBeCloseTo(side.count - 1)
+    expect(gentian.overflow).toBe(0)
+    expect(nectar.fromByproduct).toBeCloseTo(side.count)
+    expect(nectar.byproducts.find((b) => b.item === 'Gentian')!.overflow).toBeCloseTo(100 - side.count)
 
     // Steel's failed Iron Ingots all go back into its own Iron Ingot supply: nothing overflows.
     const [steel] = solvePlan(plan({ targets: [{ item: 'SteelIngot', rate: 10 }] }), catalog, mods).tree
@@ -322,57 +325,47 @@ describe('production tree', () => {
     expect(steel.overflow).toBe(0)
   })
 
-  it('lets a row make its own instead of reusing a by-product, and go back', () => {
+  it('sends an output to Knowledge Altars at its source, so rows using it make their own, and back', () => {
     const base = plan({ targets: [{ item: 'CopperIngot', rate: 37.5 }, { item: 'BronzeIngot', rate: 50 }] })
-    const impureRow = (p: Plan) => solvePlan(p, catalog, mods).tree[1].children.find((c) => c.item === 'CopperPowder')!
-    // By default the Bronze's Impure Copper Powder comes from the Copper Ingot chain's Athanors.
-    const reused = impureRow(base)
-    expect(reused.reuse).toBe(true)
-    expect(reused.fromByproduct).toBeGreaterThan(0)
-    expect(defaultProducer(catalog, 'CopperPowder')).toBe('bus') // never run just for a failed craft
+    const solve = (p: Plan) => {
+      const r = solvePlan(p, catalog, mods)
+      expectBalanced(r)
+      return r
+    }
+    const impureRow = (r: PlanResult) => r.tree[1].children.find((c) => c.item === 'CopperPowder')!
+    const copperRow = (r: PlanResult) => r.tree[0].children.find((c) => c.item === 'CopperPowder2')!
+    // Impure Copper Powder only comes from Athanors failing at Copper Powder: the Bronze's row runs
+    // them for it, and the Copper Ingots take the Copper Powder they make.
+    expect(defaultProducer(catalog, 'CopperPowder')).toBe('recipe:CopperPowder2')
+    const before = solve(base)
+    const impure = impureRow(before)
+    expect(impure).toMatchObject({ kind: 'produce', producer: 'recipe:CopperPowder2', rate: expect.closeTo(50) })
+    expect(copperRow(before).fromByproduct).toBeCloseTo(37.5)
+    expect(copperRow(before).byproductSources.map((s) => s.id)).toEqual([impure.id])
 
-    // Made separately: its own Athanors run Copper Powder for their failed crafts, nothing reused.
-    const own = chooseProducer(chooseReuse(base, 'CopperPowder', false, reused.id), catalog, {
-      item: 'CopperPowder',
-      producer: 'recipe:CopperPowder2',
-      row: reused.id,
-    })
-    const made = impureRow(own)
-    expect(made.reuse).toBe(false)
-    expect(made.fromByproduct).toBe(0)
-    expect(made.kind).toBe('produce')
-    expect(made.producer).toBe('recipe:CopperPowder2')
-    expect(made.rate).toBeCloseTo(50)
-    // It keeps to itself: its Athanors' Copper Powder isn't taken by the Copper Ingot chain, which
-    // runs its own Athanors (now overflowing their Impure Copper Powder) unless reuse is picked there.
-    const copperRow = (p: Plan) => solvePlan(p, catalog, mods).tree[0].children.find((c) => c.item === 'CopperPowder2')!
-    const pure = made.byproducts.find((b) => b.item === 'CopperPowder2')!
-    expect(pure.to).toEqual([])
-    expect(pure.overflow).toBeCloseTo(50)
-    const copper = copperRow(own)
-    expect(copper.kind).toBe('produce')
-    expect(copper.fromByproduct).toBe(0)
-    // Their Impure Copper Powder has no row of its own to go to now: it's recovered into Copper Powder.
-    const impure = copper.byproducts.find((b) => b.item === 'CopperPowder')!
-    expect(impure.overflow).toBe(0)
-    expect(impure.to.length).toBeGreaterThan(0)
+    // Sent to the altars: the Copper Ingots' own Athanors run, refining their failed crafts back up.
+    const sent = setOutputAltar(base, impure.id, 'CopperPowder2', true)
+    expect(sent.altarOutputs).toEqual({ [impure.id]: ['CopperPowder2'] })
+    const after = solve(sent)
+    const made = copperRow(after)
+    expect(made).toMatchObject({ kind: 'produce', fromByproduct: 0, rate: expect.closeTo(37.5) })
+    expect(made.byproducts.find((b) => b.item === 'CopperPowder')!.overflow).toBe(0)
+    const pure = impureRow(after).byproducts.find((b) => b.item === 'CopperPowder2')!
+    expect(pure).toMatchObject({ to: [], overflow: 0, toAltar: true, altar: expect.closeTo(50) })
+    // Broken down, not overflow: nothing feeds back or overflows of it.
+    const copper = after.balances.find((b) => b.item === 'CopperPowder2')!
+    expect(copper.altar).toBeCloseTo(50)
+    expect(copper.surplus).toBe(0)
+    const money = moneyLedger(sent, after, ledgers(sent, after))
+    const out = money.outputs.find((o) => o.item === 'CopperPowder2')!
+    expect(out).toMatchObject({ altar: expect.closeTo(50), toBus: 0 })
+    expect(out.sources[0]).toMatchObject({ target: null, atSource: expect.closeTo(50) })
+    expect(fedOverflow(money).get('CopperPowder2')).toMatchObject({ share: expect.closeTo(1), altar: true })
 
-    // Picking reuse on the Copper Ingot side takes them after all.
-    const linked = chooseReuse(own, 'CopperPowder2', true, copper.id)
-    expect(copperRow(linked).reuseChosen).toBe(true)
-    expect(copperRow(linked).fromByproduct).toBeCloseTo(37.5)
-
-    // Reuse again on the Bronze side: the by-products are taken again, its Athanors making the rest.
-    const back = chooseReuse(own, 'CopperPowder', true, reused.id)
-    expect(back.branches).toEqual({ [reused.id]: { producer: 'recipe:CopperPowder2', reuse: true } })
-    // Its rest would run the same Athanors the Copper Ingot chain does: those make all of it.
-    expect(impureRow(back).kind).toBe('byproduct')
-    expect(impureRow(back).fromByproduct).toBeCloseTo(50)
-    // Everywhere: every row of the item makes its own, and back.
-    const all = chooseReuse(base, 'CopperPowder', false)
-    expect(all.noReuse).toEqual(['CopperPowder'])
-    expect(impureRow(all).reuse).toBe(false)
-    expect(chooseReuse(all, 'CopperPowder', true).noReuse).toBeUndefined()
+    // And back: the setting goes, and the Copper Ingots take it again.
+    const back = setOutputAltar(sent, impure.id, 'CopperPowder2', false)
+    expect(back.altarOutputs).toBeUndefined()
+    expect(copperRow(solve(back)).fromByproduct).toBeCloseTo(37.5)
   })
 
   it('picks what makes the rest apart from taking by-products first', () => {
@@ -390,33 +383,25 @@ describe('production tree', () => {
 
     const enhanced = chooseProducer(base, catalog, { item: 'Sand', producer: 'recipe:Sand', machine: 'EnhancedGrinder', row })
     const rest = sand(enhanced)
-    expect(rest.reuse).toBe(true)
     expect(rest.fromByproduct).toBeCloseTo(reused)
     expect(rest.run!.process.machine!.key).toBe('EnhancedGrinder')
     expect(rest.run!.outputs[0].count).toBeCloseTo(rest.rate - reused)
 
-    // Off and on again: all of it on Enhanced Grinders, then back to the rest.
-    const off = chooseReuse(enhanced, 'Sand', false, row)
+    // The crushers' Sand sent to Knowledge Altars instead: all of it on Enhanced Grinders.
+    const [crushers] = rest.byproductSources
+    const off = setOutputAltar(enhanced, crushers.id, 'Sand', true)
     expect(sand(off).fromByproduct).toBe(0)
     expect(sand(off).run!.process.machine!.key).toBe('EnhancedGrinder')
     expect(sand(off).run!.outputs[0].count).toBeCloseTo(rest.rate)
-    const on = chooseReuse(off, 'Sand', true, row)
-    expect(sand(on).fromByproduct).toBeCloseTo(reused)
-    expect(sand(on).run!.process.machine!.key).toBe('EnhancedGrinder')
-
-    // Clearing the producer pick, or picking one for every row, leaves taking by-products as set.
-    expect(clearBranchChoice(off, row).branches).toEqual({ [row]: { producer: '', reuse: false } })
-    const everywhere = chooseProducer(off, catalog, { item: 'Sand', producer: 'recipe:Sand', machine: 'Grinder', everywhere: true })
-    expect(sand(everywhere).reuse).toBe(false)
-    expect(sand(everywhere).run!.process.machine!.key).toBe('Grinder')
-    // Off where it's off anyway stores nothing.
-    expect(chooseReuse(chooseReuse(base, 'Sand', false), 'Sand', false, row).branches ?? {}).toEqual({})
+    // Clearing the producer pick leaves where the Sand goes as set.
+    expect(clearBranchChoice(off, row).branches).toEqual({})
+    expect(clearBranchChoice(off, row).altarOutputs).toEqual(off.altarOutputs)
   })
 
-  it('reuses only the by-products there are, never running their source harder for more', () => {
-    // Mars: the Copper Bearings' Athanors fail into less Impure Copper Powder than the Bronze Rivets
-    // need. A costly cauldron recipe makes the rest; growing the Athanors would be cheaper, but would
-    // overflow Copper Powder.
+  it('never runs a source harder for more of its by-products', () => {
+    // Mars: the Copper Bearings' Athanors fail into Impure Copper Powder, which they refine back up
+    // into their own Copper Powder first. The Bronze Rivets' costly cauldron recipe makes theirs;
+    // growing the Athanors would be cheaper, but would overflow Copper Powder.
     const saved: SavedRecipe = { id: 'imp', mode: 'normal', inputs: ['Charcoal', 'Jupiter', 'VitalityPotion'], output: 'CopperPowder', createdAt: 0 }
     const c = buildCatalog({ saved: [saved], machines: {}, mods, fertilizer: null })
     const r = solvePlan(plan({ targets: [{ item: 'Mars', rate: 1 }], producers: { CopperPowder: 'cauldron:imp' } }), c, mods)
@@ -427,9 +412,10 @@ describe('production tree', () => {
     expect(powder.overflow).toBe(0)
     expect(failed.overflow).toBe(0)
     const impure = rows.get('0/Mars/BronzeRivet/BronzeIngot/CopperPowder')!
+    expect(failed.to.every((t) => t.id.startsWith(powder.id))).toBe(true)
     expect(impure.kind).toBe('produce')
-    expect(impure.fromByproduct).toBeCloseTo(failed.count)
-    expect(impure.run!.outputs[0].count).toBeCloseTo(impure.rate - failed.count)
+    expect(impure.fromByproduct).toBe(0)
+    expect(impure.run!.outputs[0].count).toBeCloseTo(impure.rate)
   })
 
   it('feeds a by-product to the row that uses it nearest its source', () => {
@@ -742,7 +728,8 @@ describe('producers per branch', () => {
     const p = chooseProducer(branch, catalog, { item: 'FairyDust', producer: 'bus', row: second.id, everywhere: true })
     expect(p.producers.FairyDust).toBe('bus')
     expect(p.branches).toEqual({})
-    expect(rows(solved(p), 'FairyDust').every((n) => n.kind === 'bus')).toBe(true)
+    // Every row takes it from plan inputs, after what's recovered into it from other rows' leftovers.
+    expect(rows(solved(p), 'FairyDust').every((n) => n.recovery || n.kind === 'bus')).toBe(true)
   })
 
   it("doesn't store a pick the row inherits anyway, and can clear one", () => {
@@ -1788,35 +1775,37 @@ describe('net-surplus targets', () => {
     expect(result.targets[0].made).toBeCloseTo(10 + fuel.need)
   })
 
-  it('takes fed-back overflow first, though it grows with the target', () => {
-    // Without reuse, the Charcoal the Coke Athanors make on the side overflows: more Charcoal net,
-    // more of it. The solve settles on a build where the overflow and the target cover the burning.
-    const p = plan({
-      targets: [{ item: 'Charcoal', rate: 10, unit: 'net' }, steel],
+  // A Charcoal row rounded up to whole machines overflows: rows only take other rows' side outputs,
+  // so that's overflow the plan can feed back into what it burns.
+  const rounded = (targets: Plan['targets']) =>
+    plan({
+      targets: [{ item: 'Charcoal', rate: 1 }, ...targets, steel],
       producers: { [HEAT]: 'fuel:Charcoal' },
-      noReuse: ['Charcoal'],
+      roundUp: ['0/Charcoal'],
+      feedbackItems: ['Charcoal'],
     })
-    const { fuel } = solved({ ...p, feedbackItems: ['Charcoal'] }, 'Charcoal')
-    const [overflow, net] = fuel.sources
-    expect(overflow).toMatchObject({ item: 'Charcoal', target: null })
+
+  it('takes fed-back overflow first, then a net target', () => {
+    const { fuel } = solved(rounded([{ item: 'Charcoal', rate: 10, unit: 'net' }]), 'Charcoal')
+    const overflow = fuel.sources.find((s) => s.target === null)!
+    const net = fuel.sources.find((s) => s.target === 1)!
+    expect(overflow.amount).toBeGreaterThan(0)
     expect(overflow.used).toBeCloseTo(overflow.amount)
-    expect(overflow.used + net.used).toBeCloseTo(fuel.need)
+    expect(fuel.sources.reduce((t, s) => t + s.used, 0)).toBeCloseTo(fuel.need)
     expect(net.amount - net.used).toBeCloseTo(10)
   })
 
   it("doesn't count fed-back overflow as overflow", () => {
-    const p = plan({ targets: [steel], producers: { [HEAT]: 'fuel:Charcoal' }, noReuse: ['Charcoal'], feedbackItems: ['Charcoal'] })
+    const p = rounded([])
     const { fuel } = solved(p, 'Charcoal')
-    const [overflow] = fuel.sources
-    expect(overflow.item).toBe('Charcoal')
-    // Steel's Coke Athanors make Charcoal on the side; the share burned stops being overflow.
+    const overflow = fuel.sources.find((s) => s.target === null)!
+    expect(overflow.amount).toBeGreaterThan(0)
+    // The share burned stops being overflow.
     const moneyOf = (q: Plan) => {
       const r = solvePlan(q, catalog, mods)
       return moneyLedger(q, r, ledgers(q, r))
     }
     expect(fedOverflow(moneyOf(p)).get('Charcoal')).toEqual({ share: expect.closeTo(overflow.used / overflow.amount), into: ['plan'] })
-    expect(fuel.made).toBeCloseTo(overflow.amount)
-    expect(fuel.covered).toBeCloseTo(Math.min(fuel.need, fuel.made))
     expect(fedOverflow(moneyOf({ ...p, feedbackItems: [] })).size).toBe(0)
   })
 
@@ -2138,9 +2127,9 @@ describe('overflow targets', () => {
   })
 
   it("doesn't gather other uses of its item when that's built separately", () => {
-    // Mars's Bronze Rivets built separately: they gather in a row of their own, which reuses the
-    // Copper Bearings' failed crafts and buys the rest, rather than in the overflow target's row
-    // (which only takes overflow, so it would fall short).
+    // Mars's Bronze Rivets built separately: they gather in a row of their own, which makes its
+    // Impure Copper Powder, rather than in the overflow target's row (which only takes overflow, so
+    // it would fall short).
     const mars = plan({ targets: [{ item: 'Mars', rate: 1 }], separate: [{ item: 'BronzeRivet' }] })
     const r = solvePlan(addOverflowTarget(mars, 'BronzeRivet', 'CopperPowder'), catalog, mods)
     expectBalanced(r)
@@ -2150,8 +2139,9 @@ describe('overflow targets', () => {
     expect(gathered.consolidated).toBe(true)
     expect(byId.get('1/BronzeRivet')!.consolidated).toBeFalsy()
     expect(rows(r).every((n) => n.shortfall === 0)).toBe(true)
-    // The rivets' Impure Copper Powder takes every failed craft, so none overflows for the target.
-    expect(gathered.children[0].children[0].fromByproduct).toBeGreaterThan(0)
+    // The Copper Bearings' Athanors refine their failed crafts back up themselves, so none is left
+    // for the rivets' Impure Copper Powder, and none overflows for the target.
+    expect(gathered.children[0].children[0].fromByproduct).toBe(0)
     expect(r.targets[1]).toMatchObject({ rate: 0, overflow: { uses: true, taken: 0 } })
   })
 
@@ -2179,7 +2169,7 @@ describe('overflow targets', () => {
     const gold = plan({
       targets: [{ item: 'GoldDust3', rate: 10 }, { item: 'GoldDust2', rate: 1 }],
       producers: { GoldDust3: 'recipe:GoldDust3' },
-      branches: { '1/GoldDust2/GoldDust': { producer: BUS, reuse: true } },
+      branches: { '1/GoldDust2/GoldDust': { producer: BUS } },
     })
     const crude = surplus(solvePlan(gold, catalog, mods), 'GoldDust')
     expect(crude).toBeGreaterThan(0)

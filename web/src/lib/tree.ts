@@ -36,10 +36,6 @@ export interface TreeNode {
   defaultStack: number
   /** A crucible row refines the by-products below it unless it sets its own. */
   defaultMixed: boolean
-  /** The row takes other rows' by-products of its item first (else it makes all of it). */
-  reuse: boolean
-  /** Reuse was picked: the row also takes by-products from rows that make their own. */
-  reuseChosen: boolean
   /** Machines working for this row (fractional). */
   machines: number
   /** Heat this row's machines use, P/s. */
@@ -112,6 +108,10 @@ export interface ByproductRoute {
   to: { id: string; amount: number; direct?: boolean }[]
   /** Part nothing uses, per minute. */
   overflow: number
+  /** The row sends it to Knowledge Altars as it comes out (see `Plan.altarOutputs`): nothing else takes it. */
+  toAltar?: boolean
+  /** Part it sends there, per minute. */
+  altar: number
 }
 
 /** A by-product of a row's machines, per minute, and where it goes. */
@@ -167,8 +167,6 @@ export function buildTree(roots: PlanNode[], flows: Map<PlanNode, RowFlows>, mod
       defaultHeight: n.defaultHeight,
       defaultStack: n.defaultStack,
       defaultMixed: n.defaultMixed,
-      reuse: n.reuse,
-      reuseChosen: n.reuseChosen,
       ...(n.mixable?.length && { mixable: n.mixable, mixed: !!n.mix }),
       machines: 0,
       heat: 0,
@@ -231,7 +229,7 @@ export function buildTree(roots: PlanNode[], flows: Map<PlanNode, RowFlows>, mod
       nutrients: perSecond(NUTRIENTS),
       byproducts: run.outputs
         .filter((s) => s.item !== n.item && s.count > 0 && !isPseudo(s.item))
-        .map((s) => ({ ...s, ...(f.byproductRoutes[s.item] ?? { to: [], overflow: s.count }) })),
+        .map((s) => ({ ...s, ...(f.byproductRoutes[s.item] ?? { to: [], overflow: s.count, altar: 0 }) })),
       children: n.children.filter((c) => !c.recovers || used(c)).map(toNode),
       ...(mixParts && { mixParts }),
       ...gathered,

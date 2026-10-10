@@ -1,7 +1,7 @@
 import { type CSSProperties, type ReactNode, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { CATALYSTS, HEAT, MONEY, NUTRIENTS, coinValue, heightMultiplier, isCauldronTarget, itemName, itemsByKey } from '../lib/gameData'
 import { fmt, fmtMachines, wholeMachines } from '../lib/format'
-import { buildingNameFor, machineNameFor, noun } from '../lib/plural'
+import { buildingNameFor, noun } from '../lib/plural'
 import { sanitizeStrings } from '../lib/sanitize'
 import { followScrollAnchor, releaseScrollAnchor } from '../lib/flip'
 import { placePopover } from '../lib/popover'
@@ -28,7 +28,7 @@ import { FlowChartView } from './FlowChartView'
 import { HeatView } from './HeatView'
 import { ProducerSelect } from './ProducerSelect'
 import { RowSearch } from './RowSearch'
-import { choosable, reuseOption } from './rowPicks'
+import { choosable, reuseInfo } from './rowPicks'
 
 interface Props {
   /** Fold state is remembered per plan. */
@@ -40,8 +40,6 @@ interface Props {
   onResetProducer: (row: string) => void
   /** Looks for a new cauldron recipe for a row's item on the Cauldron page. */
   onFindCauldron: (row: TreeNode) => void
-  /** Whether rows of an item take by-products first: on a row's branch, or everywhere (no row). */
-  onReuse: (item: string, on: boolean, row?: string) => void
   /** Loads catalysts into one row's machines. */
   /** Loads catalysts into a row ('inherited': what it loads without its own setting). */
   onCatalysts: (row: string, catalysts: string[], inherited: string[]) => void
@@ -85,6 +83,10 @@ interface Props {
   altarLeft: Map<string, number> | null
   /** Breaks down what's left of an item's overflow at Knowledge Altars. */
   onAltar: (item: string, on: boolean) => void
+  /** Whether an item can go on a Knowledge Altar; null when the plan's research tier has no altar. */
+  canAltar: ((item: string) => boolean) | null
+  /** Sends one of a row's other outputs to Knowledge Altars as it comes out, or stops. */
+  onOutputAltar: (row: string, item: string, on: boolean) => void
   /** The plan's targets in order: each is set in its own row at the top of the tree. */
   targets: TargetSlot[]
   onAddTarget: () => void
@@ -134,7 +136,6 @@ export function ProductionTree({
   onProducer,
   onResetProducer,
   onFindCauldron,
-  onReuse,
   onCatalysts,
   onHeight,
   onStack,
@@ -156,6 +157,8 @@ export function ProductionTree({
   onUseOverflow,
   altarLeft,
   onAltar,
+  canAltar,
+  onOutputAltar,
   targets: slots,
   onAddTarget,
   shownTarget,
@@ -191,7 +194,6 @@ export function ProductionTree({
   const slotByRow = new Map(slots.map((s, i) => [slotRows[i], s]))
   const targets = view[0]?.id === PLAN_ROOT ? view[0].children : view  /** What items built at the top of the plan are shown "with". */
   const topName = topAnchorName(tree)
-  const separateByproducts = useMemo(() => byproductsMadeSeparately(tree), [tree])
   // Rows where "Use as my default" would change something: only those offer it.
   const savable = useMemo(() => {
     const rows = rowsById(tree)
@@ -589,8 +591,6 @@ export function ProductionTree({
           mods={mods}
           onProducer={onProducer}
           onResetProducer={onResetProducer}
-          onReuse={onReuse}
-          separateByproducts={separateByproducts}
           rowsOf={rowsOf}
           onShow={show}
           onNetworkFuel={onNetworkFuel}
@@ -634,7 +634,6 @@ export function ProductionTree({
                   <TreeRow
                     key={line.node.id}
                     topName={topName}
-                    separateByproducts={separateByproducts}
                     node={line.node}
                     depth={line.depth}
                     edges={line.edges}
@@ -648,7 +647,6 @@ export function ProductionTree({
                     onProducer={onProducer}
                     onResetProducer={onResetProducer}
                     onFindCauldron={onFindCauldron}
-                    onReuse={onReuse}
                     onCatalysts={onCatalysts}
                     onHeight={onHeight}
                     onStack={onStack}
@@ -671,6 +669,8 @@ export function ProductionTree({
                     onUseOverflow={onUseOverflow}
                     altarLeft={altarLeft}
                     onAltar={onAltar}
+                    canAltar={canAltar}
+                    onOutputAltar={onOutputAltar}
                     onMachinesMenu={openMachinesMenu}
                     logistics={logistics}
                     mods={mods}
@@ -887,7 +887,6 @@ function TreeRow({
   onProducer,
   onResetProducer,
   onFindCauldron,
-  onReuse,
   onCatalysts,
   onHeight,
   onStack,
@@ -909,6 +908,8 @@ function TreeRow({
   onUseOverflow,
   altarLeft,
   onAltar,
+  canAltar,
+  onOutputAltar,
   logistics,
   mods,
   link,
@@ -916,7 +917,6 @@ function TreeRow({
   card,
   afterBranch,
   topName,
-  separateByproducts,
   target,
   built,
   onCheck,
@@ -927,8 +927,6 @@ function TreeRow({
   onCheck: (node: TreeNode, box: HTMLElement) => void
   /** What items built at the top of the plan are shown "with". */
   topName: string
-  /** Per item, the rows making their own that have it as a by-product (shared only if picked). */
-  separateByproducts: Map<string, string[]>
   node: TreeNode
   depth: number
   open: boolean
@@ -941,7 +939,6 @@ function TreeRow({
   onProducer: (pick: ProducerPick) => void
   onResetProducer: (row: string) => void
   onFindCauldron: (row: TreeNode) => void
-  onReuse: (item: string, on: boolean, row?: string) => void
   /** Loads catalysts into one row's machines. */
   /** Loads catalysts into a row ('inherited': what it loads without its own setting). */
   onCatalysts: (row: string, catalysts: string[], inherited: string[]) => void
@@ -976,6 +973,8 @@ function TreeRow({
   onUseOverflow: (item: string, consumes: string) => void
   altarLeft: Map<string, number> | null
   onAltar: (item: string, on: boolean) => void
+  canAltar: ((item: string) => boolean) | null
+  onOutputAltar: (row: string, item: string, on: boolean) => void
   logistics: Map<string, LogisticsCheck>
   mods: Modifiers
   link: LinkFn
@@ -1044,7 +1043,7 @@ function TreeRow({
   const details = [...(p?.notes ?? [])]
   if (belts?.outputCappedAt != null && node.kind === 'produce')
     details.push(`Output capped by its belt at ${fmt(belts.outputCappedAt)}/min per machine`)
-  const reuse = reuseOption(node, separateByproducts, onReuse)
+  const reuse = reuseInfo(node)
   // Belts it takes to carry this row's items (liquids go by pipe).
   const beltsNeeded = onBelt(node.item)
     ? Math.ceil(node.rate / itemsPerSlot(node.item, node.run?.process.stack) / mods.beltSpeed - 1e-9)
@@ -1268,7 +1267,7 @@ function TreeRow({
                     key={d.id}
                     node={copies === 1 ? d : shareOf(d, copies)}
                     catalog={catalog}
-                    reuse={reuseOption(d, separateByproducts, onReuse)}
+                    reuse={reuseInfo(d)}
                     onProducer={onProducer}
                     onResetProducer={onResetProducer}
                   />
@@ -1416,6 +1415,29 @@ function TreeRow({
                       counted={b.to.length > 0}
                       {...picking(b.item)}
                     />
+                  </>
+                )}
+                {b.toAltar && (
+                  <>
+                    {b.to.length > 0 && ', '}
+                    <span className="fed-text">{fmt(b.altar)}/min broken down at Knowledge Altars</span>
+                  </>
+                )}
+                {node.kind === 'produce' && !node.recovery && (b.toAltar || canAltar?.(b.item)) && (
+                  <>
+                    {' · '}
+                    <button
+                      type="button"
+                      className="tree-link"
+                      title={
+                        b.toAltar
+                          ? 'Let the rest of the plan take it again'
+                          : 'Break it down at Knowledge Altars as it comes out: nothing else takes it, so rows using it make their own'
+                      }
+                      onClick={() => onOutputAltar(node.id, b.item, !b.toAltar)}
+                    >
+                      {b.toAltar ? 'Route it instead' : 'Send to Knowledge Altars'}
+                    </button>
                   </>
                 )}
               </div>
@@ -1948,29 +1970,8 @@ function blankRow(id: string, children: TreeNode[] = []): TreeNode {
     defaultHeight: 0,
     defaultStack: DEFAULT_BANK_STACK,
     defaultMixed: false,
-    reuse: true,
-    reuseChosen: false,
     children,
   }
-}
-
-/**
- * Per item, the rows making their own (taking no by-products) that make it as a by-product, as
- * "Athanors making Impure Copper Powder": they share it only with rows where reuse was picked.
- */
-function byproductsMadeSeparately(tree: TreeNode[]): Map<string, string[]> {
-  const found = new Map<string, string[]>()
-  const visit = (n: TreeNode) => {
-    if (!n.reuse)
-      for (const b of n.byproducts) {
-        const machine = n.run?.process.machine?.name
-        const what = itemsByKey.get(n.item)?.name ?? n.item
-        found.set(b.item, [...(found.get(b.item) ?? []), machine ? `${machineNameFor(machine, n.machines)} making ${what}` : what])
-      }
-    n.children.forEach(visit)
-  }
-  tree.forEach(visit)
-  return found
 }
 
 /**
@@ -2190,6 +2191,7 @@ function shareOf(n: TreeNode, copies: number): TreeNode {
       ...b,
       count: b.count * k,
       overflow: b.overflow * k,
+      altar: b.altar * k,
       to: b.to.map((t) => ({ ...t, amount: t.amount * k })),
     })),
     mixParts: n.mixParts?.map((m) => ({ ...m, rate: m.rate * k, machines: m.machines * k })),

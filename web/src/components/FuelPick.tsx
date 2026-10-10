@@ -3,7 +3,7 @@ import { fmt } from '../lib/format'
 import { STEAM_HEAT_ID, type ProcessCatalog } from '../lib/processes'
 import type { ProducerPick } from '../lib/choices'
 import type { TreeNode } from '../lib/tree'
-import { ProducerSelect, type ReuseOption } from './ProducerSelect'
+import { ProducerSelect, type ReuseInfo } from './ProducerSelect'
 import { choosable } from './rowPicks'
 
 interface Picks {
@@ -51,7 +51,7 @@ export function FoldedPick({
 }
 
 /** Where a fuel, fertilizer or coin row gets its item: the bus, or a way to make it in the plan. */
-export function SourcePick({ node, reuse, catalog, onProducer, onResetProducer }: Picks & { node: TreeNode; reuse: ReuseOption | undefined }) {
+export function SourcePick({ node, reuse, catalog, onProducer, onResetProducer }: Picks & { node: TreeNode; reuse: ReuseInfo | undefined }) {
   return choosable(node, catalog, reuse) ? (
     <ProducerSelect
       item={node.item}
@@ -73,7 +73,7 @@ export function SourcePick({ node, reuse, catalog, onProducer, onResetProducer }
  * A fuel, fertilizer or coin taken off the bus, on the line where its row picks it: how much, and
  * the pick to make it in the plan instead (it gets a row of its own then).
  */
-export function BusDraw(props: Picks & { node: TreeNode; reuse: ReuseOption | undefined }) {
+export function BusDraw(props: Picks & { node: TreeNode; reuse: ReuseInfo | undefined }) {
   const { node } = props
   return (
     <span className="bus-draw" data-node-id={node.id}>

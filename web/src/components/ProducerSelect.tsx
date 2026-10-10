@@ -57,16 +57,12 @@ export interface BranchScope {
   onReset: () => void
 }
 
-/** A tree row that can take other rows' by-products of its item. */
-export interface ReuseOption {
-  /** The row takes them first (the default), its producer making the rest; else it makes all of it. */
-  on: boolean
+/** A tree row other rows' by-products of its item cover part of: it takes them before making the rest. */
+export interface ReuseInfo {
   /** By-products cover the whole row: nothing of its own runs. */
   covered: boolean
   /** The rows the by-products come from. */
   sources: string
-  /** Turns taking them first on or off, on this branch or every row of the item; the producer stays. */
-  onChange: (on: boolean, everywhere: boolean) => void
 }
 
 /** Menu value of a process on a given machine. */
@@ -111,8 +107,8 @@ export function ProducerSelect({
   oneLine?: boolean
   /** On a tree row: picks cover the row's branch, or every row of the item when asked. */
   branch?: BranchScope
-  /** On a row that can take by-products: a switch for taking them first, the producer making the rest. */
-  reuse?: ReuseOption
+  /** On a row other rows' by-products cover part of: where they come from. */
+  reuse?: ReuseInfo
   /** For an item cauldrons make: looks for a new cauldron recipe on the Cauldron page. */
   onFind?: () => void
 }) {
@@ -160,7 +156,7 @@ export function ProducerSelect({
   // The button shows reusing by-products when they cover the whole row, else the producer making
   // the rest (or all of it).
   const value = producerValue
-  const selected: Choice = reuse?.on && reuse.covered ? { value: REUSE } : producing
+  const selected: Choice = reuse?.covered ? { value: REUSE } : producing
   // Ingredients the current producer also uses in the same amount: dimmed in the other options, so
   // what switching would change stands out.
   const shared = new Set(producing.process && producerValue !== CRUCIBLE ? materials(producing.process).map(stackKey) : [])
@@ -210,7 +206,7 @@ export function ProducerSelect({
 
   // Arrow keys move between options (and back up to the search box).
   const onKeyDown = (e: KeyboardEvent) => {
-    const list = [...(pop.current?.querySelectorAll<HTMLElement>('[role=option], [role=switch], .recipe-find') ?? [])]
+    const list = [...(pop.current?.querySelectorAll<HTMLElement>('[role=option], .recipe-find') ?? [])]
     const at = list.indexOf(document.activeElement as HTMLElement)
     const inSearch = e.target instanceof HTMLInputElement
     const next =
@@ -258,7 +254,7 @@ export function ProducerSelect({
           {selected.process && <SeedNote seed={selected.process.seed} plant={selected.process.product} size={link ? 14 : 16} />}
         </span>
         <ChoiceTags choice={selected} item={item} />
-        {reuse?.on && !reuse.covered && reuse.sources && (
+        {reuse && !reuse.covered && (
           <span className="tag reuse-tag" title={`Takes by-products from ${reuse.sources} first; this makes the rest`}>
             ♻
           </span>
@@ -334,29 +330,9 @@ export function ProducerSelect({
               </div>
             )}
             {reuse && !q && (
-              <>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={reuse.on}
-                  className="recipe-option reuse-switch"
-                  onClick={() => reuse.onChange(!reuse.on, everywhere)}
-                >
-                  <ChoiceIcon choice={{ value: REUSE }} size={32} />
-                  <span className="recipe-body">
-                    <span className="recipe-head">
-                      <span className="recipe-title">Reuse by-products first</span>
-                    </span>
-                    <span className="recipe-preview muted">
-                      {reuse.sources ? `From ${reuse.sources}` : "Other rows' by-products of this item, when there are any"}
-                    </span>
-                  </span>
-                  <span className="switch-track" aria-hidden />
-                </button>
-                <div className="recipe-group-label">
-                  {reuse.on ? (reuse.covered ? 'Makes the rest, when they fall short' : 'Makes the rest') : 'Makes all of it'}
-                </div>
-              </>
+              <div className="recipe-reuse-note">
+                ♻ By-products of {reuse.sources} come first; {reuse.covered ? 'this makes the rest if they fall short' : 'this makes the rest'}
+              </div>
             )}
             <div role="listbox" aria-label={`Producer for ${itemName(item)}`}>
               {shown.map((c) =>

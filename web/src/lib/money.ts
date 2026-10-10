@@ -30,6 +30,8 @@ export interface OutputSource {
   taken: { target: number; amount: number }[]
   /** For overflow: items per minute broken down at Knowledge Altars (what's left after the rest). */
   altar: number
+  /** Part of `altar` the rows making it send there as it comes out (see `Plan.altarOutputs`). */
+  atSource: number
 }
 
 /** An item leaving the plan: all its sources, what the plan feeds back of it, and the rest. */
@@ -97,7 +99,7 @@ export function moneyLedger(plan: Plan, result: PlanResult, ledgers: ItemLedger[
   const sources: (OutputSource & { item: string })[] = []
   plan.targets.forEach((t, i) => {
     const made = resolvedAt[i]?.made ?? 0
-    if (t.item && made > 0) sources.push({ item: t.item, target: i, amount: made, fedBack: targetFedBack(plan, t), used: {}, taken: [], altar: 0 })
+    if (t.item && made > 0) sources.push({ item: t.item, target: i, amount: made, fedBack: targetFedBack(plan, t), used: {}, taken: [], altar: 0, atSource: 0 })
   })
   const taken = new Map<string, { target: number; amount: number }[]>()
   resolvedAt.forEach((r, i) => {
@@ -105,13 +107,16 @@ export function moneyLedger(plan: Plan, result: PlanResult, ledgers: ItemLedger[
     if (o && o.taken > 0) taken.set(o.item, [...(taken.get(o.item) ?? []), { target: i, amount: o.taken }])
   })
   const overflowing = new Set([
-    ...result.balances.filter((b) => !b.item.startsWith('@') && b.surplus > 0).map((b) => b.item),
+    ...result.balances.filter((b) => !b.item.startsWith('@') && (b.surplus > 0 || b.altar > 0)).map((b) => b.item),
     ...taken.keys(),
   ])
   for (const item of overflowing) {
     const to = taken.get(item) ?? []
-    const amount = to.reduce((t, x) => t + x.amount, result.balances.find((b) => b.item === item)?.surplus ?? 0)
-    sources.push({ item, target: null, amount, fedBack: itemFedBack(plan, item), used: {}, taken: to, altar: 0 })
+    const b = result.balances.find((b) => b.item === item)
+    // What rows send to Knowledge Altars as it comes out is broken down there, whatever else happens.
+    const atSource = b?.altar ?? 0
+    const amount = to.reduce((t, x) => t + x.amount, (b?.surplus ?? 0) + atSource)
+    sources.push({ item, target: null, amount, fedBack: itemFedBack(plan, item), used: {}, taken: to, altar: atSource, atSource })
   }
   const find = (item: string, target: number | null) => sources.find((s) => s.item === item && s.target === target)
 
@@ -127,7 +132,7 @@ export function moneyLedger(plan: Plan, result: PlanResult, ledgers: ItemLedger[
   for (const s of [...sources.filter((s) => s.target === null), ...sources.filter((s) => s.target !== null)]) {
     const face = coinValue(s.item)
     if (face === null || !s.fedBack || remaining <= 0) continue
-    const left = s.amount - s.taken.reduce((t, x) => t + x.amount, 0)
+    const left = s.amount - s.altar - s.taken.reduce((t, x) => t + x.amount, 0)
     const used = Math.min(left, remaining / face)
     s.used.money = used
     remaining -= used * face
@@ -153,11 +158,10 @@ export function moneyLedger(plan: Plan, result: PlanResult, ledgers: ItemLedger[
       used += n
     }
     // Overflow the player breaks down at Knowledge Altars: whatever the rest leaves of it.
-    const left = Math.max(0, s.amount - used)
-    if (s.target === null && plan.altarItems?.includes(s.item)) {
-      source.altar = left < 1e-9 * s.amount ? 0 : left
-      row.altar += source.altar
-    } else row.toBus += left
+    const left = Math.max(0, s.amount - used - s.altar)
+    if (s.target === null && plan.altarItems?.includes(s.item)) source.altar += left < 1e-9 * s.amount ? 0 : left
+    else row.toBus += left
+    row.altar += source.altar
   }
   for (const o of outputs) if (o.toBus < 1e-9 * Math.max(1, ...o.sources.map((s) => s.amount))) o.toBus = 0
   const value = outputs.reduce((t, o) => t + o.toBus * (o.price ?? 0), 0)

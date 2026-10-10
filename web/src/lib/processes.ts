@@ -761,14 +761,18 @@ export function buildCatalog(ctx: ProcessContext): ProcessCatalog {
   for (const p of all) byProduct.set(p.product, [...(byProduct.get(p.product) ?? []), p])
   // Multi-output processes are also offered for their side products, after the main producers.
   for (const p of all) for (const item of p.secondary) byProduct.set(item, [...(byProduct.get(item) ?? []), p])
-  // Items only ever made as a failed craft (Impure Copper Powder from the Athanor's Copper Powder)
-  // are offered from those recipes too, for rows that make their own instead of reusing them.
-  const failOnly = new Map<string, Process[]>()
+  // Every output is one a recipe can be run for: failed crafts too (Impure Copper Powder from the
+  // Athanor's Copper Powder), last. Not where the recipe takes the item in as well (Steel Ingots give
+  // back some of their Iron Ingot): running it uses more than it makes.
   for (const p of all)
     for (const o of p.outputs)
-      if (o.item !== p.product && !o.item.startsWith('@') && !byProduct.has(o.item))
-        failOnly.set(o.item, [...(failOnly.get(o.item) ?? []), p])
-  for (const [item, list] of failOnly) byProduct.set(item, list)
+      if (
+        o.item !== p.product &&
+        !o.item.startsWith('@') &&
+        !p.secondary.includes(o.item) &&
+        !p.inputs.some((s) => s.item === o.item)
+      )
+        byProduct.set(o.item, [...(byProduct.get(o.item) ?? []), p])
 
   // Lower each item's reach to that of the processes making it until nothing changes (loops settle
   // on their cheapest way in). Items nothing makes and portals don't sell come from outside: tier 1.
@@ -830,16 +834,18 @@ export function defaultProducer(catalog: ProcessCatalog, item: string, asTarget 
       options.find((p) => p.kind === 'cauldron') ??
       // The fewest boilers.
       options.find((p) => p.id === boilerId('High')) ??
-      // Only made as a side product (e.g. Gentian Nectar from the Gentian nursery). Items only made
-      // by failed crafts aren't run for: they're reused, else brought in.
+      // Only made as a side product (e.g. Gentian Nectar from the Gentian nursery).
       all.find((p) => p.secondary.includes(item) && (p.kind === 'nursery' || p.kind === 'recipe')) ??
       all.find((p) => p.secondary.includes(item))
     )
   }
+  // Only made by failed crafts (Crude Silver Powder from the Advanced Athanor's Silver Powder).
+  const failing = (list: Process[]) =>
+    list.find((p) => p.kind === 'recipe' && !p.alternate) ?? list.find((p) => p.kind !== 'buy')
   const all = catalog.byProduct.get(item) ?? []
-  // Bought only when nothing makes it.
+  // Bought only when nothing makes it, and before running a recipe only for its failed crafts.
   const buy = all.find((p) => p.kind === 'buy')
-  return (rank(all.filter(open)) ?? rank(all) ?? buy)?.id ?? 'bus'
+  return (rank(all.filter(open)) ?? rank(all) ?? buy ?? failing(all.filter(open)) ?? failing(all))?.id ?? 'bus'
 }
 
 /**

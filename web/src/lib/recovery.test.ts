@@ -109,6 +109,31 @@ describe('recovery keeping to its own row', () => {
   })
 })
 
+describe('an item only ever made by failing', () => {
+  // Gold Dust's Mercury takes Crude Silver Powder, which only comes out of Advanced Athanors failing
+  // at Silver Powder (80% of crafts).
+  const { tree, balances, status } = solvePlan(plan({ targets: [{ item: 'GoldDust3', rate: 10 }] }), catalog, mods)
+  const rows = tree.flatMap(all)
+  const powder = rows.find((n) => n.id === '0/GoldDust3/SilverPowder3')!
+  const crude = rows.find((n) => n.id === '0/GoldDust3/Mercury/SilverPowder')!
+
+  it('is made in the plan, by the recipe that fails into it', () => {
+    expect(status).toBe('ok')
+    expect(crude).toMatchObject({ kind: 'produce', producer: 'recipe:SilverPowder3', fromBus: 0 })
+    expect(crude.run!.craftsPerMinute).toBeCloseTo(56.25)
+    expect(balances.find((b) => b.item === 'SilverPowder')?.fromBus ?? 0).toBe(0)
+  })
+
+  it("keeps each row's failed crafts with that row, and sends what else it makes to the row using it", () => {
+    // The Silver Powder row refines all its Crude Silver Powder back up: 0.4 Silver Powder a craft.
+    expect(powder.byproducts.find((b) => b.item === 'SilverPowder')!.to.every((t) => t.id.startsWith(powder.id))).toBe(true)
+    expect(powder.run!.craftsPerMinute).toBeCloseTo(34.375)
+    // The Crude Silver Powder row's Silver Powder makes up the rest of the 25 a minute.
+    expect(crude.byproducts.find((b) => b.item === 'SilverPowder3')!.to).toEqual([{ id: powder.id, amount: expect.closeTo(11.25) }])
+    expect(powder.fromByproduct).toBeCloseTo(11.25)
+  })
+})
+
 describe('flow chart levels', () => {
   it('keeps every line whose boxes are both shown, at any level limit', () => {
     const { tree } = solvePlan(

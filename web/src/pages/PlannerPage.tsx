@@ -36,7 +36,6 @@ import type { PlanModel } from '../lib/planModel'
 import { namedAfterTargets, planTitle, targetsName } from '../lib/planName'
 import {
   chooseProducer,
-  chooseReuse,
   clearBranchChoice,
   keepDefaultInPlan,
   addProvider,
@@ -51,6 +50,7 @@ import {
   moveTarget,
   removeTarget,
   setAltar,
+  setOutputAltar,
   setItemFeedback,
   setTargetFeedback,
   pruneChoices,
@@ -184,8 +184,11 @@ export function PlannerPage({
   const setNetworkSupply = (net: HeatNetwork, producer: string, machine?: string) =>
     onUpdatePlan(`Change where a ${itemName(net.fuel)} heat network gets its fuel`, (p) => setNetworkSource(p, catalog, net, producer, machine))
   const resetProducer = (row: string) => onUpdatePlan(`Reset the pick for ${rowName(row)}`, (p) => clearBranchChoice(p, row))
-  const setReuse = (item: string, on: boolean, row?: string) =>
-    onUpdatePlan(`${on ? 'Reuse' : 'Stop reusing'} ${itemName(item)} by-products`, (p) => chooseReuse(p, item, on, row))
+  const outputAltar = (row: string, item: string, on: boolean) =>
+    onUpdatePlan(
+      `${on ? 'Send' : 'Stop sending'} ${rowName(row)}'s ${itemName(item)} ${on ? 'to' : 'from'} Knowledge Altars`,
+      (p) => setOutputAltar(p, row, item, on),
+    )
   /**
    * The fuel or fertilizer (heat or nutrients) rows burn or spread unless their branch picks
    * another. Changing it keeps those picks; the rows making them can follow it too.
@@ -450,6 +453,8 @@ export function PlannerPage({
     }
     return left
   }, [money, altar])
+  // Whether an item can go on a Knowledge Altar, when the plan has them.
+  const canAltar = useMemo(() => (altar ? (item: string) => !!altarYield(item, altar) : null), [altar])
 
   // Whole machines per building type, as built: each tree row rounds up on its own, and so do the
   // Knowledge Altars breaking down each item's overflow.
@@ -739,7 +744,7 @@ export function PlannerPage({
                       onProducer={setProducer}
                       onResetProducer={resetProducer}
                       onFindCauldron={onFindCauldron}
-                      onReuse={setReuse}
+                      onOutputAltar={outputAltar}
                       onRemember={remember}
                       onForget={unsave}
                       onCatalysts={setCatalysts}
@@ -760,6 +765,7 @@ export function PlannerPage({
                       }}
                       altarLeft={altarLeft}
                       onAltar={altarOverflow}
+                      canAltar={canAltar}
                       onRoundUp={(row, on) => onUpdatePlan(`${on ? 'Round up' : 'Stop rounding up'} ${rowName(row)}`, (p) => setRoundUp(p, row, on))}
                       onMixedFeed={(row, on, inherited) =>
                         onUpdatePlan(`${on ? 'Mix by-products into' : 'Stop mixing by-products into'} ${rowName(row)}`, (p) =>
@@ -1321,14 +1327,17 @@ function OutputLine({
           ) : (
             <span className="warn-text">Knowledge Altars, which the plan&apos;s research tier hasn&apos;t reached</span>
           )}
+          {s.atSource > 0 && <span className="hint-inline">{s.atSource < s.altar ? `${fmt(s.atSource)}/min as` : 'as'} it comes out of the rows making it</span>}
         </span>
-        <button
-          className="move-button"
-          title="Stop breaking it down: it goes out as an output that nothing uses"
-          onClick={() => onAltar(row.item, false)}
-        >
-          Send to outputs →
-        </button>
+        {s.altar > s.atSource && (
+          <button
+            className="move-button"
+            title="Stop breaking it down: it goes out as an output that nothing uses"
+            onClick={() => onAltar(row.item, false)}
+          >
+            Send to outputs →
+          </button>
+        )}
       </li>
     )
   return (
