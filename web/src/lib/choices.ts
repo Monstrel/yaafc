@@ -199,6 +199,12 @@ export const setItemFeedback = (plan: Plan, item: string, on: boolean): Plan => 
   feedbackItems: withItem(plan.feedbackItems, item, on),
 })
 
+/** Whether the plan breaks down what's left of an item's overflow at Knowledge Altars. */
+export const setAltar = (plan: Plan, item: string, on: boolean): Plan => ({
+  ...plan,
+  altarItems: withItem(plan.altarItems, item, on),
+})
+
 /** Feeds one target back or not; matching its item's setting drops the target's own. */
 export function setTargetFeedback(plan: Plan, index: number, on: boolean): Plan {
   return {
@@ -606,6 +612,9 @@ export function pruneChoices(plan: Plan, catalog: ProcessCatalog): Plan | null {
   const made = new Set([...items, ...nodes.flatMap((n) => n.process?.outputs.map((o) => o.item) ?? [])])
   const feedbackItems = plan.feedbackItems?.filter((item) => made.has(item))
   const f = feedbackItems?.length !== plan.feedbackItems?.length
+  // So do items broken down at altars.
+  const altarItems = plan.altarItems?.filter((item) => made.has(item))
+  const a = altarItems?.length !== plan.altarItems?.length
   // Rounding and units stay with rows its machines still run on.
   const running = new Set(nodes.flatMap((n) => (n.kind === 'make' ? [n.id] : [])))
   const roundUp = plan.roundUp?.filter((id) => running.has(id))
@@ -620,7 +629,7 @@ export function pruneChoices(plan: Plan, catalog: ProcessCatalog): Plan | null {
   // Caps on the bus's supply stay while the plan takes the item from the bus.
   const drawn = new Set(nodes.flatMap((n) => (n.kind === 'bus' ? [n.item] : [])))
   const caps = keep(plan.busSupply, (item) => drawn.has(item))
-  const dropped = [p, m, c, h, k, b, x, units, caps].some((y) => y.dropped) || s || r || f || u || d
+  const dropped = [p, m, c, h, k, b, x, units, caps].some((y) => y.dropped) || s || r || f || a || u || d
   if (!dropped) return null
   return {
     ...plan,
@@ -633,6 +642,7 @@ export function pruneChoices(plan: Plan, catalog: ProcessCatalog): Plan | null {
     separate,
     noReuse: noReuse?.length ? noReuse : undefined,
     feedbackItems: feedbackItems?.length ? feedbackItems : undefined,
+    altarItems: altarItems?.length ? altarItems : undefined,
     roundUp: roundUp?.length ? roundUp : undefined,
     mixedFeed: x.record && Object.keys(x.record).length ? x.record : undefined,
     units: units.record && Object.keys(units.record).length ? units.record : undefined,

@@ -28,6 +28,8 @@ export interface OutputSource {
   used: Partial<Record<BusUse, number>>
   /** For overflow: what overflow targets take of it (index in the plan's targets, items per minute). */
   taken: { target: number; amount: number }[]
+  /** For overflow: items per minute broken down at Knowledge Altars (what's left after the rest). */
+  altar: number
 }
 
 /** An item leaving the plan: all its sources, what the plan feeds back of it, and the rest. */
@@ -40,6 +42,8 @@ export interface OutputRow {
   used: Partial<Record<BusUse, number>>
   /** Items per minute that go out to the bus. */
   toBus: number
+  /** Items per minute of its overflow broken down at Knowledge Altars instead. */
+  altar: number
   /** Copper one is worth: what the shop pays at base prices, or a coin's face value; null if unsellable. */
   price: number | null
 }
@@ -93,7 +97,7 @@ export function moneyLedger(plan: Plan, result: PlanResult, ledgers: ItemLedger[
   const sources: (OutputSource & { item: string })[] = []
   plan.targets.forEach((t, i) => {
     const made = resolvedAt[i]?.made ?? 0
-    if (t.item && made > 0) sources.push({ item: t.item, target: i, amount: made, fedBack: targetFedBack(plan, t), used: {}, taken: [] })
+    if (t.item && made > 0) sources.push({ item: t.item, target: i, amount: made, fedBack: targetFedBack(plan, t), used: {}, taken: [], altar: 0 })
   })
   const taken = new Map<string, { target: number; amount: number }[]>()
   resolvedAt.forEach((r, i) => {
@@ -107,7 +111,7 @@ export function moneyLedger(plan: Plan, result: PlanResult, ledgers: ItemLedger[
   for (const item of overflowing) {
     const to = taken.get(item) ?? []
     const amount = to.reduce((t, x) => t + x.amount, result.balances.find((b) => b.item === item)?.surplus ?? 0)
-    sources.push({ item, target: null, amount, fedBack: itemFedBack(plan, item), used: {}, taken: to })
+    sources.push({ item, target: null, amount, fedBack: itemFedBack(plan, item), used: {}, taken: to, altar: 0 })
   }
   const find = (item: string, target: number | null) => sources.find((s) => s.item === item && s.target === target)
 
@@ -138,7 +142,7 @@ export function moneyLedger(plan: Plan, result: PlanResult, ledgers: ItemLedger[
       const feeds: BusUse[] = []
       if (drawn.has(s.item)) feeds.push('plan')
       if (coinValue(s.item) !== null) feeds.push('money')
-      row = { item: s.item, sources: [], feeds, used: {}, toBus: 0, price: coinValue(s.item) ?? itemsByKey.get(s.item)?.sellPrice ?? null }
+      row = { item: s.item, sources: [], feeds, used: {}, toBus: 0, altar: 0, price: coinValue(s.item) ?? itemsByKey.get(s.item)?.sellPrice ?? null }
       outputs.push(row)
     }
     const { item: _, ...source } = s
@@ -148,7 +152,12 @@ export function moneyLedger(plan: Plan, result: PlanResult, ledgers: ItemLedger[
       row.used[use] = (row.used[use] ?? 0) + n
       used += n
     }
-    row.toBus += Math.max(0, s.amount - used)
+    // Overflow the player breaks down at Knowledge Altars: whatever the rest leaves of it.
+    const left = Math.max(0, s.amount - used)
+    if (s.target === null && plan.altarItems?.includes(s.item)) {
+      source.altar = left < 1e-9 * s.amount ? 0 : left
+      row.altar += source.altar
+    } else row.toBus += left
   }
   for (const o of outputs) if (o.toBus < 1e-9 * Math.max(1, ...o.sources.map((s) => s.amount))) o.toBus = 0
   const value = outputs.reduce((t, o) => t + o.toBus * (o.price ?? 0), 0)
@@ -161,23 +170,27 @@ export interface FedOverflow {
   into: BusUse[]
   /** Overflow targets (index in the plan's targets) taking some of it, if any. */
   taken?: number[]
+  /** Part of it is broken down at Knowledge Altars. */
+  altar?: boolean
 }
 
 /**
- * Per item, the share of its overflow that overflow targets take or the plan feeds back in place of
- * the bus or into its money, and what into: that part isn't overflow, since the plan uses it.
+ * Per item, the share of its overflow that overflow targets take, the plan feeds back in place of
+ * the bus or into its money, or Knowledge Altars break down, and what into: that part isn't
+ * overflow, since it's dealt with.
  */
 export function fedOverflow(money: MoneyLedger): Map<string, FedOverflow> {
   const fed = new Map<string, FedOverflow>()
   for (const o of money.outputs)
     for (const s of o.sources) {
       const into = (Object.entries(s.used) as [BusUse, number][]).filter(([, n]) => n > 0)
-      if (s.target !== null || (!into.length && !s.taken.length) || s.amount <= 0) continue
-      const used = into.reduce((t, [, n]) => t + n, 0) + s.taken.reduce((t, x) => t + x.amount, 0)
+      if (s.target !== null || (!into.length && !s.taken.length && !s.altar) || s.amount <= 0) continue
+      const used = into.reduce((t, [, n]) => t + n, 0) + s.taken.reduce((t, x) => t + x.amount, 0) + s.altar
       fed.set(o.item, {
         share: Math.min(1, used / s.amount),
         into: into.map(([use]) => use),
         ...(s.taken.length > 0 && { taken: s.taken.map((x) => x.target) }),
+        ...(s.altar > 0 && { altar: true }),
       })
     }
   return fed

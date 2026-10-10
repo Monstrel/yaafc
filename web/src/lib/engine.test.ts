@@ -55,6 +55,7 @@ import {
   moveTarget,
   removeTarget,
   setItemFeedback,
+  setAltar,
   setTargetFeedback,
   pruneChoices,
   keepDefaultInPlan,
@@ -1881,6 +1882,20 @@ describe('the bus: money in, items out', () => {
     const iron = out(money, 'IronIngot')
     expect(iron.sources).toEqual([expect.objectContaining({ target: null, fedBack: false })])
     expect(iron.toBus).toBeCloseTo(iron.sources[0].amount)
+  })
+
+  it('breaks down overflow at Knowledge Altars instead of sending it out, and only overflow', () => {
+    const p = setAltar(plan({ targets: [{ item: 'BlastPotion', rate: 21 }], producers: { Mors: 'paradox:BlackPowder' } }), 'IronIngot', true)
+    const { money } = bus(p)
+    const iron = out(money, 'IronIngot')
+    expect(iron.toBus).toBe(0)
+    expect(iron.altar).toBeCloseTo(iron.sources[0].amount)
+    expect(iron.sources[0].altar).toBeCloseTo(iron.sources[0].amount)
+    expect(fedOverflow(money).get('IronIngot')).toEqual({ share: expect.closeTo(1), into: [], altar: true })
+    // A target's own output still goes out.
+    const potion = out(bus(setAltar(p, 'BlastPotion', true)).money, 'BlastPotion')
+    expect(potion).toMatchObject({ toBus: 21, altar: 0 })
+    expect(setAltar(p, 'IronIngot', false).altarItems).toBeUndefined()
   })
 
   it('takes coin ingredients off the bus at face value', () => {

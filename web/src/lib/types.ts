@@ -81,6 +81,11 @@ export interface Plan {
    * See ledger.ts.
    */
   feedbackItems?: string[]
+  /**
+   * Items whose overflow (what's left of it after overflow targets and feedback) the player breaks
+   * down at Knowledge Altars for EXP, so it doesn't back up the machines making it.
+   */
+  altarItems?: string[]
   /** Plans saved before feedback was per item: per use (moved to `feedbackItems` on load). */
   feedback?: { fuel?: boolean; fertilizer?: boolean }
   /**

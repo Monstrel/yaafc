@@ -8,6 +8,14 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
+## 2026-10-10T15:23Z
+
+- Break down overflow at Knowledge Altars: click "⚠ nothing uses it" on an overflowing item (in
+  the Bus panel or on its row) and pick "Break it down at Knowledge Altars", the first option above
+  making something from it. The overflow stops being flagged. The Bus panel shows how many altars
+  that takes and the EXP they make, and the altars join your Buildings list. Overflow targets and
+  feeding back still come first, so the altars only get what's left. "Send to bus →" turns it off.
+
 ## 2026-10-10T15:01Z
 
 - Find every row making an item in the production tree: choose the item from "Find item…" at the

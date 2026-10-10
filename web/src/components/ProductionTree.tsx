@@ -19,6 +19,7 @@ import type { Separation, Unitizing } from '../lib/types'
 import { unitChoices, wholePerCopy, type UnitScales } from '../lib/units'
 import type { Modifiers } from '../lib/upgrades'
 import { ItemIcon, ItemLabel, SeedNote } from './ItemIcon'
+import { AltarDetail } from './Exp'
 import { Money } from './Money'
 import { OverflowTargetForm } from './OverflowTargetForm'
 import { BusDraw, FoldedPick } from './FuelPick'
@@ -77,6 +78,13 @@ interface Props {
   fed: Map<string, FedOverflow>
   /** Adds a target making `item` from the plan's overflow of `consumes`. */
   onUseOverflow: (item: string, consumes: string) => void
+  /**
+   * Per item whose overflow can go to Knowledge Altars, what's left of it per minute for them to
+   * break down; null when the plan's research tier has no altar.
+   */
+  altarLeft: Map<string, number> | null
+  /** Breaks down what's left of an item's overflow at Knowledge Altars. */
+  onAltar: (item: string, on: boolean) => void
   /** The plan's targets in order: each is set in its own row at the top of the tree. */
   targets: TargetSlot[]
   onAddTarget: () => void
@@ -146,6 +154,8 @@ export function ProductionTree({
   onBuilt,
   fed,
   onUseOverflow,
+  altarLeft,
+  onAltar,
   targets: slots,
   onAddTarget,
   shownTarget,
@@ -659,6 +669,8 @@ export function ProductionTree({
                     onReveal={reveal}
                     fed={fed}
                     onUseOverflow={onUseOverflow}
+                    altarLeft={altarLeft}
+                    onAltar={onAltar}
                     onMachinesMenu={openMachinesMenu}
                     logistics={logistics}
                     mods={mods}
@@ -895,6 +907,8 @@ function TreeRow({
   onMachinesMenu,
   fed,
   onUseOverflow,
+  altarLeft,
+  onAltar,
   logistics,
   mods,
   link,
@@ -960,6 +974,8 @@ function TreeRow({
   onMachinesMenu: (node: TreeNode, button: HTMLElement) => void
   fed: Map<string, FedOverflow>
   onUseOverflow: (item: string, consumes: string) => void
+  altarLeft: Map<string, number> | null
+  onAltar: (item: string, on: boolean) => void
   logistics: Map<string, LogisticsCheck>
   mods: Modifiers
   link: LinkFn
@@ -1407,6 +1423,17 @@ function TreeRow({
             {using && (
               <OverflowTargetForm
                 item={using}
+                altar={
+                  altarLeft?.has(using)
+                    ? {
+                        detail: <AltarDetail item={using} perMinute={altarLeft.get(using)!} mods={mods} />,
+                        onPick: () => {
+                          onAltar(using, true)
+                          setUsing(null)
+                        },
+                      }
+                    : undefined
+                }
                 onAdd={(item) => {
                   onUseOverflow(item, using)
                   setUsing(null)
@@ -2173,7 +2200,8 @@ const FED_INTO: Record<BusUse, string> = { plan: 'used in the plan in place of t
 
 /**
  * What a row makes of an item that nothing uses: the part the plan feeds back in place of the bus
- * or into its money (not overflow: it's used), and the rest, overflowing.
+ * or into its money, or breaks down at Knowledge Altars (not overflow: it's dealt with), and the
+ * rest, overflowing.
  */
 function OverflowNote({
   item,
@@ -2204,6 +2232,7 @@ function OverflowNote({
     const into = [
       ...(f!.taken?.length ? [`taken by ${f!.taken.map((i) => `Target ${i + 1}`).join(' and ')}`] : []),
       ...f!.into.map((r) => FED_INTO[r]),
+      ...(f!.altar ? ['broken down at Knowledge Altars'] : []),
     ]
     parts.push(
       <span key="fed" className="fed-text">
@@ -2216,7 +2245,7 @@ function OverflowNote({
       <button
         key="left"
         className="tree-link warn-text"
-        title="Made by this row's machines but used nowhere in the plan: click to add a target that uses it"
+        title="Made by this row's machines but used nowhere in the plan: click to add a target that uses it, or break it down at Knowledge Altars"
         aria-expanded={using}
         onClick={onUse}
       >

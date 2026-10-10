@@ -54,3 +54,12 @@ export function altarYield(item: string, mods: Modifiers): AltarYield | null {
 export function altarsFor(y: AltarYield, perMinute: number, mods: Modifiers): number {
   return perMinute * Math.max(y.seconds / 60, 1 / mods.beltSpeed)
 }
+
+/** The Knowledge Altar's building key. */
+export const KNOWLEDGE_ALTAR = 'KnowledgeAltar'
+
+/** Whole Knowledge Altars built to break down `perMinute` of an item (0 when it can't go on one). */
+export function altarsBuilt(item: string, perMinute: number, mods: Modifiers): number {
+  const y = perMinute > 0 ? altarYield(item, mods) : null
+  return y ? Math.ceil(altarsFor(y, perMinute, mods) - 1e-9) : 0
+}

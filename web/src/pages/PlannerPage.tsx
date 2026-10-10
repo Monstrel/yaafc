@@ -1,7 +1,7 @@
 import { startTransition, useEffect, useMemo, useOptimistic, useRef, useState, type ReactNode } from 'react'
 import { ItemIcon, ItemLabel } from '../components/ItemIcon'
 import { ItemPicker } from '../components/ItemPicker'
-import { Exp } from '../components/Exp'
+import { AltarDetail, Exp } from '../components/Exp'
 import { Money } from '../components/Money'
 import { OverflowTargetForm } from '../components/OverflowTargetForm'
 import { ProducerSelect, TierTag } from '../components/ProducerSelect'
@@ -24,7 +24,7 @@ import {
   tierIcon,
   tierName,
 } from '../lib/gameData'
-import { altarsFor, altarYield, type AltarYield } from '../lib/altar'
+import { KNOWLEDGE_ALTAR, altarsBuilt, altarsFor, altarYield, type AltarYield } from '../lib/altar'
 import { fmt, fmtMachines, fmtSeconds, wholeMachines } from '../lib/format'
 import { buildingCounts, checkLogistics, resourceUsers, type LogisticsCheck, type ResourceUser } from '../lib/logistics'
 import { fedOverflow, moneyLedger, type BusUse, type MoneyLedger, type OutputRow, type OutputSource } from '../lib/money'
@@ -47,6 +47,7 @@ import {
   migrateFeedback,
   moveTarget,
   removeTarget,
+  setAltar,
   setItemFeedback,
   setTargetFeedback,
   pruneChoices,
@@ -409,10 +410,30 @@ export function PlannerPage({
   const capped = ledger.flatMap((l) => (l.cap !== null ? [{ item: l.item, cap: l.cap, left: Math.max(0, l.cap - l.bus) }] : []))
   // Overflow the plan feeds back in place of the bus or into its money isn't overflow: it gets used.
   const fed = useMemo(() => fedOverflow(money), [money])
+  // The plan's upgrades when its research tier has the Knowledge Altar, else null.
+  const altar = machineTier(KNOWLEDGE_ALTAR) <= catalog.tier ? mods : null
+  // What's left of each item's overflow that Knowledge Altars could break down, when the plan has them.
+  const altarLeft = useMemo(() => {
+    if (!altar) return null
+    const left = new Map<string, number>()
+    for (const o of money.outputs) {
+      const s = o.sources.find((s) => s.target === null)
+      if (s && altarYield(o.item, altar)) left.set(o.item, sourceUse(s).left)
+    }
+    return left
+  }, [money, altar])
 
-  // Whole machines per building type, as built: each tree row rounds up on its own.
-  const buildings = useMemo(() => buildingCounts(result.tree, logistics, units.copies), [result.tree, logistics, units])
+  // Whole machines per building type, as built: each tree row rounds up on its own, and so do the
+  // Knowledge Altars breaking down each item's overflow.
+  const buildings = useMemo(() => {
+    const counts = buildingCounts(result.tree, logistics, units.copies)
+    const altars = altar ? money.outputs.reduce((t, o) => t + altarsBuilt(o.item, o.altar, altar), 0) : 0
+    if (altars > 0) counts.push({ name: machinesByKey.get(KNOWLEDGE_ALTAR)?.name ?? 'Knowledge Altar', count: altars, atFullSpeed: altars })
+    return counts
+  }, [result.tree, logistics, units, money, altar])
   const totalMachines = buildings.reduce((t, b) => t + b.count, 0)
+  const altarOverflow = (item: string, on: boolean) =>
+    onUpdatePlan(`${on ? 'Break down' : 'Stop breaking down'} ${itemName(item)} overflow at Knowledge Altars`, (p) => setAltar(p, item, on))
   const heatUsers = useMemo(() => resourceUsers(result.tree, logistics, 'heat', units.copies), [result.tree, logistics, units])
   const nutrientUsers = useMemo(() => resourceUsers(result.tree, logistics, 'nutrients', units.copies), [result.tree, logistics, units])
 
@@ -628,6 +649,7 @@ export function PlannerPage({
                   onUpdatePlan(`Use overflow of ${itemName(item)}`, (p) => addOverflowTarget(p, item, consumes))
                   showTarget(plan.targets.length)
                 }}
+                onAltar={altarOverflow}
                 onCap={(item, cap) => onUpdatePlan(`Change bus supply of ${itemName(item)}`, (p) => setBusSupply(p, item, cap))}
                 onUseSupply={(item, consumes) => {
                   onUpdatePlan(`Use bus supply of ${itemName(item)}`, (p) => addSupplyTarget(p, item, consumes))
@@ -635,7 +657,7 @@ export function PlannerPage({
                 }}
                 onShowTarget={showTarget}
                 onShowRow={showRow}
-                altar={machineTier(KNOWLEDGE_ALTAR) <= catalog.tier ? mods : null}
+                altar={altar}
               />
 
               <section className="panel tree-panel" data-flip="tree">
@@ -670,6 +692,8 @@ export function PlannerPage({
                     onUpdatePlan(`Use overflow of ${itemName(item)}`, (p) => addOverflowTarget(p, item, consumes))
                     showTarget(plan.targets.length)
                   }}
+                  altarLeft={altarLeft}
+                  onAltar={altarOverflow}
                   onRoundUp={(row, on) => onUpdatePlan(`${on ? 'Round up' : 'Stop rounding up'} ${rowName(row)}`, (p) => setRoundUp(p, row, on))}
                   onMixedFeed={(row, on, inherited) =>
                     onUpdatePlan(`${on ? 'Mix by-products into' : 'Stop mixing by-products into'} ${rowName(row)}`, (p) =>
@@ -729,8 +753,6 @@ export function PlannerPage({
 /** What a target's item can feed back into: what the plan takes of it from the bus, or (coins) its money. */
 type Feeds = 'bus' | 'money' | null
 
-const KNOWLEDGE_ALTAR = 'KnowledgeAltar'
-
 /** Knowledge Altars breaking down an item, as built: "3 Knowledge Altars (2.4)". */
 function altarCount(y: AltarYield, perMinute: number, mods: Modifiers): string {
   const n = altarsFor(y, perMinute, mods)
@@ -762,6 +784,7 @@ function BusPanel({
   onCap,
   onUseSupply,
   onUseOverflow,
+  onAltar,
   onShowTarget,
   onShowRow,
   altar,
@@ -781,6 +804,8 @@ function BusPanel({
   onUseSupply: (item: string, consumes: string) => void
   /** Adds an overflow target making `item` from the overflow of `consumes`. */
   onUseOverflow: (item: string, consumes: string) => void
+  /** Breaks down what's left of an item's overflow at Knowledge Altars, or stops. */
+  onAltar: (item: string, on: boolean) => void
   /** Shows a target's row in the production tree. */
   onShowTarget: (index: number) => void
   /** Shows the next of these rows in the production tree. */
@@ -791,14 +816,12 @@ function BusPanel({
   const margin = money.value - money.cost
   const exp = new Map(money.outputs.map((o) => [o.item, altar && altarYield(o.item, altar)]))
   const totalExp = money.outputs.reduce((t, o) => t + o.toBus * (exp.get(o.item)?.exp ?? 0), 0)
-  const totalAltars = altar
-    ? money.outputs.reduce((t, o) => {
-        const y = exp.get(o.item)
-        return t + (y && o.toBus > 0 ? wholeMachines(altarsFor(y, o.toBus, altar)) : 0)
-      }, 0)
-    : 0
+  const totalAltars = altar ? money.outputs.reduce((t, o) => t + altarsBuilt(o.item, o.toBus, altar), 0) : 0
+  // What the overflow broken down at Knowledge Altars makes, and on how many.
+  const altarExp = money.outputs.reduce((t, o) => t + o.altar * (exp.get(o.item)?.exp ?? 0), 0)
+  const altarsUsed = altar ? money.outputs.reduce((t, o) => t + altarsBuilt(o.item, o.altar, altar), 0) : 0
   const fedBack = money.outputs.filter((o) => o.sources.some((s) => isFed(o, s)))
-  const out = money.outputs.filter((o) => o.toBus > 0 || o.sources.some((s) => !isFed(o, s)))
+  const out = money.outputs.filter((o) => o.toBus > 0 || o.altar > 0 || o.sources.some((s) => !isFed(o, s)))
   // Items the plan's own fed-back output wholly covers take nothing from the bus: the fed-back
   // strip shows them. A cap the user set keeps its line, so it isn't hidden away.
   const drawing = ledgers.filter((l) => l.bus > 0 || l.short > 0 || l.covered === 0 || l.cap !== null)
@@ -844,6 +867,7 @@ function BusPanel({
                   overflowFrom={overflowFrom}
                   onFeedback={onFeedback}
                   onUseOverflow={onUseOverflow}
+                  onAltar={onAltar}
                   onShowTarget={onShowTarget}
                   onShowRow={onShowRow}
                   exp={exp.get(o.item) ?? null}
@@ -867,7 +891,16 @@ function BusPanel({
               Knowledge <Exp exp={totalExp} suffix="/min" />
               <span className="hint-inline">
                 {' '}
-                if it all goes to {totalAltars} {buildingNameFor(KNOWLEDGE_ALTAR, totalAltars)} instead of the shop
+                if {altarExp > 0 ? 'the rest' : 'it all'} goes to {totalAltars} {buildingNameFor(KNOWLEDGE_ALTAR, totalAltars)} instead of the shop
+              </span>
+            </p>
+          )}
+          {altarExp > 0 && (
+            <p className={`bus-total${money.value > 0 || totalExp > 0 ? ' bus-total-more' : ''}`}>
+              Knowledge <Exp exp={altarExp} suffix="/min" />
+              <span className="hint-inline">
+                {' '}
+                from {altarsUsed} {buildingNameFor(KNOWLEDGE_ALTAR, altarsUsed)} breaking down overflow
               </span>
             </p>
           )}
@@ -896,11 +929,11 @@ function BusPanel({
 /** Whether the plan feeds this source back in place of the bus or into its money (so it's in a banner, not out). */
 const isFed = (row: OutputRow, s: OutputSource) => s.fedBack && row.feeds.length > 0
 
-/** What a source's own overflow targets take of it and what the plan feeds back of it, per minute. */
+/** What the plan feeds back of a source, and what's left of it after that, its own overflow targets and Knowledge Altars, per minute. */
 function sourceUse(s: OutputSource) {
   const fed = Object.values(s.used).reduce((t, n) => t + (n ?? 0), 0)
   const taken = s.taken.reduce((t, x) => t + x.amount, 0)
-  return { fed, left: s.amount - fed - taken }
+  return { fed, left: s.amount - fed - taken - s.altar }
 }
 
 /** The rows an item overflows from, as links, when these of its sources include its overflow. */
@@ -1179,13 +1212,14 @@ function MoneyIn({ money }: { money: MoneyLedger }) {
  * One item leaving the plan: what goes out to the bus and what it's worth, and the sources it goes
  * out from (targets and overflow), each movable into the plan when the item can feed back; what's
  * left over of a source the plan feeds back goes out too. Overflow nothing uses is flagged: it backs
- * up the machines making it.
+ * up the machines making it, unless the player breaks it down at Knowledge Altars.
  */
 function OutputLine({
   row,
   overflowFrom,
   onFeedback,
   onUseOverflow,
+  onAltar,
   onShowTarget,
   onShowRow,
   exp,
@@ -1196,6 +1230,8 @@ function OutputLine({
   onFeedback: (item: string, target: number | null, on: boolean) => void
   /** Adds an overflow target making `item` from this item's overflow. */
   onUseOverflow: (item: string, consumes: string) => void
+  /** Breaks down what's left of this item's overflow at Knowledge Altars, or stops. */
+  onAltar: (item: string, on: boolean) => void
   onShowTarget: (index: number) => void
   /** Shows the next of these rows in the production tree. */
   onShowRow: (ids: string[]) => void
@@ -1204,8 +1240,30 @@ function OutputLine({
   mods: Modifiers | null
 }) {
   // Fed-back sources show here only for what's left over of them: their banner has the rest.
-  const sources = row.sources.filter((s) => !isFed(row, s) || sourceUse(s).left > 1e-9 * s.amount)
+  const sources = row.sources.filter((s) => !isFed(row, s) || s.altar > 0 || sourceUse(s).left > 1e-9 * s.amount)
   const [using, setUsing] = useState(false)
+  const overflow = row.sources.find((s) => s.target === null)
+  // Overflow broken down at Knowledge Altars: how many, what for, and sending it back out instead.
+  const atAltar = (s: OutputSource) =>
+    s.altar > 0 && (
+      <li key={`${s.target ?? 'overflow'}:altar`}>
+        <span className="ledger-what">
+          <span className="fed-text">↳ {fmt(s.altar)}/min broken down at</span>
+          {mods ? (
+            <AltarDetail item={row.item} perMinute={s.altar} mods={mods} />
+          ) : (
+            <span className="warn-text">Knowledge Altars, which the plan&apos;s research tier hasn&apos;t reached</span>
+          )}
+        </span>
+        <button
+          className="move-button"
+          title="Stop breaking it down: it goes out to the bus, where nothing uses it"
+          onClick={() => onAltar(row.item, false)}
+        >
+          Send to bus →
+        </button>
+      </li>
+    )
   return (
     <li className="bus-output">
       <div className="bus-output-head">
@@ -1237,18 +1295,21 @@ function OutputLine({
         {sources.map((s) => {
           const { left } = sourceUse(s)
           if (isFed(row, s))
-            return (
-              <li key={s.target ?? 'overflow'}>
-                <span className="ledger-what">
-                  <span>
-                    {s.target === null ? 'overflow' : <TargetLink index={s.target} onShow={onShowTarget} />} · {fmt(left)}/min
-                    <span className="hint-inline"> left over after the plan {row.feeds.map((f) => FEED_VERB[f]).join(' or ')} it</span>
+            return [
+              left > 1e-9 * s.amount && (
+                <li key={s.target ?? 'overflow'}>
+                  <span className="ledger-what">
+                    <span>
+                      {s.target === null ? 'overflow' : <TargetLink index={s.target} onShow={onShowTarget} />} · {fmt(left)}/min
+                      <span className="hint-inline"> left over after the plan {row.feeds.map((f) => FEED_VERB[f]).join(' or ')} it</span>
+                    </span>
                   </span>
-                </span>
-              </li>
-            )
+                </li>
+              ),
+              atAltar(s),
+            ]
           const idle = s.target === null && left > 1e-9 * s.amount
-          return (
+          return [
             <li key={s.target ?? 'overflow'}>
               <span className="ledger-what">
                 <span>
@@ -1257,7 +1318,7 @@ function OutputLine({
                 {idle && (
                   <button
                     className="tree-link warn-text"
-                    title="Made but used nowhere in the plan: route it somewhere or it backs up the machines. Click to add a target that uses it."
+                    title="Made but used nowhere in the plan: route it somewhere or it backs up the machines. Click to add a target that uses it, or break it down at Knowledge Altars."
                     aria-expanded={using}
                     onClick={() => setUsing((u) => !u)}
                   >
@@ -1275,13 +1336,25 @@ function OutputLine({
                   ← {feedButton(row.feeds)} in plan
                 </button>
               )}
-            </li>
-          )
+            </li>,
+            atAltar(s),
+          ]
         })}
       </ul>
       {using && (
         <OverflowTargetForm
           item={row.item}
+          altar={
+            exp && mods && overflow
+              ? {
+                  detail: <AltarDetail item={row.item} perMinute={sourceUse(overflow).left} mods={mods} />,
+                  onPick: () => {
+                    onAltar(row.item, true)
+                    setUsing(false)
+                  },
+                }
+              : undefined
+          }
           onAdd={(item) => {
             onUseOverflow(item, row.item)
             setUsing(false)

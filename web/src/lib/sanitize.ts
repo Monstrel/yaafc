@@ -110,6 +110,7 @@ function plan(v: unknown, newId: () => string): Plan | undefined {
     upgrades: record(v.upgrades, num),
     tier: num(v.tier),
     feedbackItems: strings(v.feedbackItems),
+    altarItems: strings(v.altarItems),
     feedback,
     rowCatalysts: record(v.rowCatalysts, strings),
     catalysts: record(v.catalysts, strings),

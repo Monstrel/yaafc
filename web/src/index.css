@@ -3764,3 +3764,14 @@ tr.unit-totals td.num {
     border-top: 1px solid var(--border);
   }
 }
+
+/* Breaking overflow down at Knowledge Altars, offered before making something from it. */
+.altar-choice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
