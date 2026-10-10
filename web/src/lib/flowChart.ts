@@ -362,13 +362,13 @@ export function buildFlowChart(tree: TreeNode[], rootId: string, levels?: number
    * rows' by-products. Used for the chart's own row and items built separately, which supply
    * every use from one place.
    */
-  const hub = (n: TreeNode, depth: number): FlowBox => {
+  const hub = (n: TreeNode, depth: number, recovered = true): FlowBox => {
     const b = box({
       id: n.id,
       row: n.id,
       kind: 'machines',
       item: n.item,
-      rate: n.rate,
+      rate: recovered ? n.rate : n.rate - n.fromRecovery,
       node: n,
       depth,
       group: !!n.consolidated,
@@ -381,12 +381,24 @@ export function buildFlowChart(tree: TreeNode[], rootId: string, levels?: number
       b.more = countRows(n)
       addHidden(n, b, depth + 1)
     } else addChildren(n, b, depth + 1)
-    // With nothing above it in the chart, what's recovered into its supply comes into it.
-    joinRecoveries(n, b, depth + 1)
+    // A separate build gathers what's recovered into its supply too.
+    if (recovered) joinRecoveries(n, b, depth + 1)
     return b
   }
 
-  const root = hub(start, 0)
+  // The chart's own row with rows recovering into its supply: those sit beside it, as everywhere
+  // else, and both go into what it delivers (else the recovery reads as an input of its machines,
+  // and their outputs going into it as a loop).
+  const beside = !start.consolidated && start.children.some((c) => c.recovery)
+  const delivered = beside
+    ? box({ id: `${start.id}#out`, row: start.id, kind: 'outside', item: start.item, rate: start.rate, note: 'made and recovered', depth: -1 })
+    : undefined
+  const own = hub(start, 0, !delivered)
+  if (delivered) {
+    attach(delivered.id, own)
+    joinRecoveries(start, delivered, 0)
+  }
+  const root = delivered ?? own
 
   // Loops and separate builds: from the box making it, else from outside the chart. An item built
   // separately elsewhere in the plan comes into the chart, by its first use here.
@@ -457,7 +469,7 @@ export function buildFlowChart(tree: TreeNode[], rootId: string, levels?: number
   }
   for (const e of links) e.port = portOf(madeBy(e.from), e.item)
 
-  const loops = findLoops(boxes, links, root)
+  const loops = findLoops(boxes, links, own)
   const laid = layout(root, boxes, links)
   return { root, boxes, edges: laid.edges, loops, depth: deepest(start, 0), ...laid.size }
 }
@@ -598,6 +610,8 @@ function layout(root: FlowBox, boxes: Map<string, FlowBox>, links: Link[]) {
   const height = place(root, 0)
 
   const maxDepth = Math.max(...[...boxes.values()].map((b) => b.depth))
+  // The right-most column: the chart's own row, or what it delivers beside its recovery (depth -1).
+  const last = maxDepth - Math.min(...[...boxes.values()].map((b) => b.depth))
   const col = (b: FlowBox) => maxDepth - b.depth
   const byId = (id: string) => boxes.get(id)!
   /** A box's card, above the furnaces or pads under it, and the middle of those. */
@@ -630,13 +644,13 @@ function layout(root: FlowBox, boxes: Map<string, FlowBox>, links: Link[]) {
   // Room left of the first column for lines entering it.
   let x = gapSlots.has(-1) ? 24 + gapSlots.get(-1)! * LANE_X_STEP : 0
   const colX: number[] = []
-  for (let k = 0; k <= maxDepth; k++) {
+  for (let k = 0; k <= last; k++) {
     colX[k] = x
     x += BOX_W + gapW(k)
   }
   for (const b of boxes.values()) b.x = colX[col(b)]
   // Room right of the last column only for lines leaving it.
-  const width = x - (gapSlots.has(maxDepth) ? 0 : gapW(maxDepth))
+  const width = x - (gapSlots.has(last) ? 0 : gapW(last))
 
   // Lanes: shortest spans nearest the boxes, sharing a lane where they don't overlap.
   const lanes = (rs: typeof routes) => {

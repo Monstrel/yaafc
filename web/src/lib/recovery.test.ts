@@ -147,6 +147,29 @@ describe('a target of a number of machines', () => {
     expect(athanors.fromRecovery).toBeCloseTo(2.25)
     expect(targets[0]).toMatchObject({ rate: expect.closeTo(3), made: expect.closeTo(3) })
   })
+
+  it("draws the chart of its row with the recovery beside its machines, not as a loop into them", () => {
+    const { tree } = solvePlan(plan({ targets: [{ item: 'GoldDust3', rate: 1, unit: 'machines' }] }), catalog, mods)
+    const chart = buildFlowChart(tree, '0/GoldDust3')!
+    expect(chart.loops).toEqual([])
+    // What it delivers, fed by its own machines and by the recovery beside them.
+    expect(chart.root).toMatchObject({ kind: 'outside', item: 'GoldDust3', rate: expect.closeTo(3) })
+    const into = chart.edges.filter((e) => e.to === chart.root.id && e.kind === 'feed')
+    expect(into.map((e) => [e.from, e.rate])).toEqual(
+      expect.arrayContaining([
+        ['0/GoldDust3', expect.closeTo(0.75)],
+        ['0/GoldDust3/recover:GoldDust3@recipe:GoldDust3_Alt', expect.closeTo(2.25)],
+      ]),
+    )
+    // To the right of both, which sit in one column.
+    const athanors = chart.boxes.get('0/GoldDust3')!
+    const recovery = chart.boxes.get('0/GoldDust3/recover:GoldDust3@recipe:GoldDust3_Alt')!
+    expect(recovery.x).toBe(athanors.x)
+    expect(chart.root.x).toBeGreaterThan(athanors.x + athanors.w)
+    expect(chart.width).toBeGreaterThanOrEqual(chart.root.x + chart.root.w)
+    // The Athanors' failed crafts go across to the recovery as by-products.
+    expect(chart.edges.filter((e) => e.from === '0/GoldDust3' && e.kind === 'byproduct').map((e) => e.item).sort()).toEqual(['GoldDust', 'GoldDust2'])
+  })
 })
 
 describe('flow chart levels', () => {
