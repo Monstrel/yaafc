@@ -7,6 +7,8 @@ import { OverflowTargetForm } from '../components/OverflowTargetForm'
 import { PlanOverview } from '../components/PlanOverview'
 import { ProducerSelect, TierTag } from '../components/ProducerSelect'
 import { BookmarkIcon, ProductionTree, type TargetSlot } from '../components/ProductionTree'
+import { Spinner } from '../components/Spinner'
+import { useNoticeable } from '../lib/useNoticeable'
 import { ledgers, targetFedBack, type DrawUse, type ItemLedger } from '../lib/ledger'
 import { releaseScrollAnchor, useFlip } from '../lib/flip'
 import { setNetworkFuel, setNetworkSource } from '../lib/heatChoices'
@@ -146,6 +148,7 @@ export function PlannerPage({
 }: Props) {
   const { mods, catalog } = model
   const result = model.result ?? UNSOLVED
+  const slowSolve = useNoticeable(model.solving)
   // Panels and rows glide to where a change puts them, around the one just used.
   const main = useRef<HTMLElement>(null)
   useFlip(main, flipParent)
@@ -538,14 +541,17 @@ export function PlannerPage({
               </>
             ) : (
               <>
-                <input
-                  className="plan-name"
-                  value={namedAfterTargets(plan) ? '' : plan.name}
-                  placeholder={targetsName(plan)}
-                  title="Leave empty to name the plan after what it makes"
-                  onChange={(e) => onUpdatePlan('Rename plan', (p) => ({ ...p, name: e.target.value }))}
-                  aria-label="Plan name"
-                />
+                <span className="plan-name">
+                  <input
+                    value={namedAfterTargets(plan) ? '' : plan.name}
+                    placeholder={targetsName(plan)}
+                    title="Leave empty to name the plan after what it makes"
+                    onChange={(e) => onUpdatePlan('Rename plan', (p) => ({ ...p, name: e.target.value }))}
+                    aria-label="Plan name"
+                  />
+                  {/* A slow re-solve: what's below is from before the last change until it's back. */}
+                  {slowSolve && model.result && <Spinner label="Solving the plan" />}
+                </span>
                 <button onClick={onNewPlan}>New</button>
                 <button onClick={onDuplicatePlan}>Duplicate</button>
                 <button className="danger" onClick={onDeletePlan} disabled={plans.length <= 1}>
@@ -559,6 +565,7 @@ export function PlannerPage({
             <PlanOverview
               plans={plans}
               openId={plan.id}
+              model={model}
               progress={progress}
               saved={saved}
               myDefaults={myDefaults}
@@ -572,9 +579,14 @@ export function PlannerPage({
               {result.status !== 'ok' && <div className="panel warning" data-flip="unsolved">Could not solve this plan: {result.message}</div>}
 
               {!model.result ? (
-                <div className="panel empty-state" aria-busy>
-                  <p>Solving…</p>
-                </div>
+                // A quick first solve shows nothing in between: only a slow one says it's working.
+                slowSolve && (
+                  <div className="panel empty-state" aria-busy>
+                    <p>
+                      <Spinner /> Solving…
+                    </p>
+                  </div>
+                )
               ) : (
                 <>
                   <section className="summary" data-flip="summary">

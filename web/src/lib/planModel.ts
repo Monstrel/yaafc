@@ -61,6 +61,8 @@ export interface PlanModel {
   mods: Modifiers
   catalog: ProcessCatalog
   result: PlanResult | null
+  /** Whether a solve for the plan as it is now is still on its way (`result`, if any, is older). */
+  solving: boolean
 }
 
 /**
@@ -81,15 +83,16 @@ export function usePlanModel(plan: Plan, progress: Progress, saved: SavedRecipe[
   const [toSolve, setToSolve] = useState<Plan>(solving)
   if (!sameFields(toSolve, solving)) setToSolve(solving)
 
-  const [solved, setSolved] = useState<{ planId: string; result: PlanResult } | null>(null)
+  const [solved, setSolved] = useState<{ plan: Plan; context: ProcessContext; result: PlanResult } | null>(null)
   useEffect(() => {
     void solveInWorker({ plan: toSolve, context }).then((result) => {
       // Re-rendering a big tree takes a while: as a transition, React can interrupt it for input.
-      if (result) startTransition(() => setSolved({ planId: toSolve.id, result }))
+      if (result) startTransition(() => setSolved({ plan: toSolve, context, result }))
     })
   }, [toSolve, context])
-  const result = solved?.planId === plan.id ? solved.result : null
-  return { mods, catalog, result }
+  const result = solved?.plan.id === plan.id ? solved.result : null
+  const pending = solved?.plan !== toSolve || solved.context !== context
+  return { mods, catalog, result, solving: pending }
 }
 
 // The overview's solves queue in a worker of their own: unlike the open plan's, none may be skipped.
@@ -127,13 +130,14 @@ export interface SummaryState {
 }
 
 /**
- * Every plan's summary (see planSummary.ts), solved one at a time in the background: the open
- * plan first, then the rest in order. Plans that haven't changed since they were last summarized
- * aren't solved again. A plan missing from the map hasn't been summarized yet.
+ * Every plan's summary (see planSummary.ts). The open plan's comes from the planner's own solve of
+ * it (`open`); the rest are solved one at a time in the background, in order. Plans that haven't
+ * changed since they were last summarized aren't solved again. A plan missing from the map hasn't
+ * been summarized yet.
  */
 export function usePlanSummaries(
   plans: Plan[],
-  openId: string,
+  open: { id: string; model: PlanModel },
   progress: Progress,
   saved: SavedRecipe[],
   mine: MyDefaults,
@@ -155,11 +159,10 @@ export function usePlanSummaries(
     const ids = new Set(jobs.map((j) => j.plan.id))
     for (const id of summaries.keys()) if (!ids.has(id)) summaries.delete(id)
     let stopped = false
-    const order = [...jobs.filter((j) => j.plan.id === openId), ...jobs.filter((j) => j.plan.id !== openId)]
     void (async () => {
-      for (const { plan, key } of order) {
+      for (const { plan, key } of jobs) {
         if (stopped) return
-        if (summaries.get(plan.id)?.key === key) continue
+        if (plan.id === open.id || summaries.get(plan.id)?.key === key) continue
         const context = { saved, machines: plan.machines, mods, fertilizer: planFertilizer(plan), tier: progress.tier, mine }
         const summary = await summarizeInWorker({ plan, context })
         summaries.set(plan.id, { key, summary })
@@ -169,10 +172,25 @@ export function usePlanSummaries(
     return () => {
       stopped = true
     }
-  }, [jobs, openId, saved, mods, progress.tier, mine])
+  }, [jobs, open.id, saved, mods, progress.tier, mine])
+
+  // Once the planner's solve is for the open plan as it is now, summarize that rather than solve it again.
+  const openJob = jobs.find((j) => j.plan.id === open.id)
+  const { result: openResult, solving: openSolving } = open.model
+  const openSummary = useMemo(
+    () =>
+      openJob && openResult && !openSolving && summaries.get(openJob.plan.id)?.key !== openJob.key
+        ? { key: openJob.key, summary: summarizePlan(openJob.plan, openResult, mods, progress.tier ?? MAX_TIER) }
+        : null,
+    [openJob, openResult, openSolving, mods, progress.tier],
+  )
+  useEffect(() => {
+    if (openSummary && openJob) summaries.set(openJob.plan.id, openSummary)
+  }, [openSummary, openJob])
+
   const states = new Map<string, SummaryState>()
   for (const { plan, key } of jobs) {
-    const s = summaries.get(plan.id)
+    const s = (plan.id === open.id && openSummary) || summaries.get(plan.id)
     if (s) states.set(plan.id, { summary: s.summary, current: s.key === key })
   }
   return states

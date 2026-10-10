@@ -8,6 +8,13 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
+## 2026-10-10T17:48Z
+
+- A plan that takes a while to work out now shows a spinner: in the plan name box while the plan
+  you're looking at catches up with your last change, and on each card in "All plans" that's still
+  being worked out. Quick plans don't flash a "Solving…" message any more.
+- "All plans" opens faster: the plan you have open is no longer worked out a second time.
+
 ## 2026-10-10T16:11Z
 
 - See all your plans at once: the plan picker at the top of the planner is now an "All plans"

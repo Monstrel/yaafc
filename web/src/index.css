@@ -1106,7 +1106,58 @@ td.under {
 .plan-name {
   flex: 1;
   min-width: 160px;
+  display: flex;
+  position: relative;
+}
+
+.plan-name input {
+  flex: 1;
+  min-width: 0;
   font-weight: 600;
+  /* Room for the solving spinner, so it never covers the name. */
+  padding-right: 30px;
+}
+
+.plan-name .spinner {
+  position: absolute;
+  right: 10px;
+  top: calc(50% - 0.5em);
+}
+
+/* Work that's taking a noticeable while: fades in, so a solve that only just crosses the line
+   doesn't blink. */
+.spinner {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  vertical-align: -0.15em;
+  border: 2px solid color-mix(in srgb, currentColor 25%, transparent);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  color: var(--muted);
+  animation:
+    spinner-in 0.2s ease-out,
+    spinner-turn 0.8s linear infinite;
+}
+
+@keyframes spinner-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes spinner-turn {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation:
+      spinner-in 0.2s ease-out,
+      spinner-turn 2.4s linear infinite;
+  }
 }
 
 .plans-toggle {

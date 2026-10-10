@@ -1,6 +1,7 @@
 import { fmt } from '../lib/format'
 import { itemName } from '../lib/gameData'
-import { usePlanSummaries, type SummaryState } from '../lib/planModel'
+import { usePlanSummaries, type PlanModel, type SummaryState } from '../lib/planModel'
+import { useNoticeable } from '../lib/useNoticeable'
 import { planTitle } from '../lib/planName'
 import type { SummaryLine } from '../lib/planSummary'
 import { noun } from '../lib/plural'
@@ -8,6 +9,7 @@ import type { MyDefaults, Plan, Progress, SavedRecipe } from '../lib/types'
 import { Exp } from './Exp'
 import { ItemLabel } from './ItemIcon'
 import { Money } from './Money'
+import { Spinner } from './Spinner'
 
 /** Lines a card shows of its inputs or outputs before the rest go under "more". */
 const SHOWN = 6
@@ -19,6 +21,7 @@ const SHOWN = 6
 export function PlanOverview({
   plans,
   openId,
+  model,
   progress,
   saved,
   myDefaults,
@@ -27,12 +30,14 @@ export function PlanOverview({
   plans: Plan[]
   /** The plan the planner has open. */
   openId: string
+  /** The open plan's solve: its summary comes from this rather than a solve of its own. */
+  model: PlanModel
   progress: Progress
   saved: SavedRecipe[]
   myDefaults: MyDefaults
   onOpen: (id: string) => void
 }) {
-  const states = usePlanSummaries(plans, openId, progress, saved, myDefaults)
+  const states = usePlanSummaries(plans, { id: openId, model }, progress, saved, myDefaults)
   return (
     <ul className="plan-overview" aria-label="Plans">
       {plans.map((p) => (
@@ -45,9 +50,11 @@ export function PlanOverview({
 function PlanCard({ plan, state, open, onOpen }: { plan: Plan; state: SummaryState | undefined; open: boolean; onOpen: () => void }) {
   const s = state?.summary
   const title = planTitle(plan)
+  // Only a solve that takes a noticeable while dims the card and spins: quick ones just swap in.
+  const slow = useNoticeable(!state?.current)
   return (
     <li
-      className={`panel plan-card${open ? ' plan-card-open' : ''}${state && !state.current ? ' plan-card-stale' : ''}`}
+      className={`panel plan-card${open ? ' plan-card-open' : ''}${s && slow ? ' plan-card-stale' : ''}`}
       aria-busy={!state?.current}
     >
       <div className="plan-card-head">
@@ -58,6 +65,7 @@ function PlanCard({ plan, state, open, onOpen }: { plan: Plan; state: SummarySta
           </button>
         </h3>
         {open && <span className="pill">open</span>}
+        {s && slow && <Spinner label="Solving" />}
         {s && !s.error && s.started && (
           <span className="hint-inline plan-card-size">
             {fmt(s.machines)} {noun(s.machines, 'machine')}
@@ -65,7 +73,16 @@ function PlanCard({ plan, state, open, onOpen }: { plan: Plan; state: SummarySta
         )}
       </div>
       {!s ? (
-        <p className="hint">Solving…</p>
+        // Holds its line while a quick solve runs, so the card doesn't grow when a slow one says so.
+        <p className="hint">
+          {slow ? (
+            <>
+              <Spinner /> Solving…
+            </>
+          ) : (
+            ' '
+          )}
+        </p>
       ) : s.error ? (
         <p className="warn-text">Could not solve this plan: {s.error}</p>
       ) : !s.started ? (
