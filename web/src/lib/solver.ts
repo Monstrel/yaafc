@@ -361,14 +361,17 @@ function solveRound(
   floors: Map<string, number>,
   {
     recovering = true,
-    localOnly = false,
+    localOnly,
     sizing = true,
     sharesUsed,
   }: {
     /** Recovers outputs nothing uses (see `unfold`). */
     recovering?: boolean
-    /** Recovers a row's output only into its own supply, where it can go there (see `strays`). */
-    localOnly?: boolean
+    /**
+     * Recovers a row's output only into its own supply, where it can go there (see `strays`): set to
+     * the solving round's baseline and recovery caps, which this round shares.
+     */
+    localOnly?: { held: Baseline | null; overflowShare: Map<string, number> }
     /** Overflow and supply targets take what they can; else they take nothing (see `baselineCrafts`). */
     sizing?: boolean
     /** Filled with the share of each row's side output recovery could take, where it's capped. */
@@ -426,7 +429,11 @@ function solveRound(
   // Overflow and supply targets take what the rest of the plan overflows or leaves as it is without
   // them: its targets' rows run as they would (running one harder could soak up the overflow or
   // supply into a surplus of its own).
-  const held = takerOf.size || supplyTaker.size ? baselineCrafts(plan, catalog, mods, absorbing, floors) : null
+  const held = localOnly
+    ? localOnly.held
+    : takerOf.size || supplyTaker.size
+      ? baselineCrafts(plan, catalog, mods, absorbing, floors)
+      : null
 
   const equalities: Record<string, number> = {}
   const columns: Record<string, Record<string, number>> = {}
@@ -569,8 +576,8 @@ function solveRound(
     const cs = sharedWith(n, item)
     return cs.some(isRecovery) && cs.some((c) => !isRecovery(c))
   }
-  const overflowShare = new Map<string, number>()
-  if (shape.nodes.some((n) => n.kind === 'make' && n.process!.outputs.some((o) => o.item !== n.item && contested(n, o.item)))) {
+  const overflowShare = localOnly?.overflowShare ?? new Map<string, number>()
+  if (!localOnly && shape.nodes.some((n) => n.kind === 'make' && n.process!.outputs.some((o) => o.item !== n.item && contested(n, o.item)))) {
     const visit = (t: TreeNode) => {
       for (const b of t.byproducts) if (b.count > 0) overflowShare.set(`${t.id}>${b.item}`, b.overflow / b.count)
       t.children.forEach(visit)
@@ -610,7 +617,7 @@ function solveRound(
       for (const b of t.byproducts) if (b.count > 0) localShare.set(`${t.id}>${b.item}`, b.overflow / b.count)
       t.children.forEach(visit)
     }
-    solveRound(plan, catalog, mods, absorbing, floors, { localOnly: true, sizing }).tree.forEach(visit)
+    solveRound(plan, catalog, mods, absorbing, floors, { localOnly: { held, overflowShare }, sizing }).tree.forEach(visit)
     // As above: held rows recover where they did without the overflow and supply targets.
     if (held)
       for (const n of shape.nodes)
