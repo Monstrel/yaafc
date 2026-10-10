@@ -7,6 +7,7 @@ import { HEAT, MONEY, NUTRIENTS, cauldronIngredients, cauldronTargets, itemName,
 import { diagnoseNoResults, type FinderQuery } from '../lib/diagnose'
 import { fmt, fmtSeconds } from '../lib/format'
 import { noun } from '../lib/plural'
+import { placePopover } from '../lib/popover'
 import {
   allowedIngredients,
   builtinGroups,
@@ -63,14 +64,15 @@ export function CauldronPage({
   }
 
   // A result's ingredient opens its own preference control, like its row in the preferences tree.
-  const [prefMenu, setPrefMenu] = useState<{ item: string; x: number; y: number } | null>(null)
+  const [prefMenu, setPrefMenu] = useState<{ item: string; at: DOMRect } | null>(null)
   const prefMenuRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    if (prefMenu) prefMenuRef.current?.showPopover()
+    if (!prefMenu || !prefMenuRef.current) return
+    prefMenuRef.current.showPopover()
+    placePopover(prefMenuRef.current, prefMenu.at)
   }, [prefMenu])
   const openPrefMenu = (item: string, button: HTMLElement) => {
-    const rect = button.getBoundingClientRect()
-    setPrefMenu({ item, x: Math.max(8, Math.min(rect.left, window.innerWidth - 248)), y: rect.bottom + 4 })
+    setPrefMenu({ item, at: button.getBoundingClientRect() })
   }
   // The results reorder (or drop the row) on any change: close rather than point at a moved row.
   const choosePref = (p: IngredientPrefs) => {
@@ -80,16 +82,17 @@ export function CauldronPage({
 
   // Use: a recipe goes on a row of the open plan making its item; with several rows, a menu says which.
   const rowsOf = (item: string) => (planTree ? pickableRows(planTree, item) : [])
-  const [useMenu, setUseMenu] = useState<{ recipe: Recipe; rows: PickableRow[]; x: number; y: number } | null>(null)
+  const [useMenu, setUseMenu] = useState<{ recipe: Recipe; rows: PickableRow[]; at: DOMRect } | null>(null)
   const useMenuRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    if (useMenu) useMenuRef.current?.showPopover()
+    if (!useMenu || !useMenuRef.current) return
+    useMenuRef.current.showPopover()
+    placePopover(useMenuRef.current, useMenu.at, 'right')
   }, [useMenu])
   const applyRecipe = (recipe: Recipe, button: HTMLElement) => {
     const rows = rowsOf(recipe.output)
     if (rows.length === 1) return onUse(recipe.mode, recipe.inputs, recipe.output, rows[0].id)
-    const rect = button.getBoundingClientRect()
-    setUseMenu({ recipe, rows, x: Math.max(8, Math.min(rect.right - 280, window.innerWidth - 288)), y: rect.bottom + 4 })
+    setUseMenu({ recipe, rows, at: button.getBoundingClientRect() })
   }
   const applyTo = (row: string | null) => {
     useMenuRef.current?.hidePopover()
@@ -310,7 +313,6 @@ export function CauldronPage({
         ref={useMenuRef}
         popover="auto"
         className="pref-menu use-menu"
-        style={useMenu ? { left: useMenu.x, top: useMenu.y } : undefined}
         onToggle={(e) => e.newState === 'closed' && setUseMenu(null)}
       >
         {useMenu && (
@@ -335,7 +337,6 @@ export function CauldronPage({
         ref={prefMenuRef}
         popover="auto"
         className="pref-menu"
-        style={prefMenu ? { left: prefMenu.x, top: prefMenu.y } : undefined}
         onToggle={(e) => e.newState === 'closed' && setPrefMenu(null)}
       >
         {prefMenu && (

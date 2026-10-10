@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
 import { fmt, fmtSeconds } from '../lib/format'
 import { HEAT, coinValue, iconUrl, itemName, itemsByKey, machinesByKey, tierIcon, tierName, type Item, type Stack } from '../lib/gameData'
 import { itemNameFor } from '../lib/plural'
+import { placePopover } from '../lib/popover'
 import {
   DEFAULT_PARADOX_INPUT,
   PARADOX_CRUCIBLE,
@@ -187,23 +188,18 @@ export function ProducerSelect({
     }
   }, [open])
 
-  /** Places the popover under the button (or above it, when there's more room there). */
-  const place = (button: HTMLElement) => {
-    const el = pop.current
-    if (!el) return
-    const r = button.getBoundingClientRect()
-    const width = Math.min(Math.max(r.width, oneLine ? 240 : 360), window.innerWidth - 16)
-    const below = window.innerHeight - r.bottom - 12
-    const above = r.top - 12
-    const up = below < 260 && above > below
-    Object.assign(el.style, {
-      width: `${width}px`,
-      left: `${Math.max(8, Math.min(r.left, window.innerWidth - width - 8))}px`,
-      top: up ? 'auto' : `${r.bottom + 4}px`,
-      bottom: up ? `${window.innerHeight - r.top + 4}px` : 'auto',
-      maxHeight: `${Math.min(440, up ? above : below)}px`,
+  /**
+   * Places the popover by the button, at least as wide. The button opens it (as its popover target)
+   * after the click, so this waits for it to show, then places it before it's drawn.
+   */
+  const place = (button: HTMLElement) =>
+    requestAnimationFrame(() => {
+      const el = pop.current
+      if (!el?.matches(':popover-open')) return
+      const r = button.getBoundingClientRect()
+      el.style.width = `${Math.max(r.width, oneLine ? 240 : 360)}px`
+      placePopover(el, r)
     })
-  }
 
   const choose = (c: Choice) => {
     pop.current?.hidePopover()

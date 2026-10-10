@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Item } from '../lib/gameData'
+import { GAP, MARGIN, popoverSide } from '../lib/popover'
 import { ItemIcon } from './ItemIcon'
 
 interface Props {
@@ -47,6 +48,22 @@ export function ItemPicker({
     return () => document.removeEventListener('mousedown', close)
   }, [open])
 
+  // Opens below the button, or above it when only that fits, its list shrinking (scrolling) to the
+  // room there; shifted left if it would run off the viewport's right edge.
+  const pop = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const el = pop.current
+    if (!open || !el || !root.current) return
+    const anchor = root.current.getBoundingClientRect()
+    el.style.removeProperty('--popover-room')
+    const { up, room } = popoverSide(anchor, el.offsetHeight)
+    el.style.top = up ? 'auto' : ''
+    el.style.bottom = up ? `calc(100% + ${GAP}px)` : ''
+    el.style.setProperty('--popover-room', `${room}px`)
+    const vw = document.documentElement.clientWidth
+    el.style.left = `${Math.max(MARGIN - anchor.left, Math.min(0, vw - MARGIN - anchor.left - el.offsetWidth))}px`
+  }, [open])
+
   const choose = (key: string | null) => {
     onChange(key)
     setOpen(false)
@@ -69,7 +86,7 @@ export function ItemPicker({
         </span>
       </button>
       {open && (
-        <div className="picker-popover" role="listbox">
+        <div className="picker-popover" role="listbox" ref={pop}>
           <input
             autoFocus
             className="picker-search"

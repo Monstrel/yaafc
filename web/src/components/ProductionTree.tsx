@@ -4,6 +4,7 @@ import { fmt, fmtMachines, wholeMachines } from '../lib/format'
 import { buildingNameFor, machineNameFor, noun } from '../lib/plural'
 import { sanitizeStrings } from '../lib/sanitize'
 import { followScrollAnchor, releaseScrollAnchor } from '../lib/flip'
+import { placePopover } from '../lib/popover'
 import { foldKey, usePersistentState } from '../lib/store'
 import type { BusUse, FedOverflow } from '../lib/money'
 import type { LogisticsCheck } from '../lib/logistics'
@@ -222,15 +223,17 @@ export function ProductionTree({
     node: TreeNode
     anchors: TreeNode[]
     moving?: Separation
-    x: number
-    y: number
+    /** The button it opened from. */
+    at: DOMRect
   } | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    if (menu) menuRef.current?.showPopover()
+    if (!menu || !menuRef.current) return
+    menuRef.current.showPopover()
+    // The button sits at the right end of its row: line the menu up with its right edge.
+    placePopover(menuRef.current, menu.at, 'right')
   }, [menu])
   const openMenu = (node: TreeNode, button: HTMLElement) => {
-    const rect = button.getBoundingClientRect()
     // Top-of-plan groups only sit under the target on screen: their own tree starts at the group.
     const above = (id: string) => {
       const ancestors = byId.get(id)?.ancestors ?? []
@@ -251,25 +254,24 @@ export function ProductionTree({
       .map((id) => byId.get(id)!.node)
       .filter((a) => a.kind === 'produce' && a.item !== node.item && !here(a))
       .reverse()
-    // The button sits at the right end of its row: line the 280px menu up with its right edge.
     setMenu({
       node,
       anchors,
       moving,
-      x: Math.max(8, Math.min(rect.right - 280, window.innerWidth - 288)),
-      y: rect.bottom + 4,
+      at: button.getBoundingClientRect(),
     })
   }
 
   // Machines menu: run a row on just what it needs, or round it up to whole machines.
-  const [machinesMenu, setMachinesMenu] = useState<{ node: TreeNode; x: number; y: number } | null>(null)
+  const [machinesMenu, setMachinesMenu] = useState<{ node: TreeNode; at: DOMRect } | null>(null)
   const machinesRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    if (machinesMenu) machinesRef.current?.showPopover()
+    if (!machinesMenu || !machinesRef.current) return
+    machinesRef.current.showPopover()
+    placePopover(machinesRef.current, machinesMenu.at, 'right')
   }, [machinesMenu])
   const openMachinesMenu = (node: TreeNode, button: HTMLElement) => {
-    const rect = button.getBoundingClientRect()
-    setMachinesMenu({ node, x: Math.max(8, Math.min(rect.right - 280, window.innerWidth - 288)), y: rect.bottom + 4 })
+    setMachinesMenu({ node, at: button.getBoundingClientRect() })
   }
   const chooseRounding = (on: boolean) => {
     machinesRef.current?.hidePopover()
@@ -333,16 +335,17 @@ export function ProductionTree({
       : checklist.auto.has(n.id)
         ? 'auto'
         : null
-  const [unmarkMenu, setUnmarkMenu] = useState<{ node: TreeNode; x: number; y: number } | null>(null)
+  const [unmarkMenu, setUnmarkMenu] = useState<{ node: TreeNode; at: DOMRect } | null>(null)
   const unmarkRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    if (unmarkMenu) unmarkRef.current?.showPopover()
+    if (!unmarkMenu || !unmarkRef.current) return
+    unmarkRef.current.showPopover()
+    placePopover(unmarkRef.current, unmarkMenu.at)
   }, [unmarkMenu])
   const checkRow = (node: TreeNode, box: HTMLElement) => {
     if (!builtRows.has(node.id)) return onBuilt(branchOf(node), true)
     if (!checklist.below.get(node.id)?.built) return onBuilt([node.id], false)
-    const rect = box.getBoundingClientRect()
-    setUnmarkMenu({ node, x: Math.max(8, Math.min(rect.left, window.innerWidth - 288)), y: rect.bottom + 4 })
+    setUnmarkMenu({ node, at: box.getBoundingClientRect() })
   }
   const unmark = (branch: boolean) => {
     unmarkRef.current?.hidePopover()
@@ -419,14 +422,15 @@ export function ProductionTree({
   }
 
   // A link to several rows lists them to choose from.
-  const [places, setPlaces] = useState<{ title: string; rows: Placed[]; x: number; y: number } | null>(null)
+  const [places, setPlaces] = useState<{ title: string; rows: Placed[]; at: DOMRect } | null>(null)
   const placesRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    if (places) placesRef.current?.showPopover()
+    if (!places || !placesRef.current) return
+    placesRef.current.showPopover()
+    placePopover(placesRef.current, places.at)
   }, [places])
   const openPlaces = (title: string, rows: Placed[], button: HTMLElement) => {
-    const rect = button.getBoundingClientRect()
-    setPlaces({ title, rows, x: Math.max(8, Math.min(rect.left, window.innerWidth - 288)), y: rect.bottom + 4 })
+    setPlaces({ title, rows, at: button.getBoundingClientRect() })
   }
 
   useEffect(() => {
@@ -673,7 +677,6 @@ export function ProductionTree({
         popover="auto"
         className="tree-menu"
         role="menu"
-        style={menu ? { left: menu.x, top: menu.y } : undefined}
         onToggle={(e) => e.newState === 'closed' && setMenu(null)}
       >
         {menu && (
@@ -743,7 +746,6 @@ export function ProductionTree({
         className="tree-menu"
         role="menu"
         aria-label={places?.title}
-        style={places ? { left: places.x, top: places.y } : undefined}
         onToggle={(e) => e.newState === 'closed' && setPlaces(null)}
       >
         {places && (
@@ -786,7 +788,6 @@ export function ProductionTree({
         popover="auto"
         className="tree-menu"
         role="menu"
-        style={machinesMenu ? { left: machinesMenu.x, top: machinesMenu.y } : undefined}
         onToggle={(e) => e.newState === 'closed' && setMachinesMenu(null)}
       >
         {machinesMenu && (
@@ -808,7 +809,6 @@ export function ProductionTree({
         popover="auto"
         className="tree-menu"
         role="menu"
-        style={unmarkMenu ? { left: unmarkMenu.x, top: unmarkMenu.y } : undefined}
         onToggle={(e) => e.newState === 'closed' && setUnmarkMenu(null)}
       >
         {unmarkMenu && (
@@ -1642,14 +1642,13 @@ interface ToolbarMenuItem {
 function ToolbarMenu({ label, items, className }: { label: string; items: ToolbarMenuItem[]; className?: string }) {
   const id = useId()
   const ref = useRef<HTMLDivElement>(null)
-  // The button toggles the menu itself (as its popover target); this lines it up below the button first.
-  const place = (button: HTMLElement) => {
-    const rect = button.getBoundingClientRect()
-    const menu = ref.current
-    if (!menu) return
-    menu.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - 288))}px`
-    menu.style.top = `${rect.bottom + 4}px`
-  }
+  // The button toggles the menu itself (as its popover target), after the click; this lines it up
+  // with the button once it's open, before it's drawn.
+  const place = (button: HTMLElement) =>
+    requestAnimationFrame(() => {
+      const menu = ref.current
+      if (menu?.matches(':popover-open')) placePopover(menu, button.getBoundingClientRect())
+    })
   return (
     <>
       <button
