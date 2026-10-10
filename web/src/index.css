@@ -1448,6 +1448,53 @@ tr.idle {
   margin-bottom: 8px;
 }
 
+/* Finds the rows making an item: at the right of the toolbar, floating in the window's corner
+   while an item is chosen and the toolbar is scrolled away. */
+.row-search-slot {
+  margin-left: auto;
+  max-width: 100%;
+}
+
+.row-search {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.row-search .picker.compact {
+  margin-top: 0;
+  width: 200px;
+}
+
+.row-search .compact-button {
+  padding: 3px 8px;
+}
+
+.row-search-count {
+  margin: 0 4px;
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.row-search-clear {
+  color: var(--muted);
+}
+
+.row-search.floating {
+  position: fixed;
+  z-index: 30;
+  right: 16px;
+  bottom: 16px;
+  max-width: calc(100vw - 32px);
+  padding: 6px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 30px rgb(0 0 0 / 0.35);
+}
+
 /* Items | Heat: which layer of the plan the tree shows. */
 .layer-toggle {
   display: inline-flex;

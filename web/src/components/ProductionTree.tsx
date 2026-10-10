@@ -26,6 +26,7 @@ import { CheckIcon } from './CheckIcon'
 import { FlowChartView } from './FlowChartView'
 import { HeatView } from './HeatView'
 import { ProducerSelect } from './ProducerSelect'
+import { RowSearch } from './RowSearch'
 import { choosable, reuseOption } from './rowPicks'
 
 interface Props {
@@ -566,6 +567,7 @@ export function ProductionTree({
                 ]}
               />
             )}
+            <RowSearch rows={all} onGo={goTo} />
           </>
         )}
       </div>

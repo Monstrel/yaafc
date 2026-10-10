@@ -8,6 +8,13 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
+## 2026-10-10T15:01Z
+
+- Find every row making an item in the production tree: choose the item from "Find item…" at the
+  right of the toolbar, then step through its rows with ▲ and ▼ (or the arrow keys). It shows how
+  many rows make it and which one you're on, and stays in the corner of the window while you
+  scroll through a long plan.
+
 ## 2026-10-10T00:06Z
 
 - Fixed rows running far harder than needed so their failed products could make something
