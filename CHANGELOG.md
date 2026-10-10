@@ -14,6 +14,8 @@ out.
   right of the toolbar, then step through its rows with ▲ and ▼ (or the arrow keys). It shows how
   many rows make it and which one you're on, and stays in the corner of the window while you
   scroll through a long plan.
+- Menus stay on screen: one opened near the bottom of the window opens upward when there's more
+  room there, and a menu too long for the window scrolls inside instead of running off the edge.
 
 ## 2026-10-10T00:06Z
 
