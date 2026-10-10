@@ -1,4 +1,4 @@
-import { HEAT, type Stack } from './gameData'
+import { HEAT, itemName, type Stack } from './gameData'
 import { checkProcess, wholeMachines } from './logistics'
 import { unitScales } from './units'
 import { solveLP } from './lp'
@@ -320,6 +320,13 @@ function supplierOf(n: PlanNode): PlanNode {
 
 const isSupply = (n: PlanNode) => supplierOf(n) === n
 
+/**
+ * What a row whose machines output something is called where that output goes: its recipe, or the
+ * item it makes when it runs a recipe for another of its outputs (Athanors making Crude Silver
+ * Powder run the Silver Powder recipe: the Silver Powder they leave over isn't "from Silver Powder").
+ */
+const sourceLabel = (n: PlanNode) => (n.process!.product === n.item ? n.process!.label : itemName(n.item))
+
 /** A solved amount, with solver noise below `tol` dropped. */
 const cleaned = (x: number, tol: number) => (x > tol ? x : 0)
 
@@ -424,6 +431,17 @@ function solveRound(
       ? baselineCrafts(plan, catalog, mods, absorbing, floors)
       : null
 
+  // A target of a number of machines runs them: its row's crafts are fixed, and it delivers what they
+  // make and what's recovered into it (sizing it by one machine's own output, recovery shrank them).
+  const machineCrafts = new Map<number, number>()
+  targets.forEach((_, i) => {
+    const row = shape.targetRows[i]
+    const t = plan.targets[planIndex[i]]
+    if (t.unit === 'machines' && row?.kind === 'make' && isTargetRow(row.id) && row.process!.seconds > 0)
+      machineCrafts.set(i, (t.rate || 0) * craftsPerMachine(row.process!, mods))
+  })
+  const machineRows = new Map([...machineCrafts].map(([i, x]) => [shape.targetRows[i]!, x]))
+
   const equalities: Record<string, number> = {}
   const columns: Record<string, Record<string, number>> = {}
   const add = (col: Record<string, number>, row: string, v: number) => {
@@ -486,7 +504,8 @@ function solveRound(
   }
   targets.forEach((t, i) => {
     const row = shape.targetRows[i]
-    if (row) equalities[bal(row)] += t.rate
+    if (row && machineCrafts.has(i)) columns[`tm:${i}`] = { [bal(row)]: -1, cost: 0 }
+    else if (row) equalities[bal(row)] += t.rate
   })
   // Each item's overflow pools (rows add to it as it overflows them) and goes to the rows of the
   // overflow target taking it, sizing that target; what it can't use is priced as a shortfall.
@@ -506,7 +525,8 @@ function solveRound(
   const flows: { name: string; from: PlanNode; to: PlanNode }[] = []
 
   // Rows held to their crafts: rounded up, or as they are without the plan's overflow targets.
-  const fixedOf = (n: PlanNode) => (!inTaker.has(n) && isTargetRow(rootOf(n).id) ? held?.crafts.get(n.id) : undefined)
+  const fixedOf = (n: PlanNode) =>
+    (!inTaker.has(n) && isTargetRow(rootOf(n).id) ? held?.crafts.get(n.id) : undefined) ?? machineRows.get(n)
   // Rows built separately serve the overflow and supply targets too, so they can't be held to their
   // crafts; but they overflow no more than they do without them (else running one harder could still
   // soak up the overflow or supply).
@@ -768,6 +788,10 @@ function solveRound(
       takenBy: by !== undefined && by !== i && rows.length > 0 ? planIndex[by] : null,
     }
   }
+  for (const i of machineCrafts.keys()) {
+    const x = v(`tm:${i}`)
+    targets[i].rate = targets[i].made = cleaned(x, RELATIVE_NOISE * Math.max(1, x))
+  }
   const own = new Map<PlanNode, number>()
   targets.forEach((t, i) => {
     const row = shape.targetRows[i]
@@ -864,7 +888,7 @@ function solveRound(
       rate: n.recovers && need <= noise ? 0 : need,
       crafts: x,
       fromByproduct,
-      byproductSources: draws.map((d) => ({ id: d.from.id, label: d.from.process!.label })),
+      byproductSources: draws.map((d) => ({ id: d.from.id, label: sourceLabel(d.from) })),
       fromRecovery: cleaned(fromRecovery, Math.max(tol, noise)),
       fromBus: drew,
       shortfall: short - drew > tol ? short - drew : 0,

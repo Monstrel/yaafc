@@ -131,6 +131,21 @@ describe('an item only ever made by failing', () => {
     // The Crude Silver Powder row's Silver Powder makes up the rest of the 25 a minute.
     expect(crude.byproducts.find((b) => b.item === 'SilverPowder3')!.to).toEqual([{ id: powder.id, amount: expect.closeTo(11.25) }])
     expect(powder.fromByproduct).toBeCloseTo(11.25)
+    // Named for what that row makes: its Silver Powder isn't "from Silver Powder".
+    expect(powder.byproductSources).toEqual([{ id: crude.id, label: 'Crude Silver Powder' }])
+  })
+})
+
+describe('a target of a number of machines', () => {
+  it('runs that many, delivering what they make and what is recovered into it', () => {
+    // One Advanced Athanor: 7.5 crafts a minute, 0.75 Gold Dust of its own, and its failed crafts
+    // refined back up into 2.25 more.
+    const { tree, targets } = solvePlan(plan({ targets: [{ item: 'GoldDust3', rate: 1, unit: 'machines' }] }), catalog, mods)
+    const [athanors] = tree
+    expect(athanors.machines).toBeCloseTo(1)
+    expect(athanors.run!.craftsPerMinute).toBeCloseTo(7.5)
+    expect(athanors.fromRecovery).toBeCloseTo(2.25)
+    expect(targets[0]).toMatchObject({ rate: expect.closeTo(3), made: expect.closeTo(3) })
   })
 })
 

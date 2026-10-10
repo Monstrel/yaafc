@@ -1872,13 +1872,23 @@ const pendingId = (index: number) => `target/${index}`
 function viewOf(tree: TreeNode[], rootIds: (string | null)[]): { view: TreeNode[]; slotRows: string[] } {
   const roots = new Map(tree.map((n) => [n.id, withReused(n)]))
   // Rows of targets that have since moved or gone wait for the next solve.
-  const targets = rootIds.map((id, i) => (id && roots.get(id)) || blankRow(pendingId(i)))
-  const slotRows = targets.map((n) => n.id)
+  const rows = rootIds.map((id, i) => (id && roots.get(id)) || blankRow(pendingId(i)))
+  const slotRows = rows.map((n) => n.id)
+  // A target's recovery rows sit beside it, as they do beside any row: they add to what it delivers,
+  // they aren't its ingredients (Gold Dust refined from Impure Gold Dust isn't an input of the Gold
+  // Dust Athanors). A row gathering an item built separately keeps them.
+  const own = new Set(tree.flatMap((n) => n.children.filter((r) => r.recovery).map((r) => r.id)))
+  const targets = rows.flatMap((n) =>
+    n.consolidated || !n.children.some((r) => own.has(r.id))
+      ? [n]
+      : // Its own machines' part, then the recovered part: together, what the target delivers.
+        [{ ...n, rate: n.rate - n.fromRecovery, children: n.children.filter((r) => !own.has(r.id)) }, ...n.children.filter((r) => own.has(r.id))],
+  )
   const groups = tree.filter((n) => n.id.startsWith('separate/')).map(withReused)
   if (!groups.length) return { view: targets, slotRows }
-  const made = targets.filter((n) => n.item)
+  const made = rows.filter((n) => n.item)
   if (made.length === 1)
-    return { view: targets.map((n) => (n === made[0] ? { ...n, children: [...n.children, ...groups] } : n)), slotRows }
+    return { view: targets.map((n) => (n.id === made[0].id ? { ...n, children: [...n.children, ...groups] } : n)), slotRows }
   return { view: [blankRow(PLAN_ROOT, [...targets, ...groups])], slotRows }
 }
 
