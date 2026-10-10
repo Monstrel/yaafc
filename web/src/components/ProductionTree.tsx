@@ -1241,11 +1241,11 @@ function TreeRow({
             {node.kind === 'bus' &&
               (coin !== null ? (
                 <span className="leaf-note">
-                  {canChoose ? '' : 'From the bus · '}
+                  {canChoose ? '' : 'Plan input · '}
                   <Money copper={node.fromBus * coin} suffix="/min" />
                 </span>
               ) : (
-                !canChoose && <span className="leaf-note">from the bus</span>
+                !canChoose && <span className="leaf-note">plan input</span>
               ))}
             {details.length > 0 && (
               <span className="info-icon" tabIndex={0} title={details.join('\n')} aria-label={details.join('. ')}>
@@ -2196,7 +2196,7 @@ function shareOf(n: TreeNode, copies: number): TreeNode {
   }
 }
 
-const FED_INTO: Record<BusUse, string> = { plan: 'used in the plan in place of the bus', money: 'spent in the plan' }
+const FED_INTO: Record<BusUse, string> = { plan: 'used in the plan in place of the input', money: 'spent in the plan' }
 
 /**
  * What a row makes of an item that nothing uses: the part the plan feeds back in place of the bus

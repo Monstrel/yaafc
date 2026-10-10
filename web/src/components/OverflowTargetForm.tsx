@@ -36,12 +36,12 @@ export function OverflowTargetForm({
         </div>
       )}
       <label className="stacked">
-        {supply ? `Make from the rest of the bus's ${name}` : altar ? 'Or make something from the overflow' : 'Make from the overflow'}
+        {supply ? `Make from the rest of the ${name} input` : altar ? 'Or make something from the overflow' : 'Make from the overflow'}
         <ItemPicker value={picked} options={targetItems} onChange={setPicked} defaultOpen={!altar} compact />
       </label>
       <p className="hint">
         {supply
-          ? `Adds a target sized to use the ${name} the bus carries that the plan's other rows leave.`
+          ? `Adds a target sized to use the ${name} input supply that the plan's other rows leave.`
           : `Adds a target sized to use the ${name} nothing else uses.`}{' '}
         If its recipes don&apos;t take {name}, pick ones that do in its rows.
       </p>

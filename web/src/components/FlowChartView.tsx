@@ -42,7 +42,7 @@ const PAD = 28
 const PORT_TEXT: Record<FlowPort, string> = {
   main: 'Gold: a machine’s product, from its gold output',
   side: 'Blue: what else it makes, as an Athanor’s failed products, from its blue outputs',
-  none: 'Grey: from the bus',
+  none: 'Grey: a plan input',
 }
 
 const KIND_TEXT: Record<Exclude<FlowEdgeKind, 'feed'>, { glyph: string; name: string; hint: string }> = {
@@ -430,7 +430,7 @@ function Box({
             {p.label}
           </span>
         )}
-        {b.kind === 'bus' && <span className="flow-box-meta">from the bus</span>}
+        {b.kind === 'bus' && <span className="flow-box-meta">plan input</span>}
         {b.kind === 'outside' && <span className="flow-box-meta">{b.note}</span>}
       </button>
       {b.heat && <HeatSlab heat={b.heat} />}

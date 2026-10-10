@@ -152,7 +152,7 @@ function Network({
                     document.getElementById(cardId(above.key))?.scrollIntoView({ block: 'start', behavior: 'smooth' })
                   }}
                 >
-                  {itemName(above.fuel)} {above.source.kind === 'bus' ? 'from the bus' : 'made in the plan'}
+                  {itemName(above.fuel)} {above.source.kind === 'bus' ? 'as a plan input' : 'made in the plan'}
                 </button>
               </span>
             )}

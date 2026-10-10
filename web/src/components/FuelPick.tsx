@@ -65,7 +65,7 @@ export function SourcePick({ node, reuse, catalog, onProducer, onResetProducer }
       link
     />
   ) : (
-    <span className="hint-inline">from the bus</span>
+    <span className="hint-inline">plan input</span>
   )
 }
 

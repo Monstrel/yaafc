@@ -353,7 +353,7 @@ export function PlannerPage({
           overflowing={overflowing}
           onUseOverflow={(consumes) => onUpdatePlan(`Size ${targetName(i)} to use overflow`, (p) => linkToOverflow(p, i, consumes))}
           capped={capped}
-          onUseSupply={(consumes) => onUpdatePlan(`Size ${targetName(i)} to use the bus supply`, (p) => linkToSupply(p, i, consumes))}
+          onUseSupply={(consumes) => onUpdatePlan(`Size ${targetName(i)} to use an input's supply`, (p) => linkToSupply(p, i, consumes))}
         />
       ),
       move: plan.targets.length > 1 && (
@@ -361,7 +361,7 @@ export function PlannerPage({
           <button
             type="button"
             className="target-button"
-            title="Move up: targets fed back cover what the plan takes from the bus in this order"
+            title="Move up: targets fed back cover what the plan takes as inputs in this order"
             aria-label="Move target up"
             disabled={i === 0}
             onClick={() => moveTo(i - 1)}
@@ -371,7 +371,7 @@ export function PlannerPage({
           <button
             type="button"
             className="target-button"
-            title="Move down: targets fed back cover what the plan takes from the bus in this order"
+            title="Move down: targets fed back cover what the plan takes as inputs in this order"
             aria-label="Move target down"
             disabled={i === plan.targets.length - 1}
             onClick={() => moveTo(i + 1)}
@@ -570,7 +570,7 @@ export function PlannerPage({
               {deficits.length > 0 && (
                 <div className="panel warning" data-flip="deficits">
                   <strong>Can't be met.</strong> The chosen recipes can't supply these items (usually a loop that consumes as much
-                  as it makes, or more than the bus carries of them). Pick a different recipe for them, or raise what the bus carries:
+                  as it makes, or more than comes in of them as inputs). Pick a different recipe for them, or raise their input supply:
                   <ul>
                     {deficits.map((d) => (
                       <li key={d.item}>
@@ -650,9 +650,9 @@ export function PlannerPage({
                   showTarget(plan.targets.length)
                 }}
                 onAltar={altarOverflow}
-                onCap={(item, cap) => onUpdatePlan(`Change bus supply of ${itemName(item)}`, (p) => setBusSupply(p, item, cap))}
+                onCap={(item, cap) => onUpdatePlan(`Change input supply of ${itemName(item)}`, (p) => setBusSupply(p, item, cap))}
                 onUseSupply={(item, consumes) => {
-                  onUpdatePlan(`Use bus supply of ${itemName(item)}`, (p) => addSupplyTarget(p, item, consumes))
+                  onUpdatePlan(`Use input supply of ${itemName(item)}`, (p) => addSupplyTarget(p, item, consumes))
                   showTarget(plan.targets.length)
                 }}
                 onShowTarget={showTarget}
@@ -826,12 +826,11 @@ function BusPanel({
   // strip shows them. A cap the user set keeps its line, so it isn't hidden away.
   const drawing = ledgers.filter((l) => l.bus > 0 || l.short > 0 || l.covered === 0 || l.cap !== null)
   return (
-    <section className="panel ledger" data-flip="bus">
-      <h2>Bus</h2>
+    <section className="panel ledger" data-flip="bus" aria-label="Inputs and outputs">
       <div className="bus-flow">
       <div className="ledger-columns">
         <div>
-          <h3>In from the bus</h3>
+          <h3>Inputs</h3>
           <div className="bus-inputs">
             {defaults}
             {drawing.length > 0 && (
@@ -853,7 +852,7 @@ function BusPanel({
           </div>
         </div>
         <div>
-          <h3>Out to the bus</h3>
+          <h3>Outputs</h3>
           {out.length === 0 ? (
             <p className="hint">
               {money.outputs.length === 0 ? 'Nothing: the plan delivers no items.' : 'Nothing: the plan feeds back all it makes.'}
@@ -1105,7 +1104,7 @@ function ItemIn({
           {ledger.absorbedBy === null && ledger.bus > 0 && (
             <button
               className="move-button"
-              title="Add a target of 0 net /min, fed back: the planner builds what the plan takes of it, after what the targets above it cover. Raise it for a surplus, or remove it to go back to the bus."
+              title="Add a target of 0 net /min, fed back: the planner builds what the plan takes of it, after what the targets above it cover. Raise it for a surplus, or remove it to take it as an input again."
               onClick={() => onProvide(ledger.item)}
             >
               Make in plan
@@ -1114,8 +1113,8 @@ function ItemIn({
         </li>
         {ledger.absorbedBy === null && (
           <li>
-            <label className="ledger-what bus-cap" title="What the bus carries of it: the plan's rows share that and fall short past it. Empty: as much as they take.">
-              <span className="hint-inline">bus carries</span>
+            <label className="ledger-what bus-cap" title="How much of it comes in: the plan's rows share that and fall short past it. Empty: as much as they take.">
+              <span className="hint-inline">supply</span>
               <input
                 type="number"
                 min={0}
@@ -1123,7 +1122,7 @@ function ItemIn({
                 placeholder="any"
                 value={ledger.cap ?? ''}
                 onChange={(e) => onCap(ledger.item, e.target.value === '' ? undefined : Math.max(0, Number(e.target.value)))}
-                aria-label={`What the bus carries of ${itemName(ledger.item)}, per minute`}
+                aria-label={`Input supply of ${itemName(ledger.item)}, per minute`}
               />
               <span className="hint-inline">/min{ledger.cap !== null && left > 0 && ` · ${fmt(left)} left`}</span>
             </label>
@@ -1186,7 +1185,7 @@ function MoneyIn({ money }: { money: MoneyLedger }) {
           {money.coins.map((l) => (
             <li key={l.item}>
               <ItemLabel item={l.item} size={16} />
-              <span className="hint-inline">{fmt(l.count)}/min off the bus</span>
+              <span className="hint-inline">{fmt(l.count)}/min as an input</span>
               <span className="money-cost">
                 <Money copper={l.count * (l.price ?? 0)} suffix="/min" />
               </span>
@@ -1257,10 +1256,10 @@ function OutputLine({
         </span>
         <button
           className="move-button"
-          title="Stop breaking it down: it goes out to the bus, where nothing uses it"
+          title="Stop breaking it down: it goes out as an output that nothing uses"
           onClick={() => onAltar(row.item, false)}
         >
-          Send to bus →
+          Send to outputs →
         </button>
       </li>
     )
@@ -1330,7 +1329,7 @@ function OutputLine({
               {row.feeds.length > 0 && (
                 <button
                   className="move-button"
-                  title={`Feed it back: the plan ${row.feeds.map((f) => FEED_VERB[f]).join(' or ')} it before taking any from the bus`}
+                  title={`Feed it back: the plan ${row.feeds.map((f) => FEED_VERB[f]).join(' or ')} it before taking any as an input`}
                   onClick={() => onFeedback(row.item, s.target, true)}
                 >
                   ← {feedButton(row.feeds)} in plan
@@ -1417,10 +1416,10 @@ function FedBanner({
               </span>
               <button
                 className="move-button"
-                title="Stop feeding it back: it all goes out to the bus"
+                title="Stop feeding it back: it all goes out as an output"
                 onClick={() => onFeedback(row.item, s.target, false)}
               >
-                Send to bus →
+                Send to outputs →
               </button>
             </li>
           )
@@ -1495,7 +1494,7 @@ function TargetAmount({
     return (
       <div
         className="target-amount"
-        title={unit === 'overflow' ? 'As many as the overflow it takes makes' : "As many as what it takes of the bus's supply makes"}
+        title={unit === 'overflow' ? 'As many as the overflow it takes makes' : "As many as what it takes of an input's supply makes"}
       >
         <strong>{fmt(made)}</strong> /min
       </div>
@@ -1530,7 +1529,7 @@ function TargetAmount({
             {resolved?.machineName ? machineNameFor(resolved.machineName, target.rate) : 'machines'}
           </option>
           {(feedsInto || unit === 'net') && (
-            <option value="net" title="Left over after the plan takes what it needs of it, in place of the bus">
+            <option value="net" title="Left over after the plan takes what it needs of it, in place of the input">
               net /min
             </option>
           )}
@@ -1538,7 +1537,7 @@ function TargetAmount({
       </div>
       {unit === 'net' && absorbs && (
         <>
-          <div className="machine-meta" title="Made in all: the net amount, plus what the plan takes of it in place of the bus">
+          <div className="machine-meta" title="Made in all: the net amount, plus what the plan takes of it in place of the input">
             = {fmt(made)}/min
           </div>
           <div className="machine-meta">{fmt(made - (resolved?.rate ?? 0))} for the plan itself</div>
@@ -1549,7 +1548,7 @@ function TargetAmount({
           className="machine-meta"
           title={
             feedsInto !== 'bus'
-              ? 'The plan takes none of it from the bus: nothing to take off'
+              ? 'The plan takes none of it as an input: nothing to take off'
               : !fedBack
                 ? 'Not fed back into the plan: nothing to take off'
                 : 'A net target above covers what the plan takes of it'
@@ -1630,8 +1629,8 @@ function TargetNotes({
               if (from === 'overflow') onUseOverflow(item)
               else if (from === 'supply') onUseSupply(item)
             }}
-            aria-label="Size it by an overflow or the bus's supply instead"
-            title="Make as many as the plan's overflow of an item, or what it leaves of the bus's supply of one, makes, instead of a set amount"
+            aria-label="Size it by an overflow or an input's supply instead"
+            title="Make as many as the plan's overflow of an item, or what it leaves of an input's supply, makes, instead of a set amount"
           >
             <option value="">↪ Size it by…</option>
             {overflow.length > 0 && (
@@ -1644,7 +1643,7 @@ function TargetNotes({
               </optgroup>
             )}
             {supply.length > 0 && (
-              <optgroup label="What's left on the bus of">
+              <optgroup label="What's left of the input">
                 {supply.map((c) => (
                   <option key={c.item} value={`supply|${c.item}`}>
                     {itemName(c.item)} ({fmt(c.left)} of {fmt(c.cap)}/min left)
@@ -1656,9 +1655,9 @@ function TargetNotes({
         )
       )}
       {feedsInto && (
-        <label className="check target-feedback" title="Covers the plan's own need before the bus does, in target order">
+        <label className="check target-feedback" title="Covers the plan's own need before its input does, in target order">
           <input type="checkbox" checked={fedBack} onChange={(e) => onFeedback(e.target.checked)} />
-          {feedsInto === 'money' ? <>Feed back into the plan&apos;s money</> : <>Feed back in place of the bus</>}
+          {feedsInto === 'money' ? <>Feed back into the plan&apos;s money</> : <>Feed back in place of the input</>}
           {ownFeedback && <span className="hint-inline">(this target only)</span>}
         </label>
       )}
@@ -1690,16 +1689,16 @@ function SupplyTargetNote({
   return (
     <>
       <div className="note-line">
-        ↪ uses what&apos;s left of the bus&apos;s <ItemLabel item={consumes} size={16} />
+        ↪ uses what&apos;s left of the input supply of <ItemLabel item={consumes} size={16} />
         {use && use.taken > 0 && <span className="hint-inline"> · {fmt(use.taken)}/min</span>}
       </div>
       {use && !use.uses ? (
         <div className="note-line warn-text">
-          ⚠ Its recipes don&apos;t take {name} from the bus: pick ones that do in the rows below, or it makes none.
+          ⚠ Its recipes don&apos;t take {name} as an input: pick ones that do in the rows below, or it makes none.
         </div>
       ) : use && !use.capped ? (
         <div className="note-line warn-text">
-          ⚠ The bus&apos;s {name} has no cap: set what it carries on its line in the bus panel, or it makes none.
+          ⚠ The {name} input has no supply set: set it on its line under Inputs, or it makes none.
         </div>
       ) : use?.takenBy != null ? (
         <div className="note-line warn-text">
@@ -1960,7 +1959,7 @@ function MyDefaultsPanel({
                 d.producer === IMPORT
                   ? 'bought'
                   : d.producer === BUS
-                    ? 'from the bus'
+                    ? 'plan input'
                     : !p
                     ? 'recipe no longer available'
                     : [

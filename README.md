@@ -106,7 +106,7 @@ dotnet run -- export     # writes web/src/data/game-data.json and web/public/ico
   has no craft time, heat or Factory Efficiency, so only its belts limit it. Its output belt carries
   one stack per slot, and its input belt carries full stacks of 50. Changing coins up (silver → gold)
   is held back by the input belt, and breaking them down by the output belt. It's offered as a way
-  to make coins, but never picked by default: coins come off the bus. A row fed by Bank Portals set
+  to make coins, but never picked by default: coins are a plan input. A row fed by Bank Portals set
   below 50 takes their smaller stacks. Its input belts carry fewer coins, and a Paradox Crucible gets
   less value per entry, so it runs slower. The row says so. Same-coin conversion isn't offered: it
   would only throttle the belt.
@@ -115,13 +115,13 @@ dotnet run -- export     # writes web/src/data/game-data.json and web/public/ico
   unit per cycle (a bundle item is that many units: a log is 200). The seven planets (relics) have
   fixed cycles from a table in the game binary. Each cycle takes a fifth of a planet, e.g. 15 of
   Mars's 75 units for 25.2 EXP in 24 s, and only relics get the Relic Knowledge upgrade (+10% per
-  level). Cycle times scale with Factory Efficiency. "Out to the bus" shows each output's EXP/min
+  level). Cycle times scale with Factory Efficiency. "Outputs" shows each output's EXP/min
   and how many altars it would take (a belt each), once the plan's research tier has the altar (V).
   Liquids can't reach it.
 
 ### Money, fuel and fertilizer
 
-These are the factory's base resources, usually run on a bus. The planner never expands the
+These are the factory's base resources, usually brought in from elsewhere in the factory. The planner never expands the
 production chain of the preferred fuel or fertilizer. It reports how much the plan needs. With
 "feed back" on, the plan's own output of that item covers the need first, and the net surplus or
 shortfall is shown. Other raw inputs are bought at purchasing portals. Their price is the item's
@@ -133,7 +133,7 @@ Ore costs 1,200 copper and smelts into 100 ingots.
 Belt speed is `ConveyerSpeed` (60/min base) plus the Logistics Efficiency upgrade. Machine ports
 come from each building's `InOutList`. Belts connect per side, so the Arcane Processor's single
 three-sided cell is three inputs. Pipe cells carry liquids, which are left out of the belt check.
-Coins ride belts in stacks: machines and containers (and the bus) emit full stacks of 50. A Bank
+Coins ride belts in stacks: machines and containers (and plan inputs) emit full stacks of 50. A Bank
 Portal's stacks are its row's "Conversion amount" (1–50).
 
 - **Outputs:** machines throttle to what their output belts carry. This was observed in game: a

@@ -8,6 +8,13 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
+## 2026-10-10T15:45Z
+
+- The planner no longer assumes your factory runs on a bus. The Bus panel's title is gone, and its
+  columns are "Inputs" and "Outputs" in place of "In from the bus" and "Out to the bus". A row
+  you don't make in the plan is a "Plan input", and what the bus carried is now the input's supply.
+  How your plans connect to each other in your factory is up to you.
+
 ## 2026-10-10T15:23Z
 
 - Break down overflow at Knowledge Altars: click "⚠ nothing uses it" on an overflowing item (in

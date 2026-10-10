@@ -445,14 +445,14 @@ export function ProducerSelect({
 
 function choiceTitle(c: Choice): string {
   if (c.value === REUSE) return 'Reuse by-products'
-  if (c.value === BUS) return 'From the bus'
+  if (c.value === BUS) return 'Plan input'
   if (c.value === CRUCIBLE) return 'Paradox Crucible'
   return c.process ? processTitle(c.process) : c.value
 }
 
 function choiceDescription(c: Choice, item: string): string {
   const p = c.process
-  if (c.value === BUS) return c.coin ? 'Take coins off the bus' : 'Take it from the bus: made outside this plan'
+  if (c.value === BUS) return c.coin ? 'Plan input: coins brought in' : 'Plan input: made outside this plan'
   if (!p) return choiceTitle(c)
   if (c.value === CRUCIBLE) return `${choiceTitle(c)}: refine any item`
   return `${processLabel(p, item)}: ${describe(materials(p))} → ${describe(p.outputs)}`
@@ -587,10 +587,10 @@ function ChoicePreview({ choice, item, shared }: { choice: Choice; item: string;
   if (choice.value === BUS)
     return choice.coin ? (
       <span className="recipe-preview">
-        <Money copper={choice.coin} suffix=" each, off the bus" />
+        <Money copper={choice.coin} suffix=" each, as an input" />
       </span>
     ) : (
-      <span className="recipe-preview muted">Made outside this plan, brought in on the bus</span>
+      <span className="recipe-preview muted">Made outside this plan, brought in as an input</span>
     )
   if (p?.kind === 'buy')
     return (
