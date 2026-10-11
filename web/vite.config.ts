@@ -3,11 +3,13 @@ import { defineConfig } from 'vite'
 
 // Identifies this build so open tabs can notice a newer deploy (see src/lib/updateCheck.ts).
 const buildId = process.env.GITHUB_SHA ?? `local-${Date.now()}`
+// Shown in the footer with the build id, so a bug report can be matched to a deploy.
+const buildTime = new Date().toISOString().slice(0, 16) + 'Z'
 
 // https://vite.dev/config/
 export default defineConfig({
   base: './',
-  define: { __BUILD_ID__: JSON.stringify(buildId) },
+  define: { __BUILD_ID__: JSON.stringify(buildId), __BUILD_TIME__: JSON.stringify(buildTime) },
   // The solver's worker loads HiGHS with a top-level await, which needs an ES module worker.
   worker: { format: 'es' },
   plugins: [

@@ -32,7 +32,7 @@ import {
 } from './lib/sanitize'
 import type { MyDefaults, Plan, Progress, SavedRecipe } from './lib/types'
 import { UndoHistory, useUndo } from './lib/undo'
-import { useUpdateAvailable } from './lib/updateCheck'
+import { buildInfo, useUpdateAvailable } from './lib/updateCheck'
 import { PAGES, usePage, type Page } from './lib/router'
 import { PageLink } from './components/PageLink'
 import { CauldronPage } from './pages/CauldronPage'
@@ -374,6 +374,15 @@ export default function App() {
         <PageLink page="changelog" current={tab === 'changelog'} onNavigate={setTab}>
           Changelog
         </PageLink>
+        {' · Build '}
+        {buildInfo.commitUrl ? (
+          <a href={buildInfo.commitUrl} target="_blank" rel="noreferrer">
+            {buildInfo.label}
+          </a>
+        ) : (
+          buildInfo.label
+        )}{' '}
+        ({buildInfo.time})
       </footer>
     </div>
   )

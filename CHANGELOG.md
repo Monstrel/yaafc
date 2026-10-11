@@ -8,10 +8,12 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
-## 2026-10-11T19:17Z
+## 2026-10-11T19:21Z
 
 - A fed-back target the plan can't actually use no longer shows the plan using a tiny amount of it,
   like 0.0000017 / min: that was rounding left over in the solver, and it now shows as none.
+- The footer now shows which build of the calculator you're running and when it was built. If you
+  report a bug, include it so we can tell whether you have the latest version.
 
 ## 2026-10-11T19:04Z
 

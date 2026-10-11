@@ -1,6 +1,16 @@
 import { useEffect, useState } from 'react'
 
 declare const __BUILD_ID__: string
+declare const __BUILD_TIME__: string
+
+const isLocal = __BUILD_ID__.startsWith('local-')
+
+/** This build as the footer shows it: a deployed build names its commit, a local one just says so. */
+export const buildInfo = {
+  label: isLocal ? 'local' : __BUILD_ID__.slice(0, 7),
+  commitUrl: isLocal ? null : `https://github.com/Monstrel/yaafc/commit/${__BUILD_ID__}`,
+  time: __BUILD_TIME__,
+}
 
 const POLL_MS = 15 * 60 * 1000
 
