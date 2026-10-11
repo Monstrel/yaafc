@@ -10,14 +10,10 @@ out.
 
 ## 2026-10-11T15:51Z
 
-- An item built separately at the top of the plan, used only in one target's chain, now counts as
-  part of that chain. Gold Dust Athanors built separately with Eternal Catalysts loaded take their
-  catalysts from the Eternal Catalyst target, instead of from a second, hidden Eternal Catalyst
-  production chain that kept dozens of empty separately built rows at 0 / minute in the plan.
-- Rows no longer show tiny negative rates, like -0.0000003 / minute.
-
-## 2026-10-11T15:33Z
-
+- New "Auto organize" option in the Organize menu keeps a plan tidy as you change it: after
+  every change, items made in more than one row are built separately and items built separately
+  for a single use are merged back. Undo takes back a change and its tidying together. Choosing
+  yourself where an item is built turns it off, so it never undoes your choice.
 - You now choose where a target's own chain gets the target's item, like Eternal Catalysts loaded
   into the Advanced Athanors making its Gold Dust. Its row offers "From the target, fed back" or
   "From the plan input"; until you pick, it shows as short. Fed back, the target makes what it's
@@ -29,28 +25,18 @@ out.
   back, in the banner with what the plan uses and "Send to outputs"; otherwise with "Use in plan".
 - Plans saved before this change keep their loops: targets whose own chain uses their item are
   fed back when you open the plan. Each such target now delivers that use less than before.
-
-## 2026-10-11T15:06Z
-
-- An item built separately that other rows' leftovers fully cover now shows as covered by those
-  leftovers, instead of as a row with no machines and an ingredient chain running at 0 / minute.
-  This could happen after a change elsewhere left it fewer uses, like loading Eternal Catalysts
-  into a Gold Dust row.
-
-## 2026-10-11T14:45Z
-
-- New "Auto organize" option in the Organize menu keeps a plan tidy as you change it: after
-  every change, items made in more than one row are built separately and items built separately
-  for a single use are merged back. Undo takes back a change and its tidying together. Choosing
-  yourself where an item is built turns it off, so it never undoes your choice.
-- Menu items with long descriptions line up properly again.
-
-## 2026-10-11T14:26Z
-
 - An item built separately now shows its recovery beside it too, in the tree and the flow chart,
   instead of looking like one of its ingredients or a loop back into its machines. Its row shows
   what its own machines make, and the flow chart adds a "made and recovered" box that its uses
   take from.
+- An item built separately at the top of the plan, used only in one target's chain, now counts as
+  part of that chain. Gold Dust Athanors built separately with Eternal Catalysts loaded take their
+  catalysts from the Eternal Catalyst target, instead of from a second, hidden Eternal Catalyst
+  production chain that kept dozens of empty separately built rows at 0 / minute in the plan.
+- An item built separately that other rows' leftovers fully cover now shows as covered by those
+  leftovers, instead of as a row with no machines and an ingredient chain running at 0 / minute.
+- Rows no longer show tiny negative rates, like -0.0000003 / minute.
+- Menu items with long descriptions line up properly again.
 
 ## 2026-10-10T21:36Z
 
