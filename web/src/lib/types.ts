@@ -98,6 +98,12 @@ export interface Plan {
   /** Items the production tree builds separately, gathering their uses instead of a copy per branch. */
   separate?: Separation[]
   /**
+   * Whether the plan keeps itself organized: with every change, items made in several rows are
+   * built separately and items built separately for a single use are merged back. Choosing by hand
+   * where an item is built turns it off.
+   */
+  autoOrganize?: boolean
+  /**
    * Outputs a row's machines send to Knowledge Altars as they come out, per tree row id: no other
    * row takes them, and no recovery refines them back up, so rows using the item make their own.
    */

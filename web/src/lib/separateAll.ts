@@ -161,6 +161,22 @@ export function mergeSingleUses(plan: Plan, catalog: ProcessCatalog): Plan {
 }
 
 /**
+ * The plan organized: every item made in several rows built separately, then every item built
+ * separately for a single use merged back, until neither changes anything (gathering one item can
+ * leave another with a single use). Returns the plan itself when it's already organized.
+ */
+export function organize(plan: Plan, catalog: ProcessCatalog): Plan {
+  let p = plan
+  // A round or two settles it; the cap only keeps a tug of war between the two finite.
+  for (let round = 0; round < 8; round++) {
+    const next = mergeSingleUses(separateShared(p, catalog), catalog)
+    if (next === p) break
+    p = next
+  }
+  return p
+}
+
+/**
  * Builds an item separately (`on`) or merges it back, keeping what's set on the rows that move.
  * Gathered rows take their settings from the row the choice was made on (`from`), then the
  * gathering row's own, then the other rows'. Merged-back rows give theirs to every use. Choices

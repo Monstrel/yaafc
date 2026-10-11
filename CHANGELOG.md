@@ -8,6 +8,14 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
+## 2026-10-11T14:45Z
+
+- New "Auto organize" option in the Organize menu keeps a plan tidy as you change it: after
+  every change, items made in more than one row are built separately and items built separately
+  for a single use are merged back. Undo takes back a change and its tidying together. Choosing
+  yourself where an item is built turns it off, so it never undoes your choice.
+- Menu items with long descriptions line up properly again.
+
 ## 2026-10-11T14:26Z
 
 - An item built separately now shows its recovery beside it too, in the tree and the flow chart,

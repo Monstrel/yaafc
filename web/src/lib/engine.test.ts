@@ -77,7 +77,7 @@ import { sanitizeMyDefaults, sanitizePlans } from './sanitize'
 import { dropUnits, setUnits, unitChoices, unitScales, wholePerCopy } from './units'
 import { BOILER_HEAT, BUS, resolveChoice } from './unfold'
 import { separationsOf, withSeparation } from './separate'
-import { canSeparateShared, mergeSingleUses, separateShared, setSeparation } from './separateAll'
+import { canSeparateShared, mergeSingleUses, organize, separateShared, setSeparation } from './separateAll'
 import { buildingNameFor, itemNameFor, noun } from './plural'
 import { BOILER_SETTINGS, STEAM_HEAT } from './steamBoiler'
 import { legacyProgress, withoutLegacyProgress } from './store'
@@ -595,6 +595,17 @@ describe('production tree', () => {
       const single = { item: 'Sol' }
       const p = { ...shared, separate: [...separationsOf(shared.separate), single] }
       expect(mergeSingleUses(p, catalog).separate).toEqual(shared.separate)
+    })
+
+    it('organizes: gathers shared items and merges single uses until neither changes anything', () => {
+      const p = { ...sol, separate: [{ item: 'Sol' }] }
+      const o = organize(p, catalog)
+      expect(separationsOf(o.separate)).not.toContainEqual({ item: 'Sol' })
+      expect([...madeIn(o).values()].every((c) => c <= 1)).toBe(true)
+      expect(canSeparateShared(o, catalog)).toBe(false)
+      expect(mergeSingleUses(o, catalog)).toBe(o)
+      expect(organize(o, catalog)).toBe(o)
+      expectBalanced(solvePlan(o, catalog, mods))
     })
 
     it('keeps the settings of rows it merges back, even inside other rows it merges', () => {

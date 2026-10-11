@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useEffectEvent, useMemo, useOptimistic, useRef, useState, type ReactNode } from 'react'
+import { startTransition, useCallback, useEffect, useEffectEvent, useMemo, useOptimistic, useRef, useState, type ReactNode } from 'react'
 import { ItemIcon, ItemLabel } from '../components/ItemIcon'
 import { ItemPicker } from '../components/ItemPicker'
 import { AltarDetail, Exp } from '../components/Exp'
@@ -69,7 +69,7 @@ import {
 } from '../lib/choices'
 import type { OverflowUse, PlanResult, ResolvedTarget, SupplyUse } from '../lib/solver'
 import { separationsOf } from '../lib/separate'
-import { canSeparateShared, mergeSingleUses, separateShared, setSeparation } from '../lib/separateAll'
+import { canSeparateShared, mergeSingleUses, organize, separateShared, setSeparation } from '../lib/separateAll'
 import { buildingNameFor, machineNameFor, noun } from '../lib/plural'
 import { BOILER_HEAT, BUS, IMPORT, parentId, planProducer, rowItem } from '../lib/unfold'
 import { dropUnits, setUnits, unitScales } from '../lib/units'
@@ -139,7 +139,7 @@ export function PlannerPage({
   onMyDefaults,
   saved,
   onSelectPlan,
-  onUpdatePlan,
+  onUpdatePlan: updateStoredPlan,
   onNewPlan,
   onDuplicatePlan,
   onDeletePlan,
@@ -148,6 +148,17 @@ export function PlannerPage({
   onRevealed,
 }: Props) {
   const { mods, catalog } = model
+  // An auto-organized plan stays organized through every change, in the same undo step.
+  const onUpdatePlan = useCallback(
+    (label: string | null, update: (p: Plan) => Plan) =>
+      updateStoredPlan(label, (p) => {
+        const next = update(p)
+        return next.autoOrganize ? organize(next, catalog) : next
+      }),
+    [updateStoredPlan, catalog],
+  )
+  // ...and through changes made elsewhere (saved defaults, research tier, another tab).
+  const organized = useMemo(() => (plan.autoOrganize ? organize(plan, catalog) : plan), [plan, catalog])
   const result = model.result ?? UNSOLVED
   const slowSolve = useNoticeable(model.solving)
   // Panels and rows glide to where a change puts them, around the one just used.
@@ -160,7 +171,8 @@ export function PlannerPage({
     else if (migrateFeedback(plan, catalog)) onUpdatePlan(null, (p) => migrateFeedback(p, catalog) ?? p)
     else if (migrateInputs(plan)) onUpdatePlan(null, (p) => migrateInputs(p) ?? p)
     else if (pruneChoices(plan, catalog)) onUpdatePlan(null, (p) => pruneChoices(p, catalog) ?? p)
-  }, [plan, catalog, onUpdatePlan])
+    else if (organized !== plan) updateStoredPlan(null, (p) => (p === plan ? organized : p))
+  }, [plan, catalog, organized, onUpdatePlan, updateStoredPlan])
   // result.targets skips rows with no item chosen yet; line them back up with the rows.
   let resolvedIndex = 0
   const resolvedByRow = plan.targets.map((t) => (t.item ? result.targets[resolvedIndex++] : undefined))
@@ -252,13 +264,17 @@ export function PlannerPage({
     if (saved) onUpdatePlan(label, (p) => keepDefaultInPlan(p, result.tree, item, saved))
     forget(item, label)
   }
+  // Choosing by hand where an item is built turns auto organize off, so it doesn't undo the choice.
   const setSeparate = (s: Separation, on: boolean, from?: string, replacing?: Separation) =>
-    onUpdatePlan(`${on ? 'Build' : 'Stop building'} ${itemName(s.item)} separately`, (p) =>
-      setSeparation(p, catalog, s, on, from, replacing),
+    onUpdatePlan(
+      `${on ? 'Build' : 'Stop building'} ${itemName(s.item)} separately${plan.autoOrganize ? ' (auto organize off)' : ''}`,
+      (p) => ({ ...setSeparation(p, catalog, s, on, from, replacing), autoOrganize: undefined }),
     )
-  // Whether the plan-wide build-separately buttons would change anything.
-  const canSeparate = useMemo(() => canSeparateShared(plan, catalog), [plan, catalog])
-  const canMerge = useMemo(() => mergeSingleUses(plan, catalog) !== plan, [plan, catalog])
+  const setAutoOrganize = (on: boolean) =>
+    onUpdatePlan(`Turn ${on ? 'on' : 'off'} auto organize`, (p) => ({ ...p, autoOrganize: on || undefined }))
+  // Whether the plan-wide build-separately buttons would change anything (never, auto-organized).
+  const canSeparate = useMemo(() => !plan.autoOrganize && canSeparateShared(plan, catalog), [plan, catalog])
+  const canMerge = useMemo(() => !plan.autoOrganize && mergeSingleUses(plan, catalog) !== plan, [plan, catalog])
   /** What a target's item could feed back into, if anything: what the plan takes of it from the bus, or its money. */
   const feedsInto = (item: string): Feeds => (coinValue(item) !== null ? 'money' : drawn.has(item) ? 'bus' : null)
 
@@ -757,6 +773,8 @@ export function PlannerPage({
                         canSeparate ? () => onUpdatePlan('Build shared items separately', (p) => separateShared(p, catalog)) : undefined
                       }
                       onMergeSingles={canMerge ? () => onUpdatePlan('Merge single-use builds', (p) => mergeSingleUses(p, catalog)) : undefined}
+                      autoOrganize={!!plan.autoOrganize}
+                      onAutoOrganize={setAutoOrganize}
                       logistics={logistics}
                       mods={mods}
                       roundUp={plan.roundUp ?? NO_ROWS}

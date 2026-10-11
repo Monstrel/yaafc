@@ -2276,6 +2276,7 @@ tr.kind-separate .item-label .name {
 .tree-menu-top {
   display: inline-flex;
   justify-content: center;
+  flex: none;
   width: 18px;
   color: var(--accent);
 }
@@ -2879,6 +2880,7 @@ tr.kind-separate .item-label .name {
 .tree-menu-check {
   display: inline-flex;
   justify-content: center;
+  flex: none;
   width: 18px;
   color: var(--accent);
 }

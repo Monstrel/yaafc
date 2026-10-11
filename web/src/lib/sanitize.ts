@@ -116,6 +116,7 @@ function plan(v: unknown, newId: () => string): Plan | undefined {
     rowHeights: record(v.rowHeights, num),
     rowStacks: record(v.rowStacks, num),
     separate: list(v.separate, separation),
+    autoOrganize: bool(v.autoOrganize) || undefined,
     altarOutputs: record(v.altarOutputs, strings),
     roundUp: strings(v.roundUp),
     mixedFeed: record(v.mixedFeed, bool),

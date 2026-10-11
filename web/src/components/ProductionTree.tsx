@@ -57,6 +57,9 @@ interface Props {
   onSeparateShared?: () => void
   /** Merges back every item built separately for a single use (absent: there's none). */
   onMergeSingles?: () => void
+  /** Whether the plan keeps itself organized (see `Plan.autoOrganize`). */
+  autoOrganize: boolean
+  onAutoOrganize: (on: boolean) => void
   logistics: Map<string, LogisticsCheck>
   /** Belt speed and coin stacks, for how many belts a row's items need. */
   mods: Modifiers
@@ -144,6 +147,8 @@ export function ProductionTree({
   onSeparate,
   onSeparateShared,
   onMergeSingles,
+  autoOrganize,
+  onAutoOrganize,
   logistics,
   mods,
   roundUp,
@@ -543,20 +548,32 @@ export function ProductionTree({
               ]}
             />
             <ToolbarMenu
-              label="Organize"
+              label={autoOrganize ? 'Organize: auto' : 'Organize'}
               items={[
                 {
+                  label: 'Auto organize',
+                  hint: autoOrganize
+                    ? 'with every change, shared items are built separately and single uses merged back; choosing where an item is built turns this off'
+                    : 'keep the plan organized as it changes: build shared items separately and merge single uses, every time',
+                  checked: autoOrganize,
+                  onClick: () => onAutoOrganize(!autoOrganize),
+                },
+                {
                   label: 'Build shared separately',
-                  hint: onSeparateShared
-                    ? 'gather every item made in more than one row, with the nearest item above all its uses (or at the top of the plan)'
-                    : 'nothing is made in more than one row that could be gathered',
+                  hint: autoOrganize
+                    ? 'auto organize does this with every change'
+                    : onSeparateShared
+                      ? 'gather every item made in more than one row, with the nearest item above all its uses (or at the top of the plan)'
+                      : 'nothing is made in more than one row that could be gathered',
                   onClick: onSeparateShared,
                 },
                 {
                   label: 'Merge single uses',
-                  hint: onMergeSingles
-                    ? 'merge back every item built separately that has only one use'
-                    : 'everything built separately has more than one use',
+                  hint: autoOrganize
+                    ? 'auto organize does this with every change'
+                    : onMergeSingles
+                      ? 'merge back every item built separately that has only one use'
+                      : 'everything built separately has more than one use',
                   onClick: onMergeSingles,
                 },
               ]}
@@ -1710,12 +1727,16 @@ interface ToolbarMenuItem {
   hint: string
   /** Absent: the item is shown, but does nothing now (the hint says why). */
   onClick?: () => void
+  /** Set: the item turns something on or off, and this says whether it's on. */
+  checked?: boolean
 }
 
 /** A toolbar button opening a menu of related actions below it. */
 function ToolbarMenu({ label, items, className }: { label: string; items: ToolbarMenuItem[]; className?: string }) {
   const id = useId()
   const ref = useRef<HTMLDivElement>(null)
+  // A menu with an on/off item lines every label up past its checkmark.
+  const hasChecks = items.some((item) => item.checked !== undefined)
   // The button toggles the menu itself (as its popover target), after the click; this lines it up
   // with the button once it's open, before it's drawn.
   const place = (button: HTMLElement) =>
@@ -1739,13 +1760,19 @@ function ToolbarMenu({ label, items, className }: { label: string; items: Toolba
             <button
               key={item.label}
               type="button"
-              role="menuitem"
+              role={item.checked === undefined ? 'menuitem' : 'menuitemcheckbox'}
+              aria-checked={item.checked}
               disabled={!item.onClick}
               onClick={() => {
                 ref.current?.hidePopover()
                 item.onClick?.()
               }}
             >
+              {hasChecks && (
+                <span className="tree-menu-check" aria-hidden>
+                  {item.checked ? '✓' : ''}
+                </span>
+              )}
               <span>
                 {item.label}
                 <span className="tree-menu-hint">{item.hint}</span>
