@@ -8,7 +8,17 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
-## 2026-10-11T22:31Z
+## 2026-10-11T23:08Z
+
+- Targets for items Dispatch Portals buy (Bandages, Gloom Spores, Pocket Watches, Fertile
+  Catalyst, Silver Amulets and Moonlit Soap) can be sized to the buyers' daily limit: pick
+  "/min to the dispatch limit" as the target's unit. The target makes just enough per minute to
+  reach the limit by the end of the day. It shows the contracts a day, what they pay, and how many
+  portals the belts need.
+- Two new upgrades set those limits: Supplier License (each license raises the daily limits and
+  pay) and Potion Belt (each level shortens sleep, so days last longer: 16 minutes at level 1, 24
+  at level 5). The planner assumes you never go to bed early, so a day runs from 6:00 until
+  bedtime. Factories don't run while you sleep.
 
 - A fed-back target that uses overflow now also covers the plan's own use of its item when the
   rows it feeds take leftovers from rows in other parts of the plan. Those rows can now run slower

@@ -1,4 +1,5 @@
 import type { CauldronMode } from './cauldron'
+import { contractFor } from './dispatch'
 import type { IngredientPrefs } from './itemGroups'
 import { blankTarget, type BranchChoice, type MyDefault, type MyDefaults, type Plan, type PlanTarget, type Progress, type SavedRecipe, type Separation, type Unitizing } from './types'
 
@@ -47,7 +48,7 @@ function distinctIds<T extends { id: string }>(items: T[], newId: () => string):
   })
 }
 
-const UNITS = new Set(['items', 'machines', 'net', 'overflow', 'supply'])
+const UNITS = new Set(['items', 'machines', 'net', 'overflow', 'supply', 'dispatch'])
 
 function target(v: unknown): PlanTarget | undefined {
   if (!isObj(v)) return undefined
@@ -59,6 +60,8 @@ function target(v: unknown): PlanTarget | undefined {
   // An overflow or supply target with nothing to consume is an ordinary one.
   const sized = unit === 'overflow' || unit === 'supply'
   if (sized && !consumes) unit = undefined
+  // A dispatch target of an item buyers don't take (any more) is an ordinary one.
+  if (unit === 'dispatch' && !contractFor(item)) unit = undefined
   return defined({ item, rate, unit, consumes: sized ? consumes : undefined, feedback: bool(v.feedback) })
 }
 

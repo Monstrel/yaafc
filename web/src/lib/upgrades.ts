@@ -1,7 +1,46 @@
-import { attributeBase, upgrades, type UpgradeEffect, type UpgradeSeries } from './gameData'
+import { attributeBase, dispatch, upgrades, type UpgradeEffect, type UpgradeSeries } from './gameData'
 
 /** Player's level per improvement series key (e.g. FactorySpeed: 14). */
 export type UpgradeLevels = Record<string, number>
+
+// Series granted outside the skill tree, which the game files name after Sales Ability. Absent
+// (game data without them) = an empty series, level 0.
+const series = (key: string, name: string, icon: string | null): UpgradeSeries => {
+  const s = upgrades.find((u) => u.key === key)
+  return { ...(s ?? { key, levels: [], unlimited: false, unlimitedMax: 0, column: null }), name, icon: icon ?? s?.icon ?? null }
+}
+
+/** Supplier Licenses (DT_License): each tier's buff raises Dispatch Portal limits (ContractNum) and payments (ContractProfit). */
+export const SUPPLIER_LICENSES = series('ContractProfit', 'Supplier License', dispatch.licenseIcon)
+
+/**
+ * Potion Belt upgrades (DT_PlayerGear PotionBelt1–4): each cuts Sleep Time by 2 hours, lengthening the
+ * day. The game counts the belt you start with as level 1, so they take it to level 5 (no sleep).
+ */
+export const POTION_BELT = series('SleepTime', 'Potion Belt', dispatch.potionBeltIcon)
+
+/** The level the game shows before any upgrades of a series: 0, or 1 for the Potion Belt. */
+export const firstLevel = (u: UpgradeSeries) => (u.key === POTION_BELT.key ? 1 : 0)
+
+/** Upgrades shown under Dispatch Portals in the planner's upgrades panel. */
+export const DISPATCH_UPGRADES = [SUPPLIER_LICENSES, POTION_BELT]
+
+/** Hour of the game clock a day starts at (Sunrise, ABeltTDGameStateBase's constructor). */
+const DAY_START = 6
+/** Game minutes that pass per real second (DayNight.TimeRate, which no blueprint overrides). */
+const TIME_RATE = 1
+
+/**
+ * Real minutes the factory runs in a game day, for players who never go to bed: the day starts at
+ * 6:00 and ends itself at 6:00 the next morning minus Sleep Time (8 hours at base, 2 less per Potion
+ * Belt tier). The clock then jumps to 6:00, so the factory doesn't run through the sleep.
+ */
+export function dayMinutes(levels: UpgradeLevels): number {
+  const sleep = Math.max(0, (attributeBase.SleepTime ?? 8) + attributeBonus(levels, 'SleepTime'))
+  const end = DAY_START + 24 - sleep
+  // Game minutes awake, at TIME_RATE per real second, in real minutes.
+  return ((end - DAY_START) * 60) / TIME_RATE / 60
+}
 
 /** Series shown in the planner, in the game's skill-tree order (Logistics, Factory, Alchemy, Fuel, Fertilizer, Relic Knowledge). */
 export const PLANNER_UPGRADES = ['FactorySpeed', 'Conveyer', 'FuelEfficiency', 'FertilizeEfficiency', 'AlchemySkill', 'AltarEfficiency']
@@ -56,6 +95,10 @@ export interface Modifiers {
   beltSpeed: number
   /** EXP multiplier for relics at the Knowledge Altar (Relic Knowledge). */
   altar: number
+  /** Supplier Licenses held (0–5): they raise Dispatch Portal limits and payments. */
+  licenses: number
+  /** Real minutes in a game day, for Dispatch Portal limits (see dispatch.ts). */
+  dayMinutes: number
 }
 
 export function modifiers(levels: UpgradeLevels): Modifiers {
@@ -68,5 +111,7 @@ export function modifiers(levels: UpgradeLevels): Modifiers {
     alembic: pct('AlembicSkill'),
     beltSpeed: (attributeBase.ConveyerSpeed ?? 60) + attributeBonus(levels, 'ConveyerSpeed'),
     altar: pct('AltarEfficiency'),
+    licenses: upgradeLevel(levels, SUPPLIER_LICENSES),
+    dayMinutes: dayMinutes(levels),
   }
 }

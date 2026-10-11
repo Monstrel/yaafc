@@ -1,3 +1,4 @@
+import { dispatchTerms } from './dispatch'
 import { HEAT, coinValue, itemName, type Stack } from './gameData'
 import { checkProcess, wholeMachines } from './logistics'
 import { unitScales } from './units'
@@ -192,8 +193,15 @@ function resolveTargets(plan: Plan, shape: PlanShape, mods: Modifiers): Resolved
       const p = shape.targetRows[i]?.process
       const perMachine = p ? outputPerMachine(p, t.item, mods) : null
       const amount = t.rate || 0
-      // An overflow or supply target's rate comes from the solve.
-      const rate = t.unit === 'machines' ? amount * (perMachine ?? 0) : consumedBy(t) || suppliedBy(t) ? 0 : amount
+      // An overflow or supply target's rate comes from the solve; a dispatch target's from its contract.
+      const rate =
+        t.unit === 'machines'
+          ? amount * (perMachine ?? 0)
+          : t.unit === 'dispatch'
+            ? (dispatchTerms(t.item, mods)?.rate ?? amount)
+            : consumedBy(t) || suppliedBy(t)
+              ? 0
+              : amount
       return {
         item: t.item,
         rate,

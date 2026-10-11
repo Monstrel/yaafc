@@ -3,7 +3,7 @@
     "steamBuildId": "25321648",
     "pakDate": "2026-09-15"
   },
-  "extractedAt": "2026-10-06 19:44:34Z",
+  "extractedAt": "2026-10-11 23:49:12Z",
   "items": [
     {
       "key": "PortalSigil",
@@ -11989,6 +11989,85 @@
         "level": 5
       }
     }
+  },
+  "dispatch": {
+    "contracts": [
+      {
+        "item": "Bandage",
+        "count": 50,
+        "reward": [
+          0,
+          12,
+          0
+        ],
+        "dailyLimit": 16,
+        "license": 0
+      },
+      {
+        "item": "GloomSpores",
+        "count": 50,
+        "reward": [
+          0,
+          18,
+          0
+        ],
+        "dailyLimit": 32,
+        "license": 1
+      },
+      {
+        "item": "PocketWatch",
+        "count": 20,
+        "reward": [
+          0,
+          26,
+          0
+        ],
+        "dailyLimit": 48,
+        "license": 2
+      },
+      {
+        "item": "Catalyst2",
+        "count": 20,
+        "reward": [
+          0,
+          60,
+          0
+        ],
+        "dailyLimit": 60,
+        "license": 3
+      },
+      {
+        "item": "SilverAmulet",
+        "count": 10,
+        "reward": [
+          0,
+          340,
+          0
+        ],
+        "dailyLimit": 48,
+        "license": 4
+      },
+      {
+        "item": "MoonlitSoap",
+        "count": 10,
+        "reward": [
+          60,
+          0,
+          0
+        ],
+        "dailyLimit": 8,
+        "license": 5
+      }
+    ],
+    "licenses": [
+      "Licensed Supplier",
+      "Guild Supplier",
+      "Court Supplier",
+      "Royal Supplier",
+      "Exclusive Royal Supplier"
+    ],
+    "licenseIcon": "license_Supplier.png",
+    "potionBeltIcon": "gear_PotionBelt.png"
   },
   "attributes": {
     "InventoryCapacity": 24.0,

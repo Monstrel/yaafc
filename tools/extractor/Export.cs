@@ -21,6 +21,7 @@ static class Exporter
     const string SkillsTable = "AlchemyFactory/Content/DataTables/DT_SkillMerge.uasset";
     const string WorkbenchTable = "AlchemyFactory/Content/DataTables/DT_Workbench.uasset";
     const string LicensesTable = "AlchemyFactory/Content/DataTables/DT_License.uasset";
+    const string ContractsTable = "AlchemyFactory/Content/DataTables/DT_SupplyContract.uasset";
     const int ResearchTiers = 9;
     const int IconSize = 64;
 
@@ -131,6 +132,7 @@ static class Exporter
             ["seeds"] = seeds,
             ["upgrades"] = Upgrades(provider, strings, iconDir),
             ["research"] = Research(provider, strings, iconDir),
+            ["dispatch"] = Dispatch(provider, strings, iconDir),
             ["attributes"] = new JObject(Rows(provider, AttributesTable)
                 .Select(r => new JProperty(r.Key, r.Row["BaseValue"]))),
         };
@@ -280,6 +282,48 @@ static class Exporter
             ["recipes"] = Sorted(recipes),
             ["items"] = Sorted(items),
             ["licenses"] = licenses,
+        };
+    }
+
+    /// <summary>
+    /// Dispatch Portal purchase contracts (DT_SupplyContract) and the Supplier Licenses that raise them.
+    /// A contract is `count` items for `reward` (gold, silver, copper); buyers take `dailyLimit` contracts
+    /// a day, factory-wide. `license` is the Supplier License tier that unlocks it (0: the Sample Request
+    /// quest, which also unlocks the portal). Each license's buff (ContractProfit1..5, an upgrade series)
+    /// adds to ContractNum and ContractProfit (native tick 0x144A2A2E0, build 25321648).
+    /// </summary>
+    static JObject Dispatch(DefaultFileProvider provider, Localization strings, string iconDir)
+    {
+        var suppliers = Rows(provider, LicensesTable)
+            .Where(r => Enum(r.Row["LicenseType"]) == "Supplier")
+            .OrderBy(r => r.Row["LicenseTier"]!.Value<int>())
+            .ToList();
+        var unlockedBy = new Dictionary<string, int>();
+        foreach (var (_, row) in suppliers)
+            foreach (var unlock in row["UnlockItems"]!.Where(u => Enum(u["ConfigType"]) == "Contract"))
+                unlockedBy[unlock["ConfigName"]!.ToString()] = row["LicenseTier"]!.Value<int>();
+        return new JObject
+        {
+            ["contracts"] = new JArray(Rows(provider, ContractsTable).Select(r =>
+            {
+                var item = r.Row["SellItem"]!["IngredientName"]!.ToString();
+                var reward = r.Row["ContractReward"]!;
+                return new JObject
+                {
+                    ["item"] = item,
+                    ["count"] = r.Row["SellItem"]!["Count"],
+                    ["reward"] = new JArray(reward["X"], reward["Y"], reward["Z"]),
+                    ["dailyLimit"] = r.Row["DailyLimit"],
+                    ["license"] = unlockedBy.GetValueOrDefault(item, 0),
+                };
+            })),
+            ["licenses"] = new JArray(suppliers.Select(r => strings.Resolve(r.Row["LicenseText"]) ?? r.Key)),
+            ["licenseIcon"] = suppliers.Count > 0 ? ExportIcon(provider, suppliers[0].Row["DisplayIcon"], iconDir, "license_Supplier") : null,
+            // Sleep Time (the day's length) comes from Potion Belt upgrades, whose DT_PlayerGear rows have
+            // no icon and whose upgrade series borrows Sales Ability's cash register: the gear panel's
+            // belt (not Buildings/T_UI_Belt, the conveyor).
+            ["potionBeltIcon"] = ExportIcon(provider,
+                new JObject { ["ObjectPath"] = "/Game/Arts/UI/Interaction/T_UI_Belt.T_UI_Belt" }, iconDir, "gear_PotionBelt"),
         };
     }
 

@@ -19,6 +19,7 @@ import {
   MONEY,
   NUTRIENTS,
   coinValue,
+  dispatch,
   iconUrl,
   itemName,
   machineTier,
@@ -28,6 +29,7 @@ import {
   tierName,
 } from '../lib/gameData'
 import { KNOWLEDGE_ALTAR, altarsBuilt, altarsFor, altarYield, type AltarYield } from '../lib/altar'
+import { contractFor, dispatchTerms, licenseName, type DispatchTerms } from '../lib/dispatch'
 import { fmt, fmtMachines, fmtSeconds, wholeMachines } from '../lib/format'
 import { checkLogistics, resourceUsers, type LogisticsCheck, type ResourceUser } from '../lib/logistics'
 import { fedOverflow, moneyLedger, type BusUse, type MoneyLedger, type OutputRow, type OutputSource } from '../lib/money'
@@ -80,7 +82,17 @@ import type { TreeNode } from '../lib/tree'
 import { altarMods, planBuildings } from '../lib/planSummary'
 import { usePersistentState } from '../lib/store'
 import { blankTarget, type MyDefaults, type Plan, type PlanTarget, type Progress, type SavedRecipe, type Separation } from '../lib/types'
-import { PLANNER_UPGRADES, maxLevel, upgradeLevel, type Modifiers } from '../lib/upgrades'
+import {
+  DISPATCH_UPGRADES,
+  PLANNER_UPGRADES,
+  POTION_BELT,
+  SUPPLIER_LICENSES,
+  attributeBonus,
+  firstLevel,
+  maxLevel,
+  upgradeLevel,
+  type Modifiers,
+} from '../lib/upgrades'
 
 /** What each planner upgrade series currently does, shown under its name. */
 const UPGRADE_EFFECTS: Record<string, (m: Modifiers) => string> = {
@@ -90,6 +102,17 @@ const UPGRADE_EFFECTS: Record<string, (m: Modifiers) => string> = {
   FuelEfficiency: (m) => `×${fmt(m.fuel)} heat per fuel`,
   FertilizeEfficiency: (m) => `×${fmt(m.fertilizer)} nutrients per fertilizer`,
   AltarEfficiency: (m) => `×${fmt(m.altar)} EXP from relics`,
+  ContractProfit: (m) => {
+    if (!m.licenses) return 'base dispatch limits and pay'
+    const held = { [SUPPLIER_LICENSES.key]: m.licenses }
+    return `${licenseName(m.licenses)}: +${fmt(attributeBonus(held, 'ContractNum'))}% dispatch limits, +${fmt(attributeBonus(held, 'ContractProfit'))}% pay`
+  },
+  SleepTime: (m) => `${fmt(m.dayMinutes)}-minute days${m.dayMinutes < 24 ? ', never going to bed early' : ', no sleep'}`,
+}
+
+const UPGRADE_TITLES: Record<string, string> = {
+  [SUPPLIER_LICENSES.key]: `Supplier Licenses held, for Dispatch Portal targets: ${dispatch.licenses.join(', ')}`,
+  [POTION_BELT.key]: 'Potion Belt level, for Dispatch Portal targets: each level above 1 cuts sleep by 2 hours, so the day lasts longer',
 }
 
 interface Props {
@@ -356,8 +379,9 @@ export function PlannerPage({
       targets: p.targets.map((x, j) => {
         if (j !== i) return x
         if (patch.item === undefined || patch.item === x.item) return { ...x, ...patch }
-        // A new item follows its own feedback setting.
+        // A new item follows its own feedback setting, and is sized to a dispatch limit only if buyers take it.
         const { feedback: _, ...rest } = x
+        if (rest.unit === 'dispatch' && !(patch.item && contractFor(patch.item))) delete rest.unit
         return { ...rest, ...patch }
       }),
       }),
@@ -392,6 +416,7 @@ export function PlannerPage({
           feedsInto={t.item ? feedsInto(t.item) : null}
           absorbs={absorbs}
           fedBack={targetFedBack(plan, t)}
+          dispatchable={!!t.item && !!contractFor(t.item)}
           onChange={(patch) => updateTarget(i, patch)}
         />
       ),
@@ -402,6 +427,8 @@ export function PlannerPage({
           feedsInto={t.item ? feedsInto(t.item) : null}
           fedBack={targetFedBack(plan, t)}
           ownFeedback={t.feedback !== undefined}
+          dispatch={t.unit === 'dispatch' ? dispatchTerms(t.item, mods) : null}
+          beltSpeed={mods.beltSpeed}
           onFeedback={(on) => onUpdatePlan(`${on ? 'Feed back' : 'Stop feeding back'} ${targetName(i)}`, (p) => setTargetFeedback(p, i, on))}
           sharedWith={sharedWith === i ? null : sharedWith}
           onShowTarget={showTarget}
@@ -515,7 +542,7 @@ export function PlannerPage({
               tier={catalog.tier}
               onChange={(tier) => onProgress('Change research tier', (p) => ({ ...p, tier: tier === MAX_TIER ? undefined : tier }))}
             />
-            {PLANNER_UPGRADES.map((u) => (
+            {[...PLANNER_UPGRADES, ...DISPATCH_UPGRADES].map((u) => (
               <label
                 className="upgrade-row"
                 key={u.key}
@@ -523,7 +550,7 @@ export function PlannerPage({
                   u.unlimited
                     ? `Level ${u.levels.length} is the ∞ node; each level above it is one more purchase of it` +
                       (Number.isFinite(maxLevel(u)) ? ` (up to ${maxLevel(u)})` : '')
-                    : undefined
+                    : UPGRADE_TITLES[u.key]
                 }
               >
                 {u.icon && <img className="upgrade-icon" src={iconUrl(u.icon)!} width={32} height={32} alt="" />}
@@ -533,13 +560,16 @@ export function PlannerPage({
                 </span>
                 <input
                   type="number"
-                  min={0}
-                  max={Number.isFinite(maxLevel(u)) ? maxLevel(u) : undefined}
-                  value={upgradeLevel(progress.upgrades, u)}
+                  min={firstLevel(u)}
+                  max={Number.isFinite(maxLevel(u)) ? maxLevel(u) + firstLevel(u) : undefined}
+                  value={upgradeLevel(progress.upgrades, u) + firstLevel(u)}
                   onChange={(e) =>
                     onProgress(`Change ${u.name} level`, (p) => ({
                       ...p,
-                      upgrades: { ...p.upgrades, [u.key]: upgradeLevel({ [u.key]: Number(e.target.value) || 0 }, u) },
+                      upgrades: {
+                        ...p.upgrades,
+                        [u.key]: upgradeLevel({ [u.key]: (Number(e.target.value) || 0) - firstLevel(u) }, u),
+                      },
                     }))
                   }
                 />
@@ -1590,6 +1620,7 @@ function TargetAmount({
   feedsInto,
   absorbs,
   fedBack,
+  dispatchable,
   onChange,
 }: {
   target: PlanTarget
@@ -1600,6 +1631,8 @@ function TargetAmount({
   absorbs: boolean
   /** The plan feeds the item back (so net can take some off). */
   fedBack: boolean
+  /** Dispatch Portal buyers take the item (so it can be sized to their daily limit). */
+  dispatchable: boolean
   onChange: (patch: Partial<PlanTarget>) => void
 }) {
   const unit = target.unit ?? 'items'
@@ -1614,6 +1647,42 @@ function TargetAmount({
         <strong>{fmt(made)}</strong> /min
       </div>
     )
+  const units = (
+    <select
+      value={unit}
+      onChange={(e) => {
+        const next = e.target.value as Unit
+        // Keep the same output when switching units (net counts as items; a dispatch target makes its limit's rate).
+        let rate = target.rate
+        if (unit === 'dispatch') rate = next === 'machines' && perMachine ? made / perMachine : made
+        else if (next === 'machines' && unit !== 'machines' && perMachine) rate = made / perMachine
+        else if (unit === 'machines' && next !== 'machines' && perMachine) rate = target.rate * perMachine
+        onChange({ unit: next, rate: Math.round(rate * 1000) / 1000 })
+      }}
+      aria-label="Target unit"
+    >
+      <option value="items">/min</option>
+      <option value="machines" disabled={!perMachine}>
+        {resolved?.machineName ? machineNameFor(resolved.machineName, target.rate) : 'machines'}
+      </option>
+      {(feedsInto || unit === 'net') && (
+        <option value="net" title="Left over after the plan takes what it needs of it, in place of the input">
+          net /min
+        </option>
+      )}
+      {(dispatchable || unit === 'dispatch') && (
+        <option value="dispatch" title="As many per minute as reach the Dispatch Portal's daily limit by the end of the day">
+          /min to the dispatch limit
+        </option>
+      )}
+    </select>
+  )
+  if (unit === 'dispatch')
+    return (
+      <div className="target-amount" title="As many per minute as reach the Dispatch Portal's daily limit by the end of the day">
+        <strong>{fmt(made)}</strong> {units}
+      </div>
+    )
   return (
     <>
       <div className="target-amount">
@@ -1626,29 +1695,7 @@ function TargetAmount({
           aria-label="Target amount"
           title="Items per minute, or a number of machines' worth of the chosen recipe"
         />
-        <select
-          value={unit}
-          onChange={(e) => {
-            const next = e.target.value as Unit
-            // Keep the same output when switching between machines and items (net counts as items).
-            const toMachines = next === 'machines' && unit !== 'machines'
-            const fromMachines = unit === 'machines' && next !== 'machines'
-            const rate =
-              perMachine && toMachines ? made / perMachine : perMachine && fromMachines ? target.rate * perMachine : target.rate
-            onChange({ unit: next, rate: Math.round(rate * 1000) / 1000 })
-          }}
-          aria-label="Target unit"
-        >
-          <option value="items">/min</option>
-          <option value="machines" disabled={!perMachine}>
-            {resolved?.machineName ? machineNameFor(resolved.machineName, target.rate) : 'machines'}
-          </option>
-          {(feedsInto || unit === 'net') && (
-            <option value="net" title="Left over after the plan takes what it needs of it, in place of the input">
-              net /min
-            </option>
-          )}
-        </select>
+        {units}
       </div>
       {unit === 'net' && absorbs && (
         <>
@@ -1691,6 +1738,8 @@ function TargetNotes({
   onUseOverflow,
   capped,
   onUseSupply,
+  dispatch,
+  beltSpeed,
 }: {
   target: PlanTarget
   resolved: ResolvedTarget | undefined
@@ -1699,6 +1748,10 @@ function TargetNotes({
   fedBack: boolean
   /** The target sets its own feedback instead of following its item's. */
   ownFeedback: boolean
+  /** A dispatch target's contract terms. */
+  dispatch: DispatchTerms | null
+  /** Items per minute one belt carries. */
+  beltSpeed: number
   onFeedback: (on: boolean) => void
   /** The earlier target whose row also builds this one's item (built separately), if any. */
   sharedWith: number | null
@@ -1730,7 +1783,9 @@ function TargetNotes({
       {unit === 'machines' && perMachine === null && (
         <div className="note-line">Bought or not made by a machine: set items /min.</div>
       )}
-      {unit === 'overflow' && target.consumes ? (
+      {unit === 'dispatch' && dispatch ? (
+        <DispatchTargetNote terms={dispatch} beltSpeed={beltSpeed} />
+      ) : unit === 'overflow' && target.consumes ? (
         <OverflowTargetNote consumes={target.consumes} use={resolved?.overflow} onShowTarget={onShowTarget} onConvert={onConvert} />
       ) : unit === 'supply' && target.consumes ? (
         <SupplyTargetNote consumes={target.consumes} use={resolved?.supply} onShowTarget={onShowTarget} onConvert={onConvert} />
@@ -1844,6 +1899,45 @@ function SupplyTargetNote({
       >
         Make it a standard target
       </button>
+    </>
+  )
+}
+
+/** Under a dispatch target: the contract its daily limit comes from, and what dispatching pays. */
+function DispatchTargetNote({ terms, beltSpeed }: { terms: DispatchTerms; beltSpeed: number }) {
+  const { contract } = terms
+  // The portal takes one belt and has no craft time: it keeps up with whatever the belt brings.
+  const portals = Math.ceil(terms.rate / beltSpeed - 1e-9)
+  return (
+    <>
+      <div
+        className="note-line"
+        title={
+          `Buyers take ${contract.dailyLimit} contracts a day, more with Supplier Licenses, counting every portal. ` +
+          'The day lasts from 6:00 until bedtime (Potion Belt): the portal stops taking items once the limit is reached.'
+        }
+      >
+        📦 {fmt(terms.itemsPerDay)} a day to Dispatch Portals: {fmt(terms.perDay)} {noun(terms.perDay, 'contract')} of{' '}
+        {fmt(contract.count)}, over a {fmt(terms.dayMinutes)}-minute day
+      </div>
+      <div className="note-line">
+        pays{' '}
+        {terms.pay.map((p) => (
+          <span key={p.coin} className="money">
+            {fmt(p.count)}
+            <ItemIcon item={p.coin} size={16} />
+          </span>
+        ))}{' '}
+        a contract, <Money copper={terms.copperPerMinute} suffix="/min" /> ·{' '}
+        <span title={`One belt each, at ${fmt(beltSpeed)} items/min`}>
+          {portals} {buildingNameFor('Portal_Wholesaling', portals)}
+        </span>
+      </div>
+      {terms.locked && (
+        <div className="note-line warn-text">
+          ⚠ Needs the {licenseName(contract.license)} license to unlock: its limit assumes you have it.
+        </div>
+      )}
     </>
   )
 }

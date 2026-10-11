@@ -109,6 +109,28 @@ interface GameData {
   /** Base values of player attributes (e.g. ConveyerSpeed: 60 items/min). */
   attributes: Record<string, number>
   research: Research
+  dispatch: DispatchData
+}
+
+/** A Dispatch Portal purchase contract: `count` items sold at once for `reward`. */
+export interface Contract {
+  item: string
+  count: number
+  /** Payment per contract as (gold, silver, copper), before Supplier License bonuses. */
+  reward: [number, number, number]
+  /** Contracts buyers take a day, factory-wide, before Supplier License bonuses. */
+  dailyLimit: number
+  /** Supplier License tier that unlocks the contract (0: the Sample Request quest). */
+  license: number
+}
+
+export interface DispatchData {
+  contracts: Contract[]
+  /** Supplier License names, tier 1 first. */
+  licenses: string[]
+  licenseIcon: string | null
+  /** Potion Belt icon (its upgrades set the length of the day). */
+  potionBeltIcon: string | null
 }
 
 /** What each research tier (1–9, shown as I–IX in game) unlocks. */
@@ -154,6 +176,7 @@ export const buildingsByKey = new Map(buildings.map((b) => [b.key, b]))
 export const seeds = data.seeds
 export const upgrades = data.upgrades
 export const attributeBase = data.attributes
+export const dispatch = data.dispatch
 
 // ---- Research tiers ----
 

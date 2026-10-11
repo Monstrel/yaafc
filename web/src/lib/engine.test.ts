@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { altarYield, altarsFor } from './altar'
 import { cauldronStats, evaluateAdvanced, evaluateNormal, findRecipes } from './cauldron'
+import { dispatchTerms } from './dispatch'
 import {
   HEAT,
   MAX_TIER,
@@ -8,6 +9,7 @@ import {
   NUTRIENTS,
   buyTier,
   cauldronIngredients,
+  dispatch,
   gameRecipes,
   heightMultiplier,
   items,
@@ -2027,6 +2029,66 @@ describe('Purchasing Portal (coins → an item)', () => {
     expect(money.purchases).toEqual([{ item: 'IronOre', count: expect.closeTo(15), price: 1200 }])
     expect(money.coins.map((l) => l.item).sort()).toEqual(['CopperCoin', 'SilverCoin'])
     expect(money.need).toBeCloseTo(15 * 1200)
+  })
+})
+
+describe('Dispatch Portal (an item → coins, up to a daily limit)', () => {
+  // Items a day per Supplier License count, from the game's limit check (native 0x144A2A2E0): whole
+  // contracts until the factory-wide count reaches round(count × DailyLimit × (1 + 0.6 × licenses)).
+  const perDay: Record<string, (number | null)[]> = {
+    Bandage: [800, 1300, 1800, 2250, 2750, 3200],
+    GloomSpores: [null, 2600, 3550, 4500, 5450, 6400],
+    PocketWatch: [null, null, 2120, 2700, 3280, 3840],
+    Catalyst2: [null, null, null, 3360, 4080, 4800],
+    SilverAmulet: [null, null, null, null, 1640, 1920],
+    MoonlitSoap: [null, null, null, null, null, 320],
+  }
+
+  it('takes whole contracts up to the daily limit, raised by each Supplier License', () => {
+    expect(dispatch.contracts.map((c) => c.item).sort()).toEqual(Object.keys(perDay).sort())
+    for (const [item, days] of Object.entries(perDay))
+      days.forEach((items, licenses) => {
+        const terms = dispatchTerms(item, modifiers({ ContractProfit: licenses }))!
+        expect(terms.locked).toBe(items === null)
+        if (items !== null) expect(terms.itemsPerDay).toBe(items)
+      })
+    expect(dispatchTerms('WoodBoard', modifiers({}))).toBeNull()
+  })
+
+  it('assumes the license a locked contract needs', () => {
+    const terms = dispatchTerms('GloomSpores', modifiers({}))!
+    expect(terms).toMatchObject({ locked: true, licenses: 1, itemsPerDay: 2600 })
+  })
+
+  it('spreads the limit over a day that ends at bedtime, later with each Potion Belt tier', () => {
+    expect([0, 1, 2, 3, 4, 9].map((tier) => modifiers({ SleepTime: tier }).dayMinutes)).toEqual([16, 18, 20, 22, 24, 24])
+    expect(dispatchTerms('Bandage', modifiers({}))!.rate).toBeCloseTo(50) // 800 over 16 minutes
+    expect(dispatchTerms('Bandage', modifiers({ SleepTime: 4 }))!.rate).toBeCloseTo(800 / 24)
+  })
+
+  it('pays each coin of the reward rounded down after the license bonus', () => {
+    const pay = (licenses: number) => dispatchTerms('Bandage', modifiers({ ContractProfit: licenses }))!.pay
+    expect(pay(0)).toEqual([{ coin: 'SilverCoin', count: 12 }])
+    expect(pay(1)).toEqual([{ coin: 'SilverCoin', count: 12 }]) // 12.96
+    expect(pay(5)).toEqual([{ coin: 'SilverCoin', count: 19 }]) // +60%: 19.2
+    expect(dispatchTerms('Bandage', modifiers({}))!.copperPerMinute).toBeCloseTo((16 * 12_000) / 16)
+  })
+
+  it('sizes a target to the limit', () => {
+    const mods = modifiers({})
+    const catalog = buildCatalog({ saved: [], machines: {}, mods, fertilizer: null })
+    const result = solvePlan(plan({ targets: [{ item: 'Bandage', rate: 7, unit: 'dispatch' }] }), catalog, mods)
+    expectBalanced(result)
+    expect(result.targets[0].rate).toBeCloseTo(50)
+    expect(result.balances.find((b) => b.item === 'Bandage')!.produced).toBeCloseTo(50)
+  })
+
+  it('reads a dispatch target of an item buyers don’t take as an ordinary one', () => {
+    const p = plan({ targets: [{ item: 'Bandage', rate: 7, unit: 'dispatch' }, { item: 'WoodBoard', rate: 7, unit: 'dispatch' }] })
+    expect(sanitizePlans([p], () => 't')![0].targets).toEqual([
+      { item: 'Bandage', rate: 7, unit: 'dispatch' },
+      { item: 'WoodBoard', rate: 7 },
+    ])
   })
 })
 
