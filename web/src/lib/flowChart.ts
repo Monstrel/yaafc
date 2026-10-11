@@ -252,7 +252,8 @@ export function buildFlowChart(tree: TreeNode[], rootId: string, levels?: number
       const group = c.kind === 'separate' && c.groupId ? rows.get(c.groupId) : undefined
       if (group && !followed.has(group.id)) {
         followed.add(group.id)
-        return Math.max(m, deepest(group, d + 1))
+        // What it delivers beside its recovery takes a level of its own.
+        return Math.max(m, deepest(group, d + (group.children.some((r) => r.recovery) ? 2 : 1)))
       }
       return Math.max(m, deepest(c, d + 1))
     }, d)
@@ -380,48 +381,51 @@ export function buildFlowChart(tree: TreeNode[], rootId: string, levels?: number
       }
   }
 
+  /** Rows with recovery beside them: the box delivering what they and their recovery make. */
+  const deliveredBy = new Map<string, string>()
+  /** The box a row's item comes out of. */
+  const supplier = (id: string) => deliveredBy.get(id) ?? id
+
   /**
    * A box gathering what a row supplies: its machines' output, the part from the bus and other
    * rows' by-products. Used for the chart's own row and items built separately, which supply
-   * every use from one place.
+   * every use from one place. Rows recovering into its supply sit beside it, as everywhere else,
+   * and both go into a box of what it delivers, at `depth` (else the recovery reads as an input of
+   * its machines, and their outputs going into it as a loop).
    */
-  const hub = (n: TreeNode, depth: number, recovered = true): FlowBox => {
+  const hub = (n: TreeNode, depth: number): FlowBox => {
+    const delivered = n.children.some((c) => c.recovery)
+      ? box({ id: `${n.id}#out`, row: n.id, kind: 'join', item: n.item, rate: n.rate, note: 'made and recovered', depth, group: !!n.consolidated })
+      : undefined
+    const d = delivered ? depth + 1 : depth
     const b = box({
       id: n.id,
       row: n.id,
       kind: 'machines',
       item: n.item,
-      rate: recovered ? n.rate : n.rate - n.fromRecovery,
+      rate: delivered ? n.rate - n.fromRecovery : n.rate,
       node: n,
-      depth,
-      group: !!n.consolidated,
+      depth: d,
+      group: !delivered && !!n.consolidated,
     })
     consumerOf.set(n.id, b.id)
     if (n.fromBus > EPS)
-      attach(b.id, box({ id: `${n.id}#bus`, row: n.id, kind: 'bus', item: n.item, rate: n.fromBus, depth: depth + 1 }))
-    if (n.fromByproduct > EPS) takers.push({ row: n, depth: depth + 1 })
-    if (depth >= limit) {
+      attach(b.id, box({ id: `${n.id}#bus`, row: n.id, kind: 'bus', item: n.item, rate: n.fromBus, depth: d + 1 }))
+    if (n.fromByproduct > EPS) takers.push({ row: n, depth: d + 1 })
+    if (d >= limit) {
       b.more = countRows(n)
-      addHidden(n, b, depth + 1)
-    } else addChildren(n, b, depth + 1)
-    // A separate build gathers what's recovered into its supply too.
-    if (recovered) joinRecoveries(n, b, depth + 1)
-    return b
+      addHidden(n, b, d + 1)
+    } else addChildren(n, b, d + 1)
+    if (!delivered) return b
+    deliveredBy.set(n.id, delivered.id)
+    attach(delivered.id, b)
+    joinRecoveries(n, delivered, d)
+    return delivered
   }
 
-  // The chart's own row with rows recovering into its supply: those sit beside it, as everywhere
-  // else, and both go into what it delivers (else the recovery reads as an input of its machines,
-  // and their outputs going into it as a loop).
-  const beside = !start.consolidated && start.children.some((c) => c.recovery)
-  const delivered = beside
-    ? box({ id: `${start.id}#out`, row: start.id, kind: 'join', item: start.item, rate: start.rate, note: 'made and recovered', depth: -1 })
-    : undefined
-  const own = hub(start, 0, !delivered)
-  if (delivered) {
-    attach(delivered.id, own)
-    joinRecoveries(start, delivered, 0)
-  }
-  const root = delivered ?? own
+  // The chart's own row, with what it delivers to the right of it and its recovery.
+  const root = hub(start, start.children.some((c) => c.recovery) ? -1 : 0)
+  const own = boxes.get(start.id)!
 
   // Loops and separate builds: from the box making it, else from outside the chart. An item built
   // separately elsewhere in the plan comes into the chart, by its first use here.
@@ -432,17 +436,17 @@ export function buildFlowChart(tree: TreeNode[], rootId: string, levels?: number
     const group = p.kind === 'separate' && p.from ? rows.get(p.from) : undefined
     if (group && !boxes.has(group.id)) boxes.get(to)!.children.push(hub(group, p.depth))
     if (p.from && boxes.has(p.from))
-      link({ id: `${p.kind}:${p.row.id}`, from: p.from, to, item: p.row.item, rate: p.row.rate, kind: p.kind }, p.row.id)
+      link({ id: `${p.kind}:${p.row.id}`, from: p.kind === 'separate' ? supplier(p.from) : p.from, to, item: p.row.item, rate: p.row.rate, kind: p.kind }, p.row.id)
     else attach(to, outsideBox(p.row.item, p.row.rate, p.note, p.depth, p.from), fuelRows.has(p.row.id))
   }
   // Rows below the level limit: only from boxes the chart has, once it has them all.
   for (const p of pending)
     if (p.hidden && p.from && boxes.has(p.from)) {
       const to = consumerOf.get(p.row.id)!
-      link({ id: `${p.kind}:${p.row.id}`, from: p.from, to, item: p.row.item, rate: p.row.rate, kind: p.kind }, p.row.id)
+      link({ id: `${p.kind}:${p.row.id}`, from: p.kind === 'separate' ? supplier(p.from) : p.from, to, item: p.row.item, rate: p.row.rate, kind: p.kind }, p.row.id)
     }
   for (const l of heatLoops)
-    if (boxes.has(l.from)) links.push({ ...l, id: `heat:${l.to}`, kind: 'loop', fuel: true })
+    if (boxes.has(l.from)) links.push({ ...l, from: rows.get(l.from)?.consolidated ? supplier(l.from) : l.from, id: `heat:${l.to}`, kind: 'loop', fuel: true })
   // What items built separately send to uses the chart doesn't show.
   for (const b of boxes.values()) {
     if (!b.group) continue

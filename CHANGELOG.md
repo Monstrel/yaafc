@@ -8,6 +8,13 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
+## 2026-10-11T14:26Z
+
+- An item built separately now shows its recovery beside it too, in the tree and the flow chart,
+  instead of looking like one of its ingredients or a loop back into its machines. Its row shows
+  what its own machines make, and the flow chart adds a "made and recovered" box that its uses
+  take from.
+
 ## 2026-10-10T21:36Z
 
 - Rows always use what other rows leave over before they make or bring in their item, so leftovers

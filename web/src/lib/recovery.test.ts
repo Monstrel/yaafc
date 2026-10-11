@@ -218,3 +218,32 @@ describe('flow chart levels', () => {
     }
   })
 })
+
+describe('an item built separately with recovery', () => {
+  const { tree } = solvePlan(
+    plan({
+      targets: [{ item: 'GoldIngot', rate: 8.45 }],
+      producers: { GoldDust3: 'recipe:GoldDust3' },
+      separate: [{ item: 'GoldDust3' }],
+    }),
+    catalog,
+    mods,
+  )
+
+  it("draws its recovery beside its machines, both going into what it delivers, not as a loop into them", () => {
+    const chart = buildFlowChart(tree, '0/GoldIngot')!
+    expect(chart.loops).toEqual([])
+    const delivered = chart.boxes.get('separate/GoldDust3#out')!
+    expect(delivered).toMatchObject({ kind: 'join', group: true, rate: expect.closeTo(16.9) })
+    const into = chart.edges.filter((e) => e.to === delivered.id && e.kind === 'feed')
+    expect(into.map((e) => [e.from, e.rate])).toEqual(
+      expect.arrayContaining([
+        ['separate/GoldDust3', expect.closeTo(4.225)],
+        ['separate/GoldDust3/recover:GoldDust3@recipe:GoldDust3_Alt', expect.closeTo(12.675)],
+      ]),
+    )
+    // Its use takes it from what it delivers.
+    expect(chart.edges.find((e) => e.kind === 'separate')).toMatchObject({ from: delivered.id, to: '0/GoldIngot/GoldDust5' })
+    expect(chart.boxes.get('separate/GoldDust3')!.x).toBe(chart.boxes.get('separate/GoldDust3/recover:GoldDust3@recipe:GoldDust3_Alt')!.x)
+  })
+})

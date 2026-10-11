@@ -1878,22 +1878,32 @@ function viewOf(tree: TreeNode[], rootIds: (string | null)[]): { view: TreeNode[
   // Rows of targets that have since moved or gone wait for the next solve.
   const rows = rootIds.map((id, i) => (id && roots.get(id)) || blankRow(pendingId(i)))
   const slotRows = rows.map((n) => n.id)
-  // A target's recovery rows sit beside it, as they do beside any row: they add to what it delivers,
-  // they aren't its ingredients (Gold Dust refined from Impure Gold Dust isn't an input of the Gold
-  // Dust Athanors). A row gathering an item built separately keeps them.
+  // A target's recovery rows sit beside it, as do an item built separately's, as they do beside any
+  // row: they add to what it delivers, they aren't its ingredients (Gold Dust refined from Impure
+  // Gold Dust isn't an input of the Gold Dust Athanors).
   const own = new Set(tree.flatMap((n) => n.children.filter((r) => r.recovery).map((r) => r.id)))
-  const targets = rows.flatMap((n) =>
-    n.consolidated || !n.children.some((r) => own.has(r.id))
-      ? [n]
-      : // Its own machines' part, then the recovered part: together, what the target delivers.
-        [{ ...n, rate: n.rate - n.fromRecovery, children: n.children.filter((r) => !own.has(r.id)) }, ...n.children.filter((r) => own.has(r.id))],
-  )
-  const groups = tree.filter((n) => n.id.startsWith('separate/')).map(withReused)
+  const targets = rows.flatMap((n) => besideRecovery(n, own))
+  const groups = tree
+    .filter((n) => n.id.startsWith('separate/'))
+    .map(withReused)
+    .flatMap((n) => besideRecovery(n, own))
   if (!groups.length) return { view: targets, slotRows }
   const made = rows.filter((n) => n.item)
   if (made.length === 1)
     return { view: targets.map((n) => (n.id === made[0].id ? { ...n, children: [...n.children, ...groups] } : n)), slotRows }
   return { view: [blankRow(PLAN_ROOT, [...targets, ...groups])], slotRows }
+}
+
+/**
+ * A row with the rows recovering into its supply (those in `recovering`) beside it: its own
+ * machines' part, then the recovered part, together what it delivers.
+ */
+function besideRecovery(n: TreeNode, recovering: Set<string>): TreeNode[] {
+  if (!n.children.some((r) => recovering.has(r.id))) return [n]
+  return [
+    { ...n, rate: n.rate - n.fromRecovery, children: n.children.filter((r) => !recovering.has(r.id)) },
+    ...n.children.filter((r) => recovering.has(r.id)),
+  ]
 }
 
 /** Line id suffix for the by-products covering part of a row. */
@@ -1932,13 +1942,14 @@ function withReused(n: TreeNode): TreeNode {
     c.rate - c.fromByproduct > 1e-9
   const folded = n.children.filter(isFolded)
   // Each child with the by-product line shown above it, if any, and the rows recovering outputs into
-  // its supply after it: they stay together. The recovery rows feed this row alongside the child,
-  // not the child's machines, so they sit beside it (a row gathering an item built separately
-  // keeps them: what it feeds isn't the row above it).
+  // its supply after it: they stay together. The recovery rows feed what the child feeds alongside
+  // it, not the child's machines, so they sit beside it. A row gathering an item built separately
+  // feeds its uses, not this row: its recovery sits beside it in its "with" card, not gathered.
   const feeds = n.children.flatMap((c) => (isFolded(c) ? c.children.filter((f) => !isDraw(f)) : [c])).map((child) => {
     const whole = withReused(child)
     // Only the rows recovering into this one: those it shows beside it came from further down.
-    const joining = new Set(child.consolidated ? [] : child.children.filter((r) => r.recovery).map((r) => r.id))
+    const joining = new Set(child.children.filter((r) => r.recovery).map((r) => r.id))
+    if (child.consolidated) return besideRecovery(whole, joining)
     if (!joining.size) return gathered(whole, withByproductLine(whole))
     const recovered = whole.children.filter((r) => joining.has(r.id))
     const c = { ...whole, rate: whole.rate - whole.fromRecovery, children: whole.children.filter((r) => !joining.has(r.id)) }
@@ -2055,7 +2066,8 @@ function layoutLines(tree: TreeNode[], collapsed: Set<string>): Line[] {
         divided = true
         lines.push({ kind: 'with', anchor: parent.item, anchorId: parent.id, depth, edges: [] })
       }
-      const inCard = group ? depth : card
+      // A "with" row's recovery, beside it, stays in its card.
+      const inCard = group || divided ? depth : card
       lines.push({ kind: 'row', node, depth, card: inCard, edges: [] })
       if (!collapsed.has(node.id)) walk(node.children, depth + 1, inCard, node)
     }
