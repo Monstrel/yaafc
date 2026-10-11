@@ -2319,9 +2319,33 @@ describe('overflow targets', () => {
       expect(overflowing(fed)).toEqual(overflowing(out))
     })
 
+    it('lets rows anywhere in the plan rebalance, not just the chains it feeds', () => {
+      // Here Sol's cauldrons make their Gold Dust in their own rows, which take Gold Dust that rows
+      // in other branches leave over (one on the alternate recipe). Slowing the cauldrons, they'd
+      // take less of it: those rows must run slower too, or it overflows.
+      const catalog = buildCatalog({ saved: recipes, machines: {}, mods, fertilizer: 'PanaceaElixir', mine: defaults })
+      const inline = plan({
+        targets: [{ item: 'Sol', rate: 1, unit: 'machines' }],
+        producers: { [NUTRIENTS]: 'fert:PanaceaElixir' },
+        branches: {
+          '0/Sol/MercuryP/Malachite': { producer: 'cauldron:mal' },
+          '0/Sol/MercuryP/LapisLazuli/Catalyst4/Catalyst3/GoldDust3': { producer: 'recipe:GoldDust3_Alt' },
+        },
+        loopFeedback: true,
+      })
+      const p = chooseProducer(using(inline, 'Diamond3', 'Crystal1'), catalog, { item: 'Diamond3', producer: 'recipe:Diamond3', row: '1/Diamond3' })
+      const out = solvePlan(p, catalog, mods)
+      const made = out.targets[1].rate
+      expect(made).toBeGreaterThan(0)
+      const fed = solvePlan(setTargetFeedback(p, 1, true), catalog, mods)
+      expectBalanced(fed)
+      expect(fed.targets[1]).toMatchObject({ rate: expect.closeTo(made), fedIn: expect.closeTo(made) })
+      expect(overflowing(fed)).toEqual(overflowing(out))
+    })
+
     it("doesn't run the rows it frees harder to make more of what it takes", () => {
-      // Without these defaults the plan overflows no Shattered Crystal, but the Gold Dust chains it
-      // frees could make some for it.
+      // Without these defaults the plan overflows no Shattered Crystal, but the Gold Dust chains no
+      // longer held could make some for it.
       const mine = { Diamond3: defaults.Diamond3, Obsidian: defaults.Obsidian }
       const catalog = buildCatalog({ saved: recipes.slice(0, 1), machines: {}, mods, fertilizer: 'PanaceaElixir', mine })
       const p = sol()

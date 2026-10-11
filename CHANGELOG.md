@@ -8,6 +8,12 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
+## 2026-10-11T22:31Z
+
+- A fed-back target that uses overflow now also covers the plan's own use of its item when the
+  rows it feeds take leftovers from rows in other parts of the plan. Those rows can now run slower
+  too, instead of the plan leaving the target's output out so their leftovers don't overflow.
+
 ## 2026-10-11T19:52Z
 
 - A target that uses overflow and is fed back now covers the plan's own use of its item in plans

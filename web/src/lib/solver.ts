@@ -584,18 +584,11 @@ function solveRound(
       : []
     if (users.length || loops.length) fedUsers.set(i, [...loops, ...users])
   })
-  // Rows held to their crafts that take a fed-back target's output, the rows below them and the
-  // separate builds they take from aren't held: they run as the plan needs once the target covers
-  // part of their use. Slowing them alone isn't always enough: where they share by-products with
-  // other chains, some must run a little harder for those chains to rebalance without overflowing.
-  const freed = new Set<PlanNode>()
-  const free = (n: PlanNode) => {
-    if (freed.has(n)) return
-    freed.add(n)
-    n.children.forEach(free)
-    if (n.kind === 'separate' && n.ref) free(supplierOf(n))
-  }
-  for (const users of fedUsers.values()) users.forEach(free)
+  // Once a target feeds back into the plan's rows, none of them are held to how they run without the
+  // overflow and supply targets: what it covers changes what they need, and where chains share
+  // by-products, rows anywhere in the plan may have to run slower or a little harder for them to
+  // rebalance without overflowing. (What the rest of the plan overflows is still capped below.)
+  const unheld = fedUsers.size > 0
   const sameRun = (n: PlanNode, c: PlanNode) => c.kind === 'make' && c.process!.id === n.process!.id
   // Rows whose by-products can go to rows running something else (see `e:` below).
   const sharing = new Set(
@@ -666,7 +659,7 @@ function solveRound(
     }
     columns[`x:${k}`] = col
     const fixed = fixedOf(n)
-    if (fixed !== undefined && (!freed.has(n) || machineRows.has(n))) {
+    if (fixed !== undefined && (!unheld || machineRows.has(n))) {
       equalities[`h:${k}`] = fixed
       col[`h:${k}`] = 1
     }
@@ -772,9 +765,9 @@ function solveRound(
     if (parts.length) mixes.set(n, parts)
   }
 
-  // Rows a fed-back target frees could otherwise run harder to make more of what an overflow target
-  // takes: the rest of the plan overflows no more of it than without the plan's overflow targets.
-  if (held && freed.size)
+  // Rows no longer held could otherwise run harder to make more of what an overflow target takes:
+  // the rest of the plan overflows no more of it than without the plan's overflow targets.
+  if (held && unheld)
     for (const item of takerOf.keys()) {
       const cap = `oc:${item}`
       for (const [name, col] of Object.entries(columns)) {
