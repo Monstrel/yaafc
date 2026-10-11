@@ -69,6 +69,11 @@ export interface TreeNode {
   consolidated?: boolean
   /** The choice behind a `consolidated` row. */
   separation?: Separation
+  /**
+   * A row of a target's item in the target's own chain: the target (index in the plan's targets). Its
+   * row loops back into the target's row while the target is fed back, else it's a plan input or short.
+   */
+  loopTarget?: number
   /** For a `separate` leaf: the row that builds it, and the item that row sits under (none at the top). */
   groupId?: string
   groupAnchor?: string
@@ -179,6 +184,7 @@ export function buildTree(roots: PlanNode[], flows: Map<PlanNode, RowFlows>, mod
       fromBus: f.fromBus,
       shortfall: f.shortfall,
       fromRecovery: f.fromRecovery ?? 0,
+      ...(n.loopTarget !== undefined && { loopTarget: n.loopTarget }),
       ...(n.recovers && {
         recovery: true,
         recovers: n.children.filter((c) => c.kind === 'reclaim').map((c) => c.item),

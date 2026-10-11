@@ -85,6 +85,27 @@ export function busDraws(tree: TreeNode[]): Map<string, { need: number; uses: Pa
 }
 
 /**
+ * Targets (indexes in the plan's targets) whose output rows of the plan take when it's fed back,
+ * besides plan inputs of its item: rows of its own chain looping back into it, and rows making its
+ * item under other targets.
+ */
+export function targetUsers(plan: Plan, tree: TreeNode[]): Set<number> {
+  const found = new Set<number>()
+  const roots = new Map<string, number>()
+  plan.targets.filter((t) => t.item).forEach((t, i) => roots.set(`${i}/${t.item}`, plan.targets.indexOf(t)))
+  const visit = (n: TreeNode, root: string) => {
+    if (n.loopTarget !== undefined) found.add(n.loopTarget)
+    if (n.run && !n.recovery && !roots.has(n.id))
+      plan.targets.forEach((t, i) => {
+        if (t.item === n.item && roots.get(root) !== i) found.add(i)
+      })
+    n.children.forEach((c) => visit(c, root))
+  }
+  tree.forEach((n) => visit(n, n.id))
+  return found
+}
+
+/**
  * Per item the plan's rows take from the bus (coins aside: they're money), how its own output
  * covers that. Fed-back sources cover it in order: overflow, then targets in the plan's order. A
  * net-surplus target there covers all that's left (the solve made its row big enough); otherwise

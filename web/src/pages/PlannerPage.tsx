@@ -48,10 +48,13 @@ import {
   migrateCatalysts,
   migrateFeedback,
   migrateInputs,
+  migrateLoopFeedback,
   moveTarget,
   removeTarget,
   setAltar,
   setOutputAltar,
+  setLoopSource,
+  type LoopSourceChoice,
   setItemFeedback,
   setTargetFeedback,
   pruneChoices,
@@ -170,6 +173,7 @@ export function PlannerPage({
     if (migrateCatalysts(plan, catalog)) onUpdatePlan(null, (p) => migrateCatalysts(p, catalog) ?? p)
     else if (migrateFeedback(plan, catalog)) onUpdatePlan(null, (p) => migrateFeedback(p, catalog) ?? p)
     else if (migrateInputs(plan)) onUpdatePlan(null, (p) => migrateInputs(p) ?? p)
+    else if (migrateLoopFeedback(plan, catalog)) onUpdatePlan(null, (p) => migrateLoopFeedback(p, catalog) ?? p)
     else if (pruneChoices(plan, catalog)) onUpdatePlan(null, (p) => pruneChoices(p, catalog) ?? p)
     else if (organized !== plan) updateStoredPlan(null, (p) => (p === plan ? organized : p))
   }, [plan, catalog, organized, onUpdatePlan, updateStoredPlan])
@@ -202,6 +206,11 @@ export function PlannerPage({
     onUpdatePlan(
       `${on ? 'Send' : 'Stop sending'} ${rowName(row)}'s ${itemName(item)} ${on ? 'to' : 'from'} Knowledge Altars`,
       (p) => setOutputAltar(p, row, item, on),
+    )
+  const loopSource = (row: TreeNode, source: LoopSourceChoice) =>
+    onUpdatePlan(
+      source === 'fed' ? `Feed back the ${itemName(row.item)} target` : `Take ${itemName(row.item)} in as a plan input`,
+      (p) => setLoopSource(p, catalog, row, source, result.tree),
     )
   /**
    * The fuel or fertilizer (heat or nutrients) rows burn or spread unless their branch picks
@@ -763,6 +772,7 @@ export function PlannerPage({
                       onResetProducer={resetProducer}
                       onFindCauldron={onFindCauldron}
                       onOutputAltar={outputAltar}
+                      onLoopSource={loopSource}
                       onRemember={remember}
                       onForget={unsave}
                       onCatalysts={setCatalysts}
@@ -914,8 +924,8 @@ function BusPanel({
   // What the overflow broken down at Knowledge Altars makes, and on how many.
   const altarExp = money.outputs.reduce((t, o) => t + o.altar * (exp.get(o.item)?.exp ?? 0), 0)
   const altarsUsed = altar ? money.outputs.reduce((t, o) => t + altarsBuilt(o.item, o.altar, altar), 0) : 0
-  const fedBack = money.outputs.filter((o) => o.sources.some((s) => isFed(o, s)))
-  const out = money.outputs.filter((o) => o.toBus > 0 || o.altar > 0 || o.sources.some((s) => !isFed(o, s)))
+  const fedBack = money.outputs.filter((o) => o.sources.some((s) => isFed(s)))
+  const out = money.outputs.filter((o) => o.toBus > 0 || o.altar > 0 || o.sources.some((s) => !isFed(s)))
   // Items the plan's own fed-back output wholly covers take nothing from the bus: the fed-back
   // strip shows them. A cap the user set keeps its line, so it isn't hidden away.
   const drawing = ledgers.filter((l) => l.bus > 0 || l.short > 0 || l.covered === 0 || l.cap !== null)
@@ -1019,8 +1029,8 @@ function BusPanel({
   )
 }
 
-/** Whether the plan feeds this source back in place of the bus or into its money (so it's in a banner, not out). */
-const isFed = (row: OutputRow, s: OutputSource) => s.fedBack && row.feeds.length > 0
+/** Whether the plan feeds this source back into its own use or its money (so it's in a banner, not out). */
+const isFed = (s: OutputSource) => s.fedBack && s.feeds.length > 0
 
 /** What the plan feeds back of a source, and what's left of it after that, its own overflow targets and Knowledge Altars, per minute. */
 function sourceUse(s: OutputSource) {
@@ -1341,7 +1351,7 @@ function OutputLine({
   mods: Modifiers | null
 }) {
   // Fed-back sources show here only for what's left over of them: their banner has the rest.
-  const sources = row.sources.filter((s) => !isFed(row, s) || s.altar > 0 || sourceUse(s).left > 1e-9 * s.amount)
+  const sources = row.sources.filter((s) => !isFed(s) || s.altar > 0 || sourceUse(s).left > 1e-9 * s.amount)
   const [using, setUsing] = useState(false)
   const overflow = row.sources.find((s) => s.target === null)
   // Overflow broken down at Knowledge Altars: how many, what for, and sending it back out instead.
@@ -1398,14 +1408,14 @@ function OutputLine({
       <ul className="bus-output-sources">
         {sources.map((s) => {
           const { left } = sourceUse(s)
-          if (isFed(row, s))
+          if (isFed(s))
             return [
               left > 1e-9 * s.amount && (
                 <li key={s.target ?? 'overflow'}>
                   <span className="ledger-what">
                     <span>
                       {s.target === null ? 'overflow' : <TargetLink index={s.target} onShow={onShowTarget} />} · {fmt(left)}/min
-                      <span className="hint-inline"> left over after the plan {row.feeds.map((f) => FEED_VERB[f]).join(' or ')} it</span>
+                      <span className="hint-inline"> left over after the plan {s.feeds.map((f) => FEED_VERB[f]).join(' or ')} it</span>
                     </span>
                   </span>
                 </li>
@@ -1431,13 +1441,13 @@ function OutputLine({
                 )}
                 <TakenBy source={s} onShowTarget={onShowTarget} />
               </span>
-              {row.feeds.length > 0 && (
+              {s.feeds.length > 0 && (
                 <button
                   className="move-button"
-                  title={`Feed it back: the plan ${row.feeds.map((f) => FEED_VERB[f]).join(' or ')} it before taking any as an input`}
+                  title={`Feed it back: the plan ${s.feeds.map((f) => FEED_VERB[f]).join(' or ')} it before taking any as an input`}
                   onClick={() => onFeedback(row.item, s.target, true)}
                 >
-                  ← {feedButton(row.feeds)} in plan
+                  ← {feedButton(s.feeds)} in plan
                 </button>
               )}
             </li>,
@@ -1489,7 +1499,7 @@ function FedBanner({
   onShowRow: (ids: string[]) => void
 }) {
   const uses = (Object.entries(row.used) as [BusUse, number][]).filter(([, n]) => n > 0)
-  const sources = row.sources.filter((s) => isFed(row, s))
+  const sources = row.sources.filter((s) => isFed(s))
   return (
     <li className="bus-banner">
       <div className="bus-output-head">
@@ -1759,13 +1769,25 @@ function TargetNotes({
           </select>
         )
       )}
-      {feedsInto && (
-        <label className="check target-feedback" title="Covers the plan's own need before its input does, in target order">
-          <input type="checkbox" checked={fedBack} onChange={(e) => onFeedback(e.target.checked)} />
-          {feedsInto === 'money' ? <>Feed back into the plan&apos;s money</> : <>Feed back in place of the input</>}
-          {ownFeedback && <span className="hint-inline">(this target only)</span>}
-        </label>
-      )}
+      {/* Always offered, so it's settled before a change makes the plan use the item. */}
+      <label
+        className="check target-feedback"
+        title={
+          feedsInto === 'money'
+            ? 'Covers what the plan spends, in target order'
+            : 'Rows in the plan using it take what this target makes first, in target order: rows of its own chain looping back into it, rows making it elsewhere, and the plan input of it. Not fed back, its own chain takes it in as a plan input.'
+        }
+      >
+        <input type="checkbox" checked={fedBack} onChange={(e) => onFeedback(e.target.checked)} />
+        {feedsInto === 'money' ? (
+          <>Feed back into the plan&apos;s money</>
+        ) : feedsInto === 'bus' ? (
+          <>Feed back in place of the input</>
+        ) : (
+          <>Feed back into the plan</>
+        )}
+        {ownFeedback && <span className="hint-inline">(this target only)</span>}
+      </label>
     </>
   )
 }

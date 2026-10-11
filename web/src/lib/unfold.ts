@@ -10,6 +10,7 @@ import {
   type Process,
   type ProcessCatalog,
 } from './processes'
+import { targetFedBack } from './ledger'
 import { separationsOf } from './separate'
 import type { MyDefault, Plan, PlanTarget, Separation } from './types'
 
@@ -65,6 +66,17 @@ export interface PlanNode {
   unsupplied?: boolean
   /** Row that supplies a `loop` or `separate` row. */
   ref?: PlanNode
+  /**
+   * For a row of a target's item in the target's own chain, that loops back into its row while it's
+   * fed back: the target (index in the plan's targets). Not fed back, it takes the item in as a plan
+   * input, or falls short.
+   */
+  loopTarget?: number
+  /**
+   * A `loop` row taking what a fed-back target makes: the target makes what it's set to and delivers
+   * the rest. (Into a net-surplus target it's an ordinary loop: the target grows to cover it.)
+   */
+  fedBack?: boolean
   /** For a `separate` row: the item whose row gathers it (none: the top of the plan). */
   groupAnchor?: string
   /** For a row gathering the uses of an item built separately: the choice behind it. */
@@ -134,6 +146,12 @@ export const parentId = (id: string) => {
   const k = id.lastIndexOf('/')
   return k < 0 ? null : id.slice(0, k)
 }
+
+/**
+ * Whether rows looping back into a target take its output: while it's fed back, and always in plans
+ * saved before loops followed feedback (see `Plan.loopFeedback`).
+ */
+export const loopsFedBack = (plan: Plan, t: PlanTarget) => !plan.loopFeedback || targetFedBack(plan, t)
 
 /** Whether a row id is a target's own row (`0/Sol`), not an ingredient or a separate build. */
 export const isTargetRow = (id: string) => /^\d+\/[^/]+$/.test(id)
@@ -378,6 +396,8 @@ export function unfold(plan: Plan, catalog: ProcessCatalog): PlanShape {
   let linked: string | null = null
   /** The item the target being laid out takes from the bus's supply, when it's a supply target. */
   let linkedBus: string | null = null
+  /** Targets' own rows, with the target (index in the plan's targets). */
+  const targetOf = new Map<PlanNode, number>()
 
   const create = (item: string, id: string, depth: number, parent: PlanNode | undefined, fields: Partial<PlanNode>) => {
     const n: PlanNode = {
@@ -426,8 +446,13 @@ export function unfold(plan: Plan, catalog: ProcessCatalog): PlanShape {
   }
 
   /** A row taken from the bus. */
-  const leaf = (item: string, id: string, depth: number, parent: PlanNode | undefined, choice: ResolvedChoice) =>
-    create(item, id, depth, parent, { kind: 'bus', ...(!choice.producer && { unsupplied: true }), ...picked(choice) })
+  const leaf = (item: string, id: string, depth: number, parent: PlanNode | undefined, choice: ResolvedChoice, loopTarget?: number) =>
+    create(item, id, depth, parent, {
+      kind: 'bus',
+      ...(!choice.producer && { unsupplied: true }),
+      ...(loopTarget !== undefined && { loopTarget }),
+      ...picked(choice),
+    })
 
   const child = (item: string, parent: PlanNode): PlanNode => {
     const id = `${parent.id}/${item}`
@@ -435,6 +460,18 @@ export function unfold(plan: Plan, catalog: ProcessCatalog): PlanShape {
     if (item === linked) return create(item, id, depth, parent, { kind: 'overflow', takesLeftovers: false })
     if (item === linkedBus) return create(item, id, depth, parent, { kind: 'bus', takesLeftovers: false })
     const choice = resolveChoice(plan, catalog, item, id)
+    // A row of a target's item in the target's own chain, running its recipe or taking the item in,
+    // takes what the target makes while it's fed back; else it's a plan input, or short.
+    for (let a: PlanNode | undefined = parent; a; a = a.parent) {
+      const i = targetOf.get(a)
+      if (i === undefined) continue
+      if (a.item !== item) break
+      const loops = choice.process ? sameRecipe(a.process!, choice.process) : choice.producer === BUS && !isBurned(id)
+      if (!loops) break
+      const t = plan.targets[i]
+      if (!loopsFedBack(plan, t)) return leaf(item, id, depth, parent, { ...choice, producer: isInput(plan, item) ? BUS : '' }, i)
+      return create(item, id, depth, parent, { kind: 'loop', ref: a, loopTarget: i, ...(t.unit !== 'net' && { fedBack: true }), ...picked(choice) })
+    }
     if (!choice.process) return leaf(item, id, depth, parent, choice)
     for (let a: PlanNode | undefined = parent; a; a = a.parent)
       if (a.item === item && a.kind === 'make' && sameRecipe(a.process!, choice.process))
@@ -509,6 +546,7 @@ export function unfold(plan: Plan, catalog: ProcessCatalog): PlanShape {
           })
         : leaf(t.item, id, 0, undefined, choice)
       if (sep) topRows.set(t.item, n.kind === 'make' ? n : null)
+      if (n.kind === 'make') targetOf.set(n, plan.targets.indexOf(t))
       if (from) consumes.set(n, from)
       if (fromBus) supplied.set(n, fromBus)
       roots.push(n)

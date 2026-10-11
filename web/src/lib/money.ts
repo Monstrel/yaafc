@@ -1,5 +1,5 @@
 import { coinValue, itemsByKey } from './gameData'
-import { itemFedBack, targetFedBack, type ItemLedger } from './ledger'
+import { itemFedBack, targetFedBack, targetUsers, type ItemLedger } from './ledger'
 import type { PlanResult } from './solver'
 import type { Plan } from './types'
 
@@ -24,6 +24,11 @@ export interface OutputSource {
   /** Items per minute it makes. */
   amount: number
   fedBack: boolean
+  /**
+   * What it could feed back into: the plan's own use of its item (what rows take as a plan input,
+   * and for a target also rows looping back into it or making its item elsewhere), or its money.
+   */
+  feeds: BusUse[]
   /** Items per minute the plan uses of it, per what it feeds. */
   used: Partial<Record<BusUse, number>>
   /** For overflow: what overflow targets take of it (index in the plan's targets, items per minute). */
@@ -38,7 +43,7 @@ export interface OutputSource {
 export interface OutputRow {
   item: string
   sources: OutputSource[]
-  /** What it could feed back into (none: it only goes out to the bus). */
+  /** What any of its sources could feed back into (none: it only goes out to the bus). */
   feeds: BusUse[]
   /** Items per minute the plan uses itself, per what it feeds. */
   used: Partial<Record<BusUse, number>>
@@ -96,10 +101,17 @@ export function moneyLedger(plan: Plan, result: PlanResult, ledgers: ItemLedger[
   // of it (they come first: what they leave is fed back or goes out to the bus).
   let resolved = 0
   const resolvedAt = plan.targets.map((t) => (t.item ? result.targets[resolved++] : undefined))
+  const drawn = new Set(ledgers.map((l) => l.item))
+  const users = targetUsers(plan, result.tree)
+  const feedsOf = (item: string, target: number | null): BusUse[] => [
+    ...(drawn.has(item) || (target !== null && users.has(target)) ? ['plan' as const] : []),
+    ...(coinValue(item) !== null ? ['money' as const] : []),
+  ]
   const sources: (OutputSource & { item: string })[] = []
   plan.targets.forEach((t, i) => {
     const made = resolvedAt[i]?.made ?? 0
-    if (t.item && made > 0) sources.push({ item: t.item, target: i, amount: made, fedBack: targetFedBack(plan, t), used: {}, taken: [], altar: 0, atSource: 0 })
+    if (t.item && made > 0)
+      sources.push({ item: t.item, target: i, amount: made, fedBack: targetFedBack(plan, t), feeds: feedsOf(t.item, i), used: {}, taken: [], altar: 0, atSource: 0 })
   })
   const taken = new Map<string, { target: number; amount: number }[]>()
   resolvedAt.forEach((r, i) => {
@@ -116,7 +128,7 @@ export function moneyLedger(plan: Plan, result: PlanResult, ledgers: ItemLedger[
     // What rows send to Knowledge Altars as it comes out is broken down there, whatever else happens.
     const atSource = b?.altar ?? 0
     const amount = to.reduce((t, x) => t + x.amount, (b?.surplus ?? 0) + atSource)
-    sources.push({ item, target: null, amount, fedBack: itemFedBack(plan, item), used: {}, taken: to, altar: atSource, atSource })
+    sources.push({ item, target: null, amount, fedBack: itemFedBack(plan, item), feeds: feedsOf(item, null), used: {}, taken: to, altar: atSource, atSource })
   }
   const find = (item: string, target: number | null) => sources.find((s) => s.item === item && s.target === target)
 
@@ -144,19 +156,16 @@ export function moneyLedger(plan: Plan, result: PlanResult, ledgers: ItemLedger[
   }
   if (remaining < need * 1e-9) remaining = 0
 
-  const drawn = new Set(ledgers.map((l) => l.item))
   const outputs: OutputRow[] = []
   for (const s of sources) {
     let row = outputs.find((o) => o.item === s.item)
     if (!row) {
-      const feeds: BusUse[] = []
-      if (drawn.has(s.item)) feeds.push('plan')
-      if (coinValue(s.item) !== null) feeds.push('money')
-      row = { item: s.item, sources: [], feeds, used: {}, toBus: 0, altar: 0, price: coinValue(s.item) ?? itemsByKey.get(s.item)?.sellPrice ?? null }
+      row = { item: s.item, sources: [], feeds: [], used: {}, toBus: 0, altar: 0, price: coinValue(s.item) ?? itemsByKey.get(s.item)?.sellPrice ?? null }
       outputs.push(row)
     }
     const { item: _, ...source } = s
     row.sources.push(source)
+    for (const f of s.feeds) if (!row.feeds.includes(f)) row.feeds.push(f)
     let used = s.taken.reduce((t, x) => t + x.amount, 0)
     for (const [use, n] of Object.entries(s.used) as [BusUse, number][]) {
       row.used[use] = (row.used[use] ?? 0) + n

@@ -317,7 +317,7 @@ function rootOf(n: PlanNode): PlanNode {
 /** The row that supplies a row: itself, or the row a loop or separate build points to. */
 function supplierOf(n: PlanNode): PlanNode {
   let s = n
-  while ((s.kind === 'loop' || s.kind === 'separate') && s.ref) s = s.ref
+  while (((s.kind === 'loop' && !s.fedBack) || s.kind === 'separate') && s.ref) s = s.ref
   return s
 }
 
@@ -551,12 +551,17 @@ function solveRound(
   const fedUsers = new Map<number, PlanNode[]>()
   targets.forEach((t, i) => {
     const row = shape.targetRows[i]
+    if (!row || !isTargetRow(row.id)) return
+    // Rows of its own chain looping back into it take its output (unfold decides whether they do).
+    const loops = supplies.filter((c) => c.fedBack && c.ref === row)
     const net = netTargets.get(t.item)
-    if (!row || !isTargetRow(row.id) || (net !== undefined && i >= net) || !targetFedBack(plan, plan.targets[planIndex[i]])) return
-    const users = supplies.filter(
-      (c) => c.item === t.item && c.kind === 'make' && c.takesLeftovers && !c.recovers && !isTargetRow(c.id) && rootOf(c) !== row,
-    )
-    if (users.length) fedUsers.set(i, users)
+    const fed = (net === undefined || i < net) && targetFedBack(plan, plan.targets[planIndex[i]])
+    const users = fed
+      ? supplies.filter(
+          (c) => c.item === t.item && c.kind === 'make' && c.takesLeftovers && !c.recovers && !isTargetRow(c.id) && rootOf(c) !== row,
+        )
+      : []
+    if (users.length || loops.length) fedUsers.set(i, [...loops, ...users])
   })
   // Rows held to their crafts that take a fed-back target's output, and the rows below them, run up
   // to those crafts: what the target makes covers the rest.

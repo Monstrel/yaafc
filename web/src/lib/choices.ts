@@ -1,4 +1,5 @@
 import { HEAT, NUTRIENTS } from './gameData'
+import { targetFedBack } from './ledger'
 import { DEFAULT_BANK_STACK, defaultMachine, defaultProducer, type ProcessCatalog } from './processes'
 import { separationKey, separationsOf } from './separate'
 import type { TreeNode } from './tree'
@@ -168,6 +169,39 @@ export function migrateFeedback(plan: Plan, catalog: ProcessCatalog): Plan | nul
     if (legacy[use] && item) feedbackItems = withItem(feedbackItems, item, true)
   }
   return { ...rest, feedbackItems }
+}
+
+/**
+ * Plans saved before loops followed feedback fed every loop back into a target: feeds back the
+ * targets their rows loop back into, so they stay that way. Returns null for plans saved since.
+ */
+export function migrateLoopFeedback(plan: Plan, catalog: ProcessCatalog): Plan | null {
+  if (plan.loopFeedback) return null
+  let next: Plan = { ...plan, loopFeedback: true }
+  const looped = new Set(unfold(plan, catalog).nodes.flatMap((n) => (n.loopTarget !== undefined ? [n.loopTarget] : [])))
+  for (const i of looped) if (!targetFedBack(next, next.targets[i])) next = setTargetFeedback(next, i, true)
+  return next
+}
+
+/** Where the rows of a target's item in its own chain get it: what the target makes, or the plan input. */
+export type LoopSourceChoice = 'fed' | 'input'
+
+/**
+ * Has the rows of a target's item in its own chain (`row` is one) take what the target makes, by
+ * feeding it back, or the plan input of it, by not feeding it back and taking the item in. Feeding
+ * it back again stops taking the item in when no other row of the tree takes it in, so the two
+ * undo each other.
+ */
+export function setLoopSource(plan: Plan, catalog: ProcessCatalog, row: TreeNode, source: LoopSourceChoice, tree: TreeNode[]): Plan {
+  const target = row.loopTarget
+  if (target === undefined) return plan
+  if (source === 'input') return setTargetFeedback(chooseProducer(plan, catalog, { item: row.item, producer: BUS, row: row.id }), target, false)
+  const fed = setTargetFeedback(plan, target, true)
+  const takesIn = (n: TreeNode): boolean =>
+    (n.item === row.item && n.producer === BUS && n.loopTarget === undefined && !isBurned(n.id)) || n.children.some(takesIn)
+  if (fed.producers[row.item] !== BUS || tree.some(takesIn)) return fed
+  const { [row.item]: _, ...producers } = fed.producers
+  return { ...fed, producers }
 }
 
 /** Whether every source of an item covers what the plan takes of it from the bus (targets can say otherwise). */

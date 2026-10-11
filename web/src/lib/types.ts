@@ -75,6 +75,12 @@ export interface Plan {
    */
   feedbackItems?: string[]
   /**
+   * Rows looping back into a target take its output only while it's fed back; otherwise they take
+   * the item in as a plan input, or fall short. Plans saved before then fed every such loop back:
+   * they read that way until `migrateLoopFeedback` feeds those targets back and sets this.
+   */
+  loopFeedback?: boolean
+  /**
    * Items whose overflow (what's left of it after overflow targets and feedback) the player breaks
    * down at Knowledge Altars for EXP, so it doesn't back up the machines making it.
    */

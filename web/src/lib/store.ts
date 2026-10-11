@@ -132,7 +132,7 @@ export function newId(): string {
 
 /** A new plan; without a name it's named after its targets (see planName.ts). */
 export function emptyPlan(name = ''): Plan {
-  return { id: newId(), name, targets: [blankTarget()], producers: {}, machines: {} }
+  return { id: newId(), name, targets: [blankTarget()], producers: {}, machines: {}, loopFeedback: true }
 }
 
 /**

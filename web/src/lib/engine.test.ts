@@ -42,6 +42,8 @@ import { setNetworkFuel, setNetworkSource } from './heatChoices'
 import {
   chooseProducer,
   migrateInputs,
+  migrateLoopFeedback,
+  setLoopSource,
   setOutputAltar,
   clearBranchChoice,
   addProvider,
@@ -3102,5 +3104,87 @@ describe('rows covered by other rows’ leftovers', () => {
       ...n.children.flatMap(idle),
     ]
     expect(result.tree.flatMap(idle).map((n) => n.id)).toEqual([])
+  })
+})
+
+describe('rows looping back into a target', () => {
+  const mods = modifiers({})
+  const catalog = buildCatalog({ saved: [], machines: {}, mods, fertilizer: null })
+  // Eternal Catalysts in the Gold Dust row under an Eternal Catalyst target: its chain uses its item.
+  const gold = '0/Catalyst4/PhilosopherStone/Ruby/GoldDust5/GoldDust3'
+  const loopRow = `${gold}/Catalyst4`
+  const base = setRowCatalysts(plan({ targets: [{ item: 'Catalyst4', rate: 1 }], loopFeedback: true }), gold, ['Catalyst4'])
+  const solved = (p: Plan) => {
+    const result = solvePlan(p, catalog, mods)
+    expectBalanced(result)
+    return { result, row: rowsById(result.tree).get(loopRow)!, balance: result.balances.find((b) => b.item === 'Catalyst4')! }
+  }
+
+  it('falls short until the target is fed back or the item taken in', () => {
+    const { result, row } = solved(base)
+    expect(row).toMatchObject({ kind: 'bus', producer: '', loopTarget: 0 })
+    expect(row.shortfall).toBeCloseTo(0.05)
+    expect(result.targets[0].made).toBeCloseTo(1)
+  })
+
+  it('takes what a fed-back target makes, which delivers the rest', () => {
+    const fed = setLoopSource(base, catalog, solved(base).row, 'fed', solved(base).result.tree)
+    expect(fed).toEqual(setTargetFeedback(base, 0, true))
+    const { result, row, balance } = solved(fed)
+    expect(row).toMatchObject({ kind: 'loop', loopTarget: 0, shortfall: 0 })
+    expect(row.byproductSources.map((s) => s.label)).toEqual(['the Eternal Catalyst target, fed back'])
+    expect(result.targets[0]).toMatchObject({ rate: 1, made: 1 })
+    expect(result.targets[0].fedIn).toBeCloseTo(0.05)
+    expect(balance.target).toBeCloseTo(0.95)
+  })
+
+  it('takes the plan input instead, and back', () => {
+    const fed = setTargetFeedback(base, 0, true)
+    const { row, result } = solved(fed)
+    const input = setLoopSource(fed, catalog, row, 'input', result.tree)
+    expect(input.producers.Catalyst4).toBe(BUS)
+    const taken = solved(input)
+    expect(taken.row).toMatchObject({ kind: 'bus', producer: BUS, loopTarget: 0 })
+    expect(taken.row.fromBus).toBeCloseTo(0.05)
+    expect(taken.result.targets[0].fedIn).toBeUndefined()
+    expect(setLoopSource(input, catalog, taken.row, 'fed', taken.result.tree)).toEqual(fed)
+  })
+
+  it('offers the target in the outputs as one the plan can use, like coins it spends', () => {
+    const output = (p: Plan) => {
+      const { result } = solved(p)
+      return moneyLedger(p, result, ledgers(p, result)).outputs.find((o) => o.item === 'Catalyst4')!
+    }
+    const off = output(base)
+    expect(off.sources[0]).toMatchObject({ target: 0, fedBack: false, feeds: ['plan'] })
+    expect(off.toBus).toBeCloseTo(1)
+    const on = output(setTargetFeedback(base, 0, true))
+    expect(on.sources[0]).toMatchObject({ target: 0, fedBack: true, feeds: ['plan'] })
+    expect(on.used.plan).toBeCloseTo(0.05)
+    expect(on.toBus).toBeCloseTo(0.95)
+  })
+
+  it('grows a net-surplus target to cover its own chain', () => {
+    const net = { ...base, targets: [{ item: 'Catalyst4', rate: 1, unit: 'net' as const, feedback: true }] }
+    const { row, balance } = solved(net)
+    expect(row).toMatchObject({ kind: 'loop', loopTarget: 0 })
+    expect(balance.produced).toBeCloseTo(1.0526)
+    expect(balance.target).toBeCloseTo(1)
+  })
+
+  it('feeds back the targets loops ran into in plans saved before, once', () => {
+    const { loopFeedback: _, ...saved } = base
+    const legacy = solved(saved)
+    expect(legacy.row.kind).toBe('loop')
+    const migrated = migrateLoopFeedback(saved, catalog)!
+    expect(migrated).toEqual({ ...saved, loopFeedback: true, targets: [{ item: 'Catalyst4', rate: 1, feedback: true }] })
+    expect(solved(migrated).balance).toEqual(legacy.balance)
+    expect(migrateLoopFeedback(migrated, catalog)).toBeNull()
+    // Turned off afterwards, it stays off.
+    expect(migrateLoopFeedback(setTargetFeedback(migrated, 0, false), catalog)).toBeNull()
+    // Plans with no such loop only get the marker.
+    const plain = plan({ targets: [{ item: 'Brandy', rate: 10 }] })
+    expect(migrateLoopFeedback(plain, catalog)).toEqual({ ...plain, loopFeedback: true })
+    expect(sanitizePlans([migrated], () => 'x')![0].loopFeedback).toBe(true)
   })
 })

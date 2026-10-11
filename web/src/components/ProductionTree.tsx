@@ -13,8 +13,8 @@ import { DEFAULT_BANK_STACK, MAX_BANK_STACK, clampBankStack, type ProcessCatalog
 import { branchIds, onOverflow, type TreeNode } from '../lib/tree'
 import { heatNetworks, type HeatNetwork } from '../lib/heatNetworks'
 import type { ItemLedger } from '../lib/ledger'
-import { rememberChanges, rowsById, type ProducerPick } from '../lib/choices'
-import { isTargetRow, parentId, rowItem } from '../lib/unfold'
+import { rememberChanges, rowsById, type LoopSourceChoice, type ProducerPick } from '../lib/choices'
+import { BUS, isTargetRow, parentId, rowItem } from '../lib/unfold'
 import type { Separation, Unitizing } from '../lib/types'
 import { unitChoices, wholePerCopy, type UnitScales } from '../lib/units'
 import type { Modifiers } from '../lib/upgrades'
@@ -90,6 +90,8 @@ interface Props {
   canAltar: ((item: string) => boolean) | null
   /** Sends one of a row's other outputs to Knowledge Altars as it comes out, or stops. */
   onOutputAltar: (row: string, item: string, on: boolean) => void
+  /** Where a row of a target's item in its own chain gets it: the target, fed back, or the plan input. */
+  onLoopSource: (row: TreeNode, source: LoopSourceChoice) => void
   /** The plan's targets in order: each is set in its own row at the top of the tree. */
   targets: TargetSlot[]
   onAddTarget: () => void
@@ -164,6 +166,7 @@ export function ProductionTree({
   onAltar,
   canAltar,
   onOutputAltar,
+  onLoopSource,
   targets: slots,
   onAddTarget,
   shownTarget,
@@ -688,6 +691,7 @@ export function ProductionTree({
                     onAltar={onAltar}
                     canAltar={canAltar}
                     onOutputAltar={onOutputAltar}
+                    onLoopSource={onLoopSource}
                     onMachinesMenu={openMachinesMenu}
                     logistics={logistics}
                     mods={mods}
@@ -927,6 +931,7 @@ function TreeRow({
   onAltar,
   canAltar,
   onOutputAltar,
+  onLoopSource,
   logistics,
   mods,
   link,
@@ -992,6 +997,7 @@ function TreeRow({
   onAltar: (item: string, on: boolean) => void
   canAltar: ((item: string) => boolean) | null
   onOutputAltar: (row: string, item: string, on: boolean) => void
+  onLoopSource: (row: TreeNode, source: LoopSourceChoice) => void
   logistics: Map<string, LogisticsCheck>
   mods: Modifiers
   link: LinkFn
@@ -1066,7 +1072,7 @@ function TreeRow({
     ? Math.ceil(node.rate / itemsPerSlot(node.item, node.run?.process.stack) / mods.beltSpeed - 1e-9)
     : 0
   // A recovery row runs the recipe that turns what it recovers into its item: no other pick fits.
-  const canChoose = !node.recovery && choosable(node, catalog, reuse)
+  const canChoose = !node.recovery && node.loopTarget === undefined && choosable(node, catalog, reuse)
   const coin = coinValue(node.item)
   const name = itemName(node.item)
   // A fuel, fertilizer or coin row, under the row whose Heat, Nutrients or Money it supplies (folded into it).
@@ -1210,6 +1216,29 @@ function TreeRow({
           <span className="leaf-note" title="What the row above takes of it in all, from the rows below">
             ⇉ from {node.children.length} sources
           </span>
+        ) : node.loopTarget !== undefined ? (
+          <>
+            <select
+              value={node.kind === 'loop' ? 'fed' : node.producer === BUS ? 'input' : ''}
+              onChange={(e) => onLoopSource(node, e.target.value as LoopSourceChoice)}
+              aria-label={`Where this ${name} comes from`}
+              title={`The ${name} target's own chain uses it: it takes what the target makes when the target is fed back, else the plan input`}
+            >
+              {node.kind !== 'loop' && node.producer !== BUS && (
+                <option value="" disabled>
+                  Not chosen: short
+                </option>
+              )}
+              <option value="fed">↺ From the {name} target, fed back</option>
+              <option value="input">From the plan input</option>
+            </select>
+            {node.shortfall > 0 && (
+              <div className="note-line warn-text">
+                short by {fmt(node.shortfall)}/min
+                {node.kind === 'loop' ? ': the target makes less than its own chain uses' : ': pick where it comes from'}
+              </div>
+            )}
+          </>
         ) : node.reusedBy ? (
           <span className="leaf-note">♻ by-product of {sources}</span>
         ) : node.kind === 'loop' ? (

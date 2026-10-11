@@ -85,7 +85,7 @@ export function summarizePlan(plan: Plan, result: PlanResult, mods: Modifiers, t
         item: o.item,
         perMinute: o.toBus,
         // Overflow nothing uses backs up the machines making it (the planner flags it the same way).
-        idle: o.sources.some((s) => s.target === null && !(s.fedBack && o.feeds.length > 0) && sourceLeft(s) > 1e-9 * s.amount),
+        idle: o.sources.some((s) => s.target === null && !(s.fedBack && s.feeds.length > 0) && sourceLeft(s) > 1e-9 * s.amount),
       })),
     value: money.value,
     exp: altar ? money.outputs.reduce((t, o) => t + o.altar * (altarYield(o.item, altar)?.exp ?? 0), 0) : 0,
