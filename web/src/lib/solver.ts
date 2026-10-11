@@ -803,9 +803,10 @@ function solveRound(
     if (phase.status !== 'optimal') return fail(phase.status, phase.message)
     let total = 0
     for (const [name, x] of phase.values) total += x * (weights.get(name) ?? 0)
-    // Σ weight·x + slack = what the pass reached, with a little room for solver tolerance. What the
-    // later passes can still shift within that room is noise (see `noise`).
-    const room = total * 1e-6 + 1e-6
+    // Σ weight·x + slack = what the pass reached, with a little room for solver tolerance: about 10×
+    // the LP's feasibility tolerance (see lp.ts), or later passes can find no solution. What they can
+    // still shift within that room is noise (see `noise`).
+    const room = total * 1e-8 + 1e-8
     equalities[row] = total + room
     if (row !== SHORTFALL_ROW) noise += room
     else shortNoise = room / Math.min(...weights.values())

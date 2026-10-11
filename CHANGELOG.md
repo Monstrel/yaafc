@@ -8,7 +8,7 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
-## 2026-10-11T16:22Z
+## 2026-10-11T16:33Z
 
 - New "Auto organize" option in the Organize menu keeps a plan tidy as you change it: after
   every change, items made in more than one row are built separately and items built separately
@@ -40,7 +40,8 @@ out.
   Catalyst Athanors elsewhere leave over Gold Dust and Crude Gold Dust. It shows as covered, with
   the rows recovering into it beside it.
 - Rows no longer show tiny negative rates, like -0.0000003 / minute, or tiny shortfalls, like
-  "short by 0.00000015 / minute".
+  "short by 0.00000015 / minute". The solver also works to a finer precision, so in big plans far
+  smaller real amounts are kept rather than taken for rounding errors.
 - Building and belt counts, what the plan buys, and the inputs and outputs panel count only the
   rows the production tree shows. A row the tree leaves out, because it would recover only a
   rounding error's worth, no longer adds a leftover there that nothing seems to use.

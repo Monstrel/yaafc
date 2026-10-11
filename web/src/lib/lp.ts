@@ -56,7 +56,10 @@ export function solveLP(lp: LinearProgram): LpSolution {
   ].join('\n')
 
   try {
-    const result = highs.solve(text, { output_flag: false })
+    // Feasibility tolerances 100× tighter than HiGHS's defaults let the solver hold each priority pass
+    // to a 100× smaller room (it needs about 10× its tolerance; see `solveRound`): less noise. 1e-10
+    // is past what these plans' scaling allows.
+    const result = highs.solve(text, { output_flag: false, primal_feasibility_tolerance: 1e-9, dual_feasibility_tolerance: 1e-9 })
     if (result.Status !== 'Optimal') return { status: 'infeasible', message: `Solver status: ${result.Status}`, values: new Map() }
     const values = new Map<string, number>()
     for (const c of colNames) values.set(c, result.Columns[colId.get(c)!]?.Primal ?? 0)
