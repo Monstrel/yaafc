@@ -77,7 +77,7 @@ import {
 } from './choices'
 import { sanitizeMyDefaults, sanitizePlans } from './sanitize'
 import { dropUnits, setUnits, unitChoices, unitScales, wholePerCopy } from './units'
-import { BOILER_HEAT, BUS, resolveChoice } from './unfold'
+import { BOILER_HEAT, BUS, resolveChoice, unfold } from './unfold'
 import { separationsOf, withSeparation } from './separate'
 import { canSeparateShared, mergeSingleUses, organize, separateShared, setSeparation } from './separateAll'
 import { buildingNameFor, itemNameFor, noun } from './plural'
@@ -3162,6 +3162,25 @@ describe('rows looping back into a target', () => {
     expect(on.sources[0]).toMatchObject({ target: 0, fedBack: true, feeds: ['plan'] })
     expect(on.used.plan).toBeCloseTo(0.05)
     expect(on.toBus).toBeCloseTo(0.95)
+  })
+
+  it('treats a build at the top of the plan used only in the target’s chain as part of it', () => {
+    const top = setRowCatalysts(
+      plan({ targets: [{ item: 'Catalyst4', rate: 1, feedback: true }], loopFeedback: true, separate: [{ item: 'GoldDust3' }] }),
+      'separate/GoldDust3',
+      ['Catalyst4'],
+    )
+    const { nodes } = unfold(top, catalog)
+    const row = nodes.find((n) => n.id === 'separate/GoldDust3/Catalyst4')!
+    expect(row).toMatchObject({ kind: 'loop', loopTarget: 0, fedBack: true })
+    expect(row.ref!.id).toBe('0/Catalyst4')
+    // No second Eternal Catalyst chain under it.
+    expect(nodes.filter((n) => n.id.startsWith('separate/GoldDust3/Catalyst4/'))).toEqual([])
+    const result = solvePlan(top, catalog, mods)
+    expectBalanced(result)
+    const rows = [...rowsById(result.tree).values()]
+    expect(rows.filter((n) => n.rate < 0 || n.machines < 0).map((n) => n.id)).toEqual([])
+    expect(rowsById(result.tree).get('separate/GoldDust3/Catalyst4')!.fromByproduct).toBeCloseTo(0.05)
   })
 
   it('grows a net-surplus target to cover its own chain', () => {

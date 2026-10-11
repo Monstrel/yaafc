@@ -809,7 +809,8 @@ function solveRound(
   if (solution.status !== 'optimal') return fail(solution.status, solution.message)
   const v = (name: string) => {
     const x = solution.values.get(name) ?? 0
-    return Math.abs(x) < ZERO ? 0 : x
+    // Every column is at least 0: below that is the solver's tolerance.
+    return x < ZERO ? 0 : x
   }
 
   // What each row uses or delivers itself; a supplying row adds what loops and separate builds take.

@@ -8,6 +8,14 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
+## 2026-10-11T15:51Z
+
+- An item built separately at the top of the plan, used only in one target's chain, now counts as
+  part of that chain. Gold Dust Athanors built separately with Eternal Catalysts loaded take their
+  catalysts from the Eternal Catalyst target, instead of from a second, hidden Eternal Catalyst
+  production chain that kept dozens of empty separately built rows at 0 / minute in the plan.
+- Rows no longer show tiny negative rates, like -0.0000003 / minute.
+
 ## 2026-10-11T15:33Z
 
 - You now choose where a target's own chain gets the target's item, like Eternal Catalysts loaded

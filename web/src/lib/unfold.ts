@@ -398,6 +398,21 @@ export function unfold(plan: Plan, catalog: ProcessCatalog): PlanShape {
   let linkedBus: string | null = null
   /** Targets' own rows, with the target (index in the plan's targets). */
   const targetOf = new Map<PlanNode, number>()
+  /** Per row gathering an item built separately at the top of the plan, the rows using it. */
+  const topUsers = new Map<PlanNode, Set<PlanNode>>()
+  /**
+   * The target row whose chain a row is in: its root's, or for a build at the top of the plan whose
+   * uses are all in one target's chain, that target's.
+   */
+  const chainTarget = (n: PlanNode, seen = new Set<PlanNode>()): PlanNode | undefined => {
+    let root = n
+    while (root.parent) root = root.parent
+    if (targetOf.has(root)) return root
+    if (seen.has(root)) return undefined
+    seen.add(root)
+    const owners = new Set([...(topUsers.get(root) ?? [])].map((u) => chainTarget(u, seen)))
+    return owners.size === 1 ? [...owners][0] : undefined
+  }
 
   const create = (item: string, id: string, depth: number, parent: PlanNode | undefined, fields: Partial<PlanNode>) => {
     const n: PlanNode = {
@@ -425,7 +440,7 @@ export function unfold(plan: Plan, catalog: ProcessCatalog): PlanShape {
   }
 
   /** Where a separated use goes: the innermost anchor gathering it, else the top of the plan. */
-  const gather = (item: string): { ref: PlanNode; anchor?: string } | null => {
+  const gather = (item: string, user: PlanNode): { ref: PlanNode; anchor?: string } | null => {
     for (let i = frames.length - 1; i >= 0; i--) {
       const frame = frames[i]
       const group = frame.groups.get(item)
@@ -442,6 +457,7 @@ export function unfold(plan: Plan, catalog: ProcessCatalog): PlanShape {
       if (n) pending.push(n)
     }
     const row = topRows.get(item)
+    if (row) topUsers.set(row, (topUsers.get(row) ?? new Set()).add(user))
     return row ? { ref: row } : null
   }
 
@@ -460,14 +476,12 @@ export function unfold(plan: Plan, catalog: ProcessCatalog): PlanShape {
     if (item === linked) return create(item, id, depth, parent, { kind: 'overflow', takesLeftovers: false })
     if (item === linkedBus) return create(item, id, depth, parent, { kind: 'bus', takesLeftovers: false })
     const choice = resolveChoice(plan, catalog, item, id)
-    // A row of a target's item in the target's own chain, running its recipe or taking the item in,
-    // takes what the target makes while it's fed back; else it's a plan input, or short.
-    for (let a: PlanNode | undefined = parent; a; a = a.parent) {
-      const i = targetOf.get(a)
-      if (i === undefined) continue
-      if (a.item !== item) break
-      const loops = choice.process ? sameRecipe(a.process!, choice.process) : choice.producer === BUS && !isBurned(id)
-      if (!loops) break
+    // A row of a target's item in the target's own chain (builds at the top of the plan used only
+    // there included), running its recipe or taking the item in, takes what the target makes while
+    // it's fed back; else it's a plan input, or short.
+    const a = chainTarget(parent)
+    if (a && a.item === item && (choice.process ? sameRecipe(a.process!, choice.process) : choice.producer === BUS && !isBurned(id))) {
+      const i = targetOf.get(a)!
       const t = plan.targets[i]
       if (!loopsFedBack(plan, t)) return leaf(item, id, depth, parent, { ...choice, producer: isInput(plan, item) ? BUS : '' }, i)
       return create(item, id, depth, parent, { kind: 'loop', ref: a, loopTarget: i, ...(t.unit !== 'net' && { fedBack: true }), ...picked(choice) })
@@ -477,7 +491,7 @@ export function unfold(plan: Plan, catalog: ProcessCatalog): PlanShape {
       if (a.item === item && a.kind === 'make' && sameRecipe(a.process!, choice.process))
         return create(item, id, depth, parent, { kind: 'loop', ref: a, ...picked(choice) })
     if (depth >= MAX_DEPTH) return create(item, id, depth, parent, { kind: 'loop', ...picked(choice) })
-    const gathered = gather(item)
+    const gathered = gather(item, parent)
     if (gathered)
       return create(item, id, depth, parent, { kind: 'separate', ref: gathered.ref, groupAnchor: gathered.anchor, ...picked(choice) })
     const n = create(item, id, depth, parent, { kind: 'make', process: choice.process, ...picked(choice) })
