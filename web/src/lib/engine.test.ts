@@ -2266,6 +2266,72 @@ describe('overflow targets', () => {
     expect(surplus(apart, 'Shard1')).toBe(0)
   })
 
+  describe('fed back into a plan sharing by-products between chains', () => {
+    // A player's Sol plan: its Perfect Diamond cauldrons take Gold Dust built separately, whose
+    // Athanors share their by-products with the other Gold Dust chains (Ruby, Sapphire, Philosopher's
+    // Stone). The target refines Shattered Crystal into Perfect Diamonds.
+    const mods = modifiers({ FactorySpeed: 12 })
+    const cauldron = (id: string, inputs: string[], output: string): SavedRecipe => ({ id, mode: 'normal', inputs, output, createdAt: 0 })
+    const recipes = [
+      cauldron('pd', ['Flax', 'GoldDust3', 'GoldDust5'], 'Diamond3'),
+      cauldron('mal', ['Flax', 'FlaxFiber', 'Gentian'], 'Malachite'),
+      cauldron('rc', ['Flax', 'Flax', 'GoldDust3'], 'Catalyst3'),
+      cauldron('ps', ['Flax', 'FlaxFiber', 'Crown'], 'PhilosopherStone'),
+      cauldron('ruby', ['Flax', 'GoldDust5', 'GoldIngot'], 'Ruby'),
+      cauldron('sap', ['GoldDust2', 'GoldDust5', 'Ruby'], 'Sapphire'),
+      cauldron('salt', ['Flax', 'FlaxFiber', 'Chamomile'], 'Salt'),
+    ]
+    const defaults: MyDefaults = {
+      Diamond3: { producer: 'cauldron:pd' },
+      Obsidian: { producer: 'recipe:Obsidian', catalysts: ['Catalyst4'] },
+      Ruby: { producer: 'cauldron:ruby' },
+      Sapphire: { producer: 'cauldron:sap' },
+      PhilosopherStone: { producer: 'cauldron:ps' },
+      Salt: { producer: 'cauldron:salt' },
+      Catalyst3: { producer: 'cauldron:rc' },
+      GoldDust3: { producer: 'recipe:GoldDust3', catalysts: ['Catalyst3', 'Catalyst4'] },
+      LapisLazuli: { producer: 'recipe:LapisLazuli', catalysts: ['Catalyst3', 'Catalyst4'] },
+    }
+    const sol = (branches: Plan['branches'] = {}) =>
+      plan({
+        targets: [{ item: 'Diamond3', rate: 0, unit: 'overflow', consumes: 'Crystal1' }, { item: 'Sol', rate: 1, unit: 'machines' }],
+        producers: { [NUTRIENTS]: 'fert:PanaceaElixir' },
+        branches: { '0/Diamond3': { producer: 'recipe:Diamond3' }, '1/Sol/with:GoldDust3': { producer: 'recipe:GoldDust3_Alt' }, ...branches },
+        rowCatalysts: { '1/Sol/with:GoldDust3/GoldDust2/GoldDust': ['Catalyst3', 'Catalyst4'] },
+        separate: [{ item: 'GoldDust3', anchor: 'Sol' }, { item: 'GoldIngot' }],
+        loopFeedback: true,
+      })
+    const overflowing = (r: PlanResult) => r.balances.filter((b) => b.surplus > 1e-6).map((b) => b.item)
+
+    it('lets the rows it feeds run as the plan needs, so the chains rebalance as for a standard target', () => {
+      // Slowing the cauldrons' chain alone would leave the other chains short of its by-products,
+      // and they'd overflow making up for it: some of its Athanors must run a little harder.
+      const catalog = buildCatalog({ saved: recipes, machines: {}, mods, fertilizer: 'PanaceaElixir', mine: defaults })
+      const p = sol({ '1/Sol/MercuryP/Malachite': { producer: 'cauldron:mal' } })
+      const out = solvePlan(p, catalog, mods)
+      const made = out.targets[0].rate
+      expect(made).toBeGreaterThan(0)
+      const fed = solvePlan(setTargetFeedback(p, 0, true), catalog, mods)
+      expectBalanced(fed)
+      expect(fed.targets[0]).toMatchObject({ rate: expect.closeTo(made), fedIn: expect.closeTo(made) })
+      const standard = solvePlan(convertOverflowTarget(setTargetFeedback(p, 0, true), 0, made), catalog, mods)
+      expect(overflowing(fed)).toEqual(overflowing(standard))
+      expect(overflowing(fed)).toEqual(overflowing(out))
+    })
+
+    it("doesn't run the rows it frees harder to make more of what it takes", () => {
+      // Without these defaults the plan overflows no Shattered Crystal, but the Gold Dust chains it
+      // frees could make some for it.
+      const mine = { Diamond3: defaults.Diamond3, Obsidian: defaults.Obsidian }
+      const catalog = buildCatalog({ saved: recipes.slice(0, 1), machines: {}, mods, fertilizer: 'PanaceaElixir', mine })
+      const p = sol()
+      expect(solvePlan(p, catalog, mods).targets[0].rate).toBe(0)
+      const fed = solvePlan(setTargetFeedback(p, 0, true), catalog, mods)
+      expectBalanced(fed)
+      expect(fed.targets[0]).toMatchObject({ rate: 0, overflow: { taken: 0 } })
+    })
+  })
+
   it("makes none, saying why, when its recipes don't use the item", () => {
     const r = solvePlan(using(blast, 'Bandage'), catalog, mods)
     expectBalanced(r)

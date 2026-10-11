@@ -297,6 +297,8 @@ interface Baseline {
   crafts: Map<string, number>
   /** Items per minute of its own item it makes that nothing uses. */
   overflow: Map<string, number>
+  /** Per item, items per minute the plan makes of it that nothing uses. */
+  surplus: Map<string, number>
 }
 
 /**
@@ -318,8 +320,9 @@ function baselineCrafts(
     overflow.set(n.id, n.overflow)
     n.children.forEach(visit)
   }
-  solveRound(plan, catalog, mods, absorbing, floors, { sizing: false, room }).tree.forEach(visit)
-  return { crafts, overflow }
+  const result = solveRound(plan, catalog, mods, absorbing, floors, { sizing: false, room })
+  result.tree.forEach(visit)
+  return { crafts, overflow, surplus: new Map(result.balances.map((b) => [b.item, b.surplus])) }
 }
 
 /** The root row of a row's tree. */
@@ -581,17 +584,18 @@ function solveRound(
       : []
     if (users.length || loops.length) fedUsers.set(i, [...loops, ...users])
   })
-  // Rows held to their crafts that take a fed-back target's output, and the rows below them, run up
-  // to those crafts: what the target makes covers the rest. That includes the separate builds they
-  // take from, which would otherwise make as much as ever and push it on them.
-  const easing = new Set<PlanNode>()
-  const ease = (n: PlanNode) => {
-    if (easing.has(n)) return
-    easing.add(n)
-    n.children.forEach(ease)
-    if (n.kind === 'separate' && n.ref) ease(supplierOf(n))
+  // Rows held to their crafts that take a fed-back target's output, the rows below them and the
+  // separate builds they take from aren't held: they run as the plan needs once the target covers
+  // part of their use. Slowing them alone isn't always enough: where they share by-products with
+  // other chains, some must run a little harder for those chains to rebalance without overflowing.
+  const freed = new Set<PlanNode>()
+  const free = (n: PlanNode) => {
+    if (freed.has(n)) return
+    freed.add(n)
+    n.children.forEach(free)
+    if (n.kind === 'separate' && n.ref) free(supplierOf(n))
   }
-  for (const users of fedUsers.values()) users.forEach(ease)
+  for (const users of fedUsers.values()) users.forEach(free)
   const sameRun = (n: PlanNode, c: PlanNode) => c.kind === 'make' && c.process!.id === n.process!.id
   // Rows whose by-products can go to rows running something else (see `e:` below).
   const sharing = new Set(
@@ -662,10 +666,9 @@ function solveRound(
     }
     columns[`x:${k}`] = col
     const fixed = fixedOf(n)
-    if (fixed !== undefined) {
+    if (fixed !== undefined && (!freed.has(n) || machineRows.has(n))) {
       equalities[`h:${k}`] = fixed
       col[`h:${k}`] = 1
-      if (easing.has(n) && !machineRows.has(n)) columns[`hs:${k}`] = { [`h:${k}`]: 1, cost: 0 }
     }
     const floor = floors.get(n.id)
     if (floor) {
@@ -768,6 +771,20 @@ function solveRound(
     }
     if (parts.length) mixes.set(n, parts)
   }
+
+  // Rows a fed-back target frees could otherwise run harder to make more of what an overflow target
+  // takes: the rest of the plan overflows no more of it than without the plan's overflow targets.
+  if (held && freed.size)
+    for (const item of takerOf.keys()) {
+      const cap = `oc:${item}`
+      for (const [name, col] of Object.entries(columns)) {
+        if (!col[`o:${item}`] || !(name.startsWith('s:') || name.startsWith('ps:'))) continue
+        if (!inTaker.has(shape.nodes[Number(name.split(':')[1])])) col[cap] = 1
+      }
+      const surplus = held.surplus.get(item) ?? 0
+      equalities[cap] = surplus * (1 + 1e-6) + 1e-6
+      columns[`ocs:${item}`] = { [cap]: 1, cost: 0 }
+    }
 
   const fail = (status: 'infeasible' | 'error', message?: string): PlanResult => ({
     status,
