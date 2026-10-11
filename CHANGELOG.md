@@ -8,6 +8,11 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
+## 2026-10-11T19:17Z
+
+- A fed-back target the plan can't actually use no longer shows the plan using a tiny amount of it,
+  like 0.0000017 / min: that was rounding left over in the solver, and it now shows as none.
+
 ## 2026-10-11T19:04Z
 
 - Fixed some plans failing to solve after a change, showing "Solver status: Unknown" or

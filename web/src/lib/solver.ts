@@ -880,10 +880,11 @@ function solveRound(
       takenBy: by !== undefined && by !== i && rows.length > 0 ? planIndex[by] : null,
     }
   }
-  // What the plan's rows take of each fed-back target's output.
+  // What the plan's rows take of each fed-back target's output: no more than the held passes left
+  // room for is noise, as on the rows taking it.
   for (const [i, names] of fedFrom) {
     const x = names.reduce((t, name) => t + v(name), 0)
-    targets[i].fedIn = cleaned(x, RELATIVE_NOISE * Math.max(1, x))
+    targets[i].fedIn = cleaned(x, Math.max(RELATIVE_NOISE * Math.max(1, x), noise))
   }
   for (const i of machineCrafts.keys()) {
     const x = v(`tm:${i}`)
