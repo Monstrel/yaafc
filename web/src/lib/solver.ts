@@ -950,10 +950,12 @@ function solveRound(
     const short = missing > tol ? missing : 0
     // Rows taking an item from the bus get what it carries; past a capped supply, they fall short.
     const drew = n.kind !== 'bus' || n.unsupplied ? 0 : capped.has(n.item) ? Math.min(short, cleaned(v(`i:${index.get(n)}`), tol)) : short
+    // A row other rows' leftovers cover, making only what the held passes left room for, stands idle.
+    const idle = !parts.length && fromByproduct > 0 && made <= noise
     rowFlows.set(n, {
       // A recovery row running only on what the held passes left room for is noise: it isn't shown.
       rate: n.recovers && need <= noise ? 0 : need,
-      crafts: x,
+      crafts: idle ? 0 : x,
       fromByproduct,
       byproductSources: draws.map((d) => ({ id: d.from.id, label: d.fed ? `the ${itemName(d.from.item)} target, fed back` : sourceLabel(d.from) })),
       fromRecovery: cleaned(fromRecovery, Math.max(tol, noise)),

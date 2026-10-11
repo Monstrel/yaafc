@@ -3080,3 +3080,27 @@ describe('Paradox Crucible mixed feed (refining the by-products below it too)', 
     expect(kept.mixedFeed).toEqual({ '0/Mors': true })
   })
 })
+
+describe('rows covered by other rows’ leftovers', () => {
+  const mods = modifiers({})
+  const catalog = buildCatalog({ saved: [], machines: {}, mods, fertilizer: null })
+
+  it('shows a gathered row that leftovers cover idle, without its ingredients, once a row stops using it', () => {
+    // Eternal Catalysts drop Gold Dust's ingredients, Silver Powder's Copper Powder uses with them:
+    // what's left of them, Bronze Ingot's Copper Powder rows cover with their by-product.
+    const before = organize(plan({ targets: [{ item: 'Catalyst4', rate: 1 }], autoOrganize: true }), catalog)
+    const gold = '0/Catalyst4/PhilosopherStone/Ruby/GoldDust5/GoldDust3'
+    const p = organize(setRowCatalysts(before, gold, ['Catalyst4']), catalog)
+    const result = solvePlan(p, catalog, mods)
+    expectBalanced(result)
+    const row = rowsById(result.tree).get('0/Catalyst4/PhilosopherStone/with:CopperPowder2')!
+    expect(row).toMatchObject({ kind: 'byproduct', consolidated: true, machines: 0, children: [] })
+    expect(row.fromByproduct).toBeCloseTo(row.rate)
+    // No row runs machines for nothing.
+    const idle = (n: TreeNode): TreeNode[] => [
+      ...(n.kind === 'produce' && n.rate > 0 && n.machines === 0 && n.children.some((c) => c.rate === 0) ? [n] : []),
+      ...n.children.flatMap(idle),
+    ]
+    expect(result.tree.flatMap(idle).map((n) => n.id)).toEqual([])
+  })
+})

@@ -8,6 +8,13 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
+## 2026-10-11T15:06Z
+
+- An item built separately that other rows' leftovers fully cover now shows as covered by those
+  leftovers, instead of as a row with no machines and an ingredient chain running at 0 / minute.
+  This could happen after a change elsewhere left it fewer uses, like loading Eternal Catalysts
+  into a Gold Dust row.
+
 ## 2026-10-11T14:45Z
 
 - New "Auto organize" option in the Organize menu keeps a plan tidy as you change it: after
