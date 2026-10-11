@@ -2157,6 +2157,14 @@ describe('overflow targets', () => {
     expect(fedOverflow(money).get('IronIngot')).toEqual({ share: expect.closeTo(1), into: [], taken: [1] })
   })
 
+  it('solves when a priority pass reaches an optimum at the solver’s noise floor', () => {
+    // A pass here reaches about a millionth: HiGHS called it "Unknown", and the pass after it found
+    // no solution within the usual room.
+    const r = solvePlan(using(plan({ targets: [{ item: 'Catalyst4', rate: 10 }] }), 'GoldDust2', 'GoldDust'), catalog, mods)
+    expect(r.status).toBe('ok')
+    expectBalanced(r)
+  })
+
   it('leaves the rest of the plan as it was, taking what it overflows', () => {
     // Mars with its Copper Powder row rounded up overflows Copper Powder. Running the Copper Ingot
     // row above it harder would soak that up into a Copper Ingot surplus; the plan stays put instead.
@@ -2248,6 +2256,14 @@ describe('overflow targets', () => {
     expect(crushers(r) * 80).toBeCloseTo(crushers(before) * 80 - sand / 128)
     const out = moneyLedger(fed, r, ledgers(fed, r)).outputs.find((o) => o.item === 'Shard1')
     expect(out?.toBus ?? 0).toBe(0)
+
+    // The same with the crushers' Quartz Ore built separately: it runs less too, rather than making
+    // as much as ever and the crushers overflowing Crude Shard.
+    const apart = solvePlan({ ...fed, separate: [{ item: 'QuartzOre', anchor: 'GoldDust3' }] }, catalog, mods)
+    expectBalanced(apart)
+    expect(apart.targets[1]).toMatchObject({ rate: expect.closeTo(sand / 128), fedIn: expect.closeTo(sand / 128) })
+    expect(crushers(apart)).toBeCloseTo(crushers(r))
+    expect(surplus(apart, 'Shard1')).toBe(0)
   })
 
   it("makes none, saying why, when its recipes don't use the item", () => {

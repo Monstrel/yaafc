@@ -228,10 +228,19 @@ const MAX_ROUNDING_ROUNDS = 12
  * A row built in units (`plan.units`) rounds up in each copy.
  */
 export function solvePlan(plan: Plan, catalog: ProcessCatalog, mods: Modifiers): PlanResult {
+  // A priority pass whose optimum is itself at the solver's noise floor (a millionth of an item,
+  // weighed up to 10⁶) can leave the next pass no solution within the usual room: such a plan is
+  // solved again holding the passes with 100× more.
+  const result = solveRounded(plan, catalog, mods, 1e-8)
+  return result.status === 'infeasible' ? solveRounded(plan, catalog, mods, 1e-6) : result
+}
+
+/** Solves the plan (see `solvePlan`), holding each priority pass with `room` (see `solveRound`). */
+function solveRounded(plan: Plan, catalog: ProcessCatalog, mods: Modifiers, room: number): PlanResult {
   const rounded = new Set(plan.roundUp ?? [])
   const floors = new Map<string, number>()
   const utilization = (n: TreeNode) => checkProcess(n.run!.process, mods)?.utilization ?? 1
-  let result = solveFed(plan, catalog, mods, floors)
+  let result = solveFed(plan, catalog, mods, floors, room)
   for (let round = 0; rounded.size && round < MAX_ROUNDING_ROUNDS && result.status === 'ok'; round++) {
     let raised = false
     const { copies } = unitScales(result.tree, plan.units, utilization)
@@ -249,7 +258,7 @@ export function solvePlan(plan: Plan, catalog: ProcessCatalog, mods: Modifiers):
     }
     result.tree.forEach(visit)
     if (!raised) break
-    result = solveFed(plan, catalog, mods, floors)
+    result = solveFed(plan, catalog, mods, floors, room)
   }
   return result
 }
@@ -261,13 +270,13 @@ export function solvePlan(plan: Plan, catalog: ProcessCatalog, mods: Modifiers):
  * fed-back targets in order) supply, and still delivers its rate. Overflow depends on the solution,
  * so the solve repeats until what those sources supply settles.
  */
-function solveFed(plan: Plan, catalog: ProcessCatalog, mods: Modifiers, floors: Map<string, number>): PlanResult {
+function solveFed(plan: Plan, catalog: ProcessCatalog, mods: Modifiers, floors: Map<string, number>, room: number): PlanResult {
   const found = absorbers(plan)
-  if (!found.size) return solveRound(plan, catalog, mods, new Map(), floors)
+  if (!found.size) return solveRound(plan, catalog, mods, new Map(), floors, { room })
   const filtered = plan.targets.map((t, i) => (t.item ? plan.targets.slice(0, i).filter((x) => x.item).length : -1))
   const absorbing = new Map<string, Absorbing>()
   for (const [item, target] of found) absorbing.set(item, { target: filtered[target], ahead: 0 })
-  let result = solveRound(plan, catalog, mods, absorbing, floors)
+  let result = solveRound(plan, catalog, mods, absorbing, floors, { room })
   for (let round = 1; round < MAX_FEEDBACK_ROUNDS && result.status === 'ok'; round++) {
     const ahead = supplyAhead(plan, result)
     let settled = true
@@ -277,7 +286,7 @@ function solveFed(plan: Plan, catalog: ProcessCatalog, mods: Modifiers, floors: 
       a.ahead = next
     }
     if (settled) break
-    result = solveRound(plan, catalog, mods, absorbing, floors)
+    result = solveRound(plan, catalog, mods, absorbing, floors, { room })
   }
   return result
 }
@@ -300,6 +309,7 @@ function baselineCrafts(
   mods: Modifiers,
   absorbing: Map<string, Absorbing>,
   floors: Map<string, number>,
+  room: number,
 ): Baseline {
   const crafts = new Map<string, number>()
   const overflow = new Map<string, number>()
@@ -308,7 +318,7 @@ function baselineCrafts(
     overflow.set(n.id, n.overflow)
     n.children.forEach(visit)
   }
-  solveRound(plan, catalog, mods, absorbing, floors, { sizing: false }).tree.forEach(visit)
+  solveRound(plan, catalog, mods, absorbing, floors, { sizing: false, room }).tree.forEach(visit)
   return { crafts, overflow }
 }
 
@@ -378,10 +388,13 @@ function solveRound(
   floors: Map<string, number>,
   {
     sizing = true,
+    room,
   }: {
     /** Overflow and supply targets take what they can; else they take nothing (see `baselineCrafts`). */
     sizing?: boolean
-  } = {},
+    /** Room each priority pass is held with, relative to what it reached and absolute. */
+    room: number
+  },
 ): PlanResult {
   const shape = unfold(plan, catalog)
   const targets = resolveTargets(plan, shape, mods)
@@ -436,7 +449,7 @@ function solveRound(
   // supply into a surplus of its own).
   const held =
     takerOf.size || supplyTaker.size
-      ? baselineCrafts(plan, catalog, mods, absorbing, floors)
+      ? baselineCrafts(plan, catalog, mods, absorbing, floors, room)
       : null
 
   // A target of a number of machines runs them: its row's crafts are fixed, and it delivers what they
@@ -569,12 +582,14 @@ function solveRound(
     if (users.length || loops.length) fedUsers.set(i, [...loops, ...users])
   })
   // Rows held to their crafts that take a fed-back target's output, and the rows below them, run up
-  // to those crafts: what the target makes covers the rest.
+  // to those crafts: what the target makes covers the rest. That includes the separate builds they
+  // take from, which would otherwise make as much as ever and push it on them.
   const easing = new Set<PlanNode>()
   const ease = (n: PlanNode) => {
     if (easing.has(n)) return
     easing.add(n)
     n.children.forEach(ease)
+    if (n.kind === 'separate' && n.ref) ease(supplierOf(n))
   }
   for (const users of fedUsers.values()) users.forEach(ease)
   const sameRun = (n: PlanNode, c: PlanNode) => c.kind === 'make' && c.process!.id === n.process!.id
@@ -806,10 +821,10 @@ function solveRound(
     // Σ weight·x + slack = what the pass reached, with a little room for solver tolerance: about 10×
     // the LP's feasibility tolerance (see lp.ts), or later passes can find no solution. What they can
     // still shift within that room is noise (see `noise`).
-    const room = total * 1e-8 + 1e-8
-    equalities[row] = total + room
-    if (row !== SHORTFALL_ROW) noise += room
-    else shortNoise = room / Math.min(...weights.values())
+    const held = total * room + room
+    equalities[row] = total + held
+    if (row !== SHORTFALL_ROW) noise += held
+    else shortNoise = held / Math.min(...weights.values())
     for (const [name, w] of weights) if (columns[name]) columns[name][row] = w
     columns[`slack:${row}`] = { [row]: 1, cost: 0 }
   }

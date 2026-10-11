@@ -59,7 +59,14 @@ export function solveLP(lp: LinearProgram): LpSolution {
     // Feasibility tolerances 100× tighter than HiGHS's defaults let the solver hold each priority pass
     // to a 100× smaller room (it needs about 10× its tolerance; see `solveRound`): less noise. 1e-10
     // is past what these plans' scaling allows.
-    const result = highs.solve(text, { output_flag: false, primal_feasibility_tolerance: 1e-9, dual_feasibility_tolerance: 1e-9 })
+    const options = { output_flag: false, primal_feasibility_tolerance: 1e-9, dual_feasibility_tolerance: 1e-9 }
+    let result = highs.solve(text, options)
+    // A priority pass whose optimum is near 0 (a millionth of an item, priced up to 10⁶) can solve
+    // with a primal-dual objective gap that's tiny yet large next to the objective: HiGHS then calls
+    // it "Unknown" (and returns no values) though its solution meets every row. Checking that gap
+    // more loosely accepts the same solution (HiGHS takes the option; the package's types leave it out).
+    const loose = { ...options, optimality_tolerance: 1e-3 }
+    if (result.Status === 'Unknown') result = highs.solve(text, loose)
     if (result.Status !== 'Optimal') return { status: 'infeasible', message: `Solver status: ${result.Status}`, values: new Map() }
     const values = new Map<string, number>()
     for (const c of colNames) values.set(c, result.Columns[colId.get(c)!]?.Primal ?? 0)

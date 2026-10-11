@@ -8,6 +8,17 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
+## 2026-10-11T19:04Z
+
+- Fixed some plans failing to solve after a change, showing "Solver status: Unknown" or
+  "Infeasible" though the plan could be built. This hit plans where the solver's answer for part
+  of the plan came out very close to zero, which happened most often with targets that use an
+  item's overflow.
+- A target that uses overflow and is fed back now covers the plan's own use of its item even when
+  the rows making that item take ingredients built separately. Before, those separate builds kept
+  running as hard as ever, so the rows they fed couldn't slow down and the target's output went
+  out of the plan instead.
+
 ## 2026-10-11T16:33Z
 
 - New "Auto organize" option in the Organize menu keeps a plan tidy as you change it: after
