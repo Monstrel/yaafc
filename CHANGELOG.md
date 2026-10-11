@@ -8,7 +8,7 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
-## 2026-10-11T15:51Z
+## 2026-10-11T16:07Z
 
 - New "Auto organize" option in the Organize menu keeps a plan tidy as you change it: after
   every change, items made in more than one row are built separately and items built separately
@@ -35,6 +35,10 @@ out.
   production chain that kept dozens of empty separately built rows at 0 / minute in the plan.
 - An item built separately that other rows' leftovers fully cover now shows as covered by those
   leftovers, instead of as a row with no machines and an ingredient chain running at 0 / minute.
+- So does any row whose machines stand idle because other rows' leftovers cover it, partly
+  refined up by its recovery: the Gold Dust Athanors under a Gold Coin target, say, when Eternal
+  Catalyst Athanors elsewhere leave over Gold Dust and Crude Gold Dust. It shows as covered, with
+  the rows recovering into it beside it.
 - Rows no longer show tiny negative rates, like -0.0000003 / minute.
 - Menu items with long descriptions line up properly again.
 

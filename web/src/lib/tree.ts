@@ -224,8 +224,10 @@ export function buildTree(roots: PlanNode[], flows: Map<PlanNode, RowFlows>, mod
     }
     // A gathered row stays one, even when by-products cover it, so it can still be undone.
     const gathered = n.separation && { consolidated: true, separation: n.separation }
-    // Wholly covered by other rows' by-products: its own machines and ingredients stand idle.
-    if (crafts === 0 && f.fromByproduct > 0 && !base.fromRecovery) return { ...base, kind: 'byproduct', run, ...gathered }
+    // Wholly covered by other rows' by-products, as they come or recovered: its own machines and
+    // ingredients stand idle, the rows recovering into it run.
+    if (crafts === 0 && (f.fromByproduct > 0 || base.fromRecovery > 0))
+      return { ...base, kind: 'byproduct', run, ...gathered, children: recoveries() }
     const perSecond = (key: string) => (run.inputs.find((s) => s.item === key)?.count ?? 0) / 60
     return {
       ...base,

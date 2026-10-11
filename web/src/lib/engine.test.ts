@@ -36,7 +36,7 @@ import { countRecipes, diagnoseNoResults, type FinderQuery } from './diagnose'
 import { buildingCounts, checkLogistics, checkProcess, resourceUsers } from './logistics'
 import { craftsPerMachine } from './machineRate'
 import { solvePlan, type PlanResult } from './solver'
-import { onOverflow, type TreeNode } from './tree'
+import { NO_FLOWS, buildTree, onOverflow, type RowFlows, type TreeNode } from './tree'
 import { heatNetworks } from './heatNetworks'
 import { setNetworkFuel, setNetworkSource } from './heatChoices'
 import {
@@ -77,7 +77,7 @@ import {
 } from './choices'
 import { sanitizeMyDefaults, sanitizePlans } from './sanitize'
 import { dropUnits, setUnits, unitChoices, unitScales, wholePerCopy } from './units'
-import { BOILER_HEAT, BUS, resolveChoice, unfold } from './unfold'
+import { BOILER_HEAT, BUS, resolveChoice, unfold, type PlanNode } from './unfold'
 import { separationsOf, withSeparation } from './separate'
 import { canSeparateShared, mergeSingleUses, organize, separateShared, setSeparation } from './separateAll'
 import { buildingNameFor, itemNameFor, noun } from './plural'
@@ -3205,5 +3205,24 @@ describe('rows looping back into a target', () => {
     const plain = plan({ targets: [{ item: 'Brandy', rate: 10 }] })
     expect(migrateLoopFeedback(plain, catalog)).toEqual({ ...plain, loopFeedback: true })
     expect(sanitizePlans([migrated], () => 'x')![0].loopFeedback).toBe(true)
+  })
+})
+
+describe('a row other rows’ leftovers cover, partly recovered', () => {
+  const mods = modifiers({})
+  const catalog = buildCatalog({ saved: [], machines: {}, mods, fertilizer: null })
+
+  it('shows its machines idle, without its ingredients, and the rows recovering into it', () => {
+    // Gold Dust needed 20/min: 8 left over by other rows, 12 refined up from their Crude Gold Dust.
+    const { roots, nodes } = unfold(plan({ targets: [{ item: 'Catalyst4', rate: 1 }] }), catalog)
+    const gold = nodes.find((n) => n.id === '0/Catalyst4/PhilosopherStone/Ruby/GoldDust5/GoldDust3')!
+    const recovery = gold.children.find((c) => c.recovers)!
+    const flows = new Map<PlanNode, RowFlows>([
+      [gold, { ...NO_FLOWS, rate: 20, fromByproduct: 8, fromRecovery: 12, byproductSources: [{ id: 'x', label: 'Gold Dust' }] }],
+      [recovery, { ...NO_FLOWS, rate: 12, crafts: 2 }],
+    ])
+    const row = rowsById(buildTree(roots, flows, mods)).get(gold.id)!
+    expect(row).toMatchObject({ kind: 'byproduct', machines: 0 })
+    expect(row.children.map((c) => c.id)).toEqual([recovery.id])
   })
 })

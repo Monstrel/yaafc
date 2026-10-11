@@ -2009,8 +2009,9 @@ function withReused(n: TreeNode): TreeNode {
     if (!joining.size) return gathered(whole, withByproductLine(whole))
     const recovered = whole.children.filter((r) => joining.has(r.id))
     const c = { ...whole, rate: whole.rate - whole.fromRecovery, children: whole.children.filter((r) => !joining.has(r.id)) }
-    // A row taking only other rows' outputs, all of which come recovered: just the recovery rows.
-    const empty = c.kind === 'byproduct' && !c.producer && c.rate <= 1e-9 && !c.children.length
+    // A row taking only other rows' outputs (its own machines idle, if it has any), all of which
+    // come recovered: just the recovery rows.
+    const empty = c.kind === 'byproduct' && c.rate <= 1e-9 && !c.children.length
     return gathered(whole, [...(empty ? [] : withByproductLine(c)), ...recovered])
   })
   // Smallest branches first, so a leaf (a fuel off the bus, say) sits right under the row it feeds
