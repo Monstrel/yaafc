@@ -1,4 +1,4 @@
-import { HEAT, itemName, type Stack } from './gameData'
+import { HEAT, coinValue, itemName, type Stack } from './gameData'
 import { checkProcess, wholeMachines } from './logistics'
 import { unitScales } from './units'
 import { solveLP } from './lp'
@@ -138,6 +138,11 @@ export interface PlanResult {
   runs: ProcessRun[]
   balances: ItemBalance[]
   tree: TreeNode[]
+  /**
+   * Items per minute the held passes left the solver room to shift (see `solveRound`): flows and
+   * amounts at or below it are noise, not part of the plan.
+   */
+  noise?: number
 }
 
 const ZERO = 1e-12
@@ -787,6 +792,8 @@ function solveRound(
   ]
   // Items per minute a held pass's room could still move: flows and recovery below it are noise.
   let noise = 0
+  // Items per minute of shortfall the shortfall pass's room could still move (its weights price them).
+  let shortNoise = 0
   for (const [row, weights] of stages) {
     if (!weights.size) continue
     const phase = solveLP({
@@ -801,6 +808,7 @@ function solveRound(
     const room = total * 1e-6 + 1e-6
     equalities[row] = total + room
     if (row !== SHORTFALL_ROW) noise += room
+    else shortNoise = room / Math.min(...weights.values())
     for (const [name, w] of weights) if (columns[name]) columns[name][row] = w
     columns[`slack:${row}`] = { [row]: 1, cost: 0 }
   }
@@ -967,7 +975,8 @@ function solveRound(
       byproductSources: draws.map((d) => ({ id: d.from.id, label: d.fed ? `the ${itemName(d.from.item)} target, fed back` : sourceLabel(d.from) })),
       fromRecovery: cleaned(fromRecovery, Math.max(tol, noise)),
       fromBus: drew,
-      shortfall: short - drew > tol ? short - drew : 0,
+      // A shortfall no more than the shortfall pass's room could move is noise.
+      shortfall: short - drew > tol + shortNoise ? short - drew : 0,
       overflow: cleaned(v(`s:${index.get(n)}`), Math.max(tol, noise)),
       byproductRoutes: n.kind === 'make' ? routes(n, x) : {},
       ...(parts.length && { mix: [{ process: n.process!, crafts: x }, ...parts.map((m) => ({ process: m.process, crafts: m.crafts }))] }),
@@ -982,9 +991,18 @@ function solveRound(
     t.crafts += x
     totals.set(key, t)
   }
+  // Machines run only for the rows the tree shows, as it shows them: rows it leaves out (recovering
+  // only what the held passes left room for, or under a row other rows' leftovers cover) run none.
+  const tree = buildTree(shape.roots, rowFlows, mods)
+  const shown = new Set<string>()
+  const mark = (t: TreeNode) => {
+    shown.add(t.id)
+    t.children.forEach(mark)
+  }
+  tree.forEach(mark)
   // A mixed crucible row counts as a group of crucibles per input.
-  for (const n of shape.nodes) if (n.kind === 'make') count(n.process!, crafts(n))
-  for (const n of mixes.keys()) for (const m of mixed(n)) count(m.process, m.crafts)
+  for (const n of shape.nodes) if (n.kind === 'make' && shown.has(n.id)) count(n.process!, rowFlows.get(n)?.crafts ?? crafts(n))
+  for (const n of mixes.keys()) if (shown.has(n.id)) for (const m of mixed(n)) count(m.process, m.crafts)
   const runs: ProcessRun[] = [...totals].map(([key, { process: p, crafts: x }]) => ({
     key,
     process: p,
@@ -1028,7 +1046,10 @@ function solveRound(
   for (const [name, item] of altared) of(item).altar += cleaned(v(name), RELATIVE_NOISE * Math.max(1, v(name)))
   for (const b of balance.values()) {
     let net = b.produced - b.consumed + b.fromBus + b.deficit - b.target - b.altar
-    if (Math.abs(net) <= RELATIVE_NOISE * Math.max(1, b.produced, b.consumed)) net = 0
+    // What the held passes left room for is noise too, as on the rows (coins aside: real amounts of
+    // them can be that small).
+    const room = coinValue(b.item) === null ? noise + shortNoise : 0
+    if (Math.abs(net) <= Math.max(RELATIVE_NOISE * Math.max(1, b.produced, b.consumed), room)) net = 0
     b.surplus = Math.max(0, net)
   }
 
@@ -1037,6 +1058,7 @@ function solveRound(
     targets,
     runs,
     balances: [...balance.values()],
-    tree: buildTree(shape.roots, rowFlows, mods),
+    tree,
+    noise,
   }
 }
