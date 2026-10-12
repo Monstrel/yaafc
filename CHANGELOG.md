@@ -8,7 +8,7 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
-## 2026-10-12T20:35Z
+## 2026-10-12T21:08Z
 
 - A by-product sent to Knowledge Altars now stays with its row when targets are reordered or
   removed, or a row is built separately or merged back, instead of being dropped or moving to a
@@ -37,6 +37,9 @@ out.
 - The plan overview no longer stops updating if one plan's summary fails.
 - If the calculator can't start, "Download my data" now includes data it couldn't read, as it was
   stored.
+- Rounding rows up to whole machines no longer makes the rows below them grow to take the extra
+  output: it overflows instead, and plans with many rows rounded up need far fewer machines.
+- Plans with overflow targets fed back no longer show tiny phantom shortfalls.
 
 ## 2026-10-11T23:08Z
 
