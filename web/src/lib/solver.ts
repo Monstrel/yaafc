@@ -2,8 +2,7 @@ import { dispatchTerms } from './dispatch'
 import { HEAT, coinValue, itemName, type Stack } from './gameData'
 import { checkProcess, wholeMachines } from './logistics'
 import { unitScales } from './units'
-import { solveLP } from './lp'
-import { LpModel } from './lpModel'
+import { LpModel, solveStaged } from './lpModel'
 import { craftsPerMachine } from './machineRate'
 import { paradoxId, runKey, type Process, type ProcessCatalog } from './processes'
 import { NO_FLOWS, buildTree, onOverflow, type ByproductRoute, type RowFlows, type TreeNode } from './tree'
@@ -844,34 +843,16 @@ function solveRound(
   //     counts many times over, so no row runs harder to take more.
   // What's left over costs nothing to take (its source runs no harder for it), so the last pass has
   // rows take it before they import or make their item.
-  const { equalities, columns } = m
-  const stages = [SHORTFALL_PASS, LEAVING_PASS, SPILL_PASS].map((row) => [row, m.passes.get(row) ?? new Map<string, number>()] as const)
+  // Each pass is held with `room`: about 10× the LP's feasibility tolerance (see lp.ts), or later
+  // passes can find no solution. What they can still shift within that room is noise.
+  const solution = solveStaged(m, [SHORTFALL_PASS, LEAVING_PASS, SPILL_PASS], room)
+  if (solution.status !== 'optimal') return fail(solution.status, solution.message)
   // Items per minute a held pass's room could still move: flows and recovery below it are noise.
   let noise = 0
+  for (const pass of [LEAVING_PASS, SPILL_PASS]) noise += solution.held.get(pass)?.room ?? 0
   // Items per minute of shortfall the shortfall pass's room could still move (its weights price them).
-  let shortNoise = 0
-  for (const [row, weights] of stages) {
-    if (!weights.size) continue
-    const phase = solveLP({
-      equalities,
-      columns: Object.fromEntries(Object.entries(columns).map(([name, { cost: _cost, ...rows }]) => [name, { ...rows, cost: weights.get(name) ?? 0 }])),
-    })
-    if (phase.status !== 'optimal') return fail(phase.status, phase.message)
-    let total = 0
-    for (const [name, x] of phase.values) total += x * (weights.get(name) ?? 0)
-    // Σ weight·x + slack = what the pass reached, with a little room for solver tolerance: about 10×
-    // the LP's feasibility tolerance (see lp.ts), or later passes can find no solution. What they can
-    // still shift within that room is noise (see `noise`).
-    const held = total * room + room
-    equalities[row] = total + held
-    if (row !== SHORTFALL_PASS) noise += held
-    else shortNoise = held / Math.min(...weights.values())
-    for (const [name, w] of weights) if (columns[name]) columns[name][row] = w
-    columns[`slack:${row}`] = { [row]: 1, cost: 0 }
-  }
-
-  const solution = solveLP({ equalities, columns })
-  if (solution.status !== 'optimal') return fail(solution.status, solution.message)
+  const shortfall = solution.held.get(SHORTFALL_PASS)
+  const shortNoise = shortfall ? shortfall.room / shortfall.minWeight : 0
   const v = (name: string) => {
     const x = solution.values.get(name) ?? 0
     // Every column is at least 0: below that is the solver's tolerance.
