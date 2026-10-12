@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { itemsByKey } from '../lib/gameData'
 import { fmt } from '../lib/format'
 import { noun } from '../lib/plural'
@@ -38,8 +38,9 @@ import {
 } from '../lib/treeView'
 import { BoxArrowIcon } from './tree/icons'
 import { UnmarkMenu, ToolbarMenu, type AnchorDecision, AnchorChoice, MachinesMenu } from './tree/menus'
-import { type TargetSlot, type Jump, type LinkFn } from './tree/types'
+import { type TargetSlot, type LinkFn } from './tree/types'
 import { TreeRow, Edges } from './tree/TreeRow'
+import { useStable } from '../lib/useStable'
 
 interface Props {
   /** Fold state is remembered per plan. */
@@ -373,14 +374,11 @@ export function ProductionTree({
   const [pulse, setPulse] = useState<{ id: string; n: number } | null>(null)
   const tbody = useRef<HTMLTableSectionElement>(null)
 
-  /** Rows a link would go to, in tree order. */
-  const targetsOf = (match: Jump, from: string) => all.filter(({ node }) => node.id !== from && match(node))
-
   /** Goes to a row: unfolded, scrolled to and pulsed. */
-  const goTo = ({ node, ancestors }: Placed) => {
+  const goTo = useStable(({ node, ancestors }: Placed) => {
     setCollapsed((c) => (ancestors.some((a) => c.has(a)) ? new Set([...c].filter((id) => !ancestors.includes(id))) : c))
     setPulse((p) => ({ id: node.id, n: (p?.n ?? 0) + 1 }))
-  }
+  })
 
   // A link to several rows lists them to choose from.
   const [places, setPlaces] = useState<{ title: string; rows: Placed[]; at: DOMRect } | null>(null)
@@ -390,9 +388,9 @@ export function ProductionTree({
     placesRef.current.showPopover()
     placePopover(placesRef.current, places.at)
   }, [places])
-  const openPlaces = (title: string, rows: Placed[], button: HTMLElement) => {
+  const openPlaces = useStable((title: string, rows: Placed[], button: HTMLElement) => {
     setPlaces({ title, rows, at: button.getBoundingClientRect() })
-  }
+  })
 
   useEffect(() => {
     if (!pulse) return
@@ -436,9 +434,13 @@ export function ProductionTree({
     show(shownRow?.id)
   }
 
-  /** A link from `from` to the rows `match` picks out; plain text when there are none. */
-  const link: LinkFn = (from, match, label, title) => {
-    const rows = targetsOf(match, from.id)
+  /**
+   * A link from `from` to the rows `match` picks out (in tree order); plain text when there are none.
+   * Rows call it as they're drawn: it changes only with the rows it can link to.
+   */
+  const link: LinkFn = useCallback(
+    (from, match, label, title) => {
+    const rows = all.filter(({ node }) => node.id !== from.id && match(node))
     if (!rows.length) return label
     const several = rows.length > 1
     return (
@@ -453,9 +455,17 @@ export function ProductionTree({
         {several && <span className="tree-link-count">({rows.length})</span>}
       </button>
     )
-  }
+    },
+    [all, goTo, openPlaces],
+  )
 
-  const lines = layoutLines(view, collapsed)
+  const lines = useMemo(() => layoutLines(view, collapsed), [view, collapsed])
+  // Rows are drawn again only when their own props change: these keep their identity across renders.
+  const onToggle = useStable(toggle)
+  const onSeparateMenu = useStable(openMenu)
+  const onMachinesMenu = useStable(openMachinesMenu)
+  const onReveal = useStable(reveal)
+  const onCheck = useStable(checkRow)
 
   return (
     <>
@@ -600,7 +610,7 @@ export function ProductionTree({
                     card={line.card}
                     afterBranch={line.afterBranch}
                     open={!collapsed.has(line.node.id)}
-                    onToggle={() => toggle(line.node.id)}
+                    onToggle={onToggle}
                     catalog={catalog}
                     rows={rowsOf.get(line.node.item) ?? 1}
                     rowsOf={rowsOf}
@@ -614,7 +624,7 @@ export function ProductionTree({
                     onRemember={onRemember}
                     onForget={onForget}
                     savable={savable.has(line.node.id)}
-                    onSeparateMenu={openMenu}
+                    onSeparateMenu={onSeparateMenu}
                     onFlowChart={setFlowRoot}
                     rounded={rounded.has(line.node.id)}
                     copies={shownCopies(line.node.reusedBy ?? line.node.id)}
@@ -624,7 +634,7 @@ export function ProductionTree({
                       inRevealed(line.node.reusedBy ?? line.node.id) && (units.copies.get(line.node.reusedBy ?? line.node.id) ?? 1) > 1
                     }
                     pinned={pinned === line.node.id}
-                    onReveal={reveal}
+                    onReveal={onReveal}
                     fed={fed}
                     onUseOverflow={onUseOverflow}
                     altarLeft={altarLeft}
@@ -632,13 +642,13 @@ export function ProductionTree({
                     canAltar={canAltar}
                     onOutputAltar={onOutputAltar}
                     onLoopSource={onLoopSource}
-                    onMachinesMenu={openMachinesMenu}
+                    onMachinesMenu={onMachinesMenu}
                     logistics={logistics}
                     mods={mods}
                     link={link}
                     target={slotByRow.get(line.node.id)}
                     built={checkState(line.node)}
-                    onCheck={checkRow}
+                    onCheck={onCheck}
                   />
                 ),
               )}

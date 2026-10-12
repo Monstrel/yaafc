@@ -1,4 +1,4 @@
-import { type CSSProperties, useState } from 'react'
+import { type CSSProperties, useState, memo } from 'react'
 import { CATALYSTS, coinValue, heightMultiplier, isCauldronTarget, itemName, itemsByKey } from '../../lib/gameData'
 import { fmt, fmtMachines, wholeMachines } from '../../lib/format'
 import { buildingNameFor, noun } from '../../lib/plural'
@@ -36,10 +36,13 @@ import {
 } from '../../lib/treeView'
 import { BookmarkIcon, FlowIcon, BoxArrowIcon } from './icons'
 import { OverflowNote } from './OverflowNote'
-
 import type { LinkFn, TargetSlot } from './types'
 
-export function TreeRow({
+/**
+ * One row of the production tree. Drawn again only when its own props change (see `sameRow`): the
+ * tree passes handlers that keep their identity, so hovering or opening a menu leaves the rows alone.
+ */
+export const TreeRow = memo(function TreeRow({
   node: whole,
   depth,
   open,
@@ -94,7 +97,8 @@ export function TreeRow({
   node: TreeNode
   depth: number
   open: boolean
-  onToggle: () => void
+  /** Folds or unfolds a row (by id). */
+  onToggle: (id: string) => void
   catalog: ProcessCatalog
   /** Rows of this item using a producer of their own. */
   rows: number
@@ -161,7 +165,7 @@ export function TreeRow({
         <td className="tree-item">
           <Edges edges={edges} />
           <div className="tree-cell">
-            <button className="fold" onClick={onToggle} aria-expanded={open} aria-label={open ? 'Collapse' : 'Expand'}>
+            <button className="fold" onClick={() => onToggle(whole.id)} aria-expanded={open} aria-label={open ? 'Collapse' : 'Expand'}>
               {open ? '▾' : '▸'}
             </button>
             <span className="plan-root-name">All targets</span>
@@ -286,7 +290,7 @@ export function TreeRow({
         <Edges edges={edges} />
         <div className="tree-cell" style={{ paddingLeft: depth * 20 }}>
           {node.children.length > 0 ? (
-            <button className="fold" onClick={onToggle} aria-expanded={open} aria-label={open ? 'Collapse' : 'Expand'}>
+            <button className="fold" onClick={() => onToggle(whole.id)} aria-expanded={open} aria-label={open ? 'Collapse' : 'Expand'}>
               {open ? '▾' : '▸'}
             </button>
           ) : (
@@ -794,6 +798,19 @@ export function TreeRow({
         </span>
       </td>
     </tr>
+  )
+}, sameRow)
+
+/**
+ * Whether a row's props are the same: each by identity, but its card edges by what they are
+ * (the tree lays them out again whenever a branch folds).
+ */
+function sameRow<P extends { edges: Edge[] }>(a: P, b: P): boolean {
+  for (const key of Object.keys(a) as (keyof P)[]) if (key !== 'edges' && !Object.is(a[key], b[key])) return false
+  return (
+    Object.keys(a).length === Object.keys(b).length &&
+    a.edges.length === b.edges.length &&
+    a.edges.every((e, i) => e.level === b.edges[i].level && e.piece === b.edges[i].piece && e.accent === b.edges[i].accent)
   )
 }
 
