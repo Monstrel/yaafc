@@ -2,14 +2,29 @@ import { dispatchTerms } from './dispatch'
 import { HEAT, coinValue, itemName, type Stack } from './gameData'
 import { checkProcess, wholeMachines } from './logistics'
 import { unitScales } from './units'
-import { LpModel, solveStaged } from './lpModel'
+import { solveStaged } from './lpModel'
 import { craftsPerMachine } from './machineRate'
-import { paradoxId, runKey, type Process, type ProcessCatalog } from './processes'
+import { runKey, type Process, type ProcessCatalog } from './processes'
 import { NO_FLOWS, buildTree, onOverflow, type ByproductRoute, type RowFlows, type TreeNode } from './tree'
 import type { Plan } from './types'
-import { absorbers, supplyAhead, targetFedBack } from './ledger'
-import { consumedBy, isTargetRow, suppliedBy, unfold, type PlanNode, type PlanShape } from './unfold'
+import { absorbers, supplyAhead } from './ledger'
+import { consumedBy, suppliedBy, unfold, type PlanNode, type PlanShape } from './unfold'
 import type { Modifiers } from './upgrades'
+import {
+  LEAVING_PASS,
+  PASSES,
+  SHORTFALL_PASS,
+  SPILL_PASS,
+  buildPlanLp,
+  ingredients,
+  isSupply,
+  outputOf,
+  rootOf,
+  supplierOf,
+  targetRoles,
+  type Absorbing,
+  type Baseline,
+} from './solverModel'
 
 export interface ProcessRun {
   /** The process on its machine (see `runKey`): one recipe can run on different machines in different branches. */
@@ -150,37 +165,6 @@ export interface PlanResult {
 
 const ZERO = 1e-12
 const RELATIVE_NOISE = 1e-7
-const IMPORT_COST = 1
-// Shortfalls are priced by depth (distance from the targets) so they land where a chain actually
-// breaks (e.g. an ingredient nothing can make) and everything above it is still sized.
-const DEFICIT_COST = 1e6
-const DEFICIT_DEPTH_FACTOR = 0.1
-const MIN_DEFICIT_COST = 10
-const SURPLUS_COST = 1e-4
-const CRAFT_COST = 1e-3
-// A row running a process for its side product (Gentian Nectar from Gentian nurseries) costs a
-// little more, so a sibling row making the main product covers it with its by-product instead.
-const SIDE_RUN_FACTOR = 1.001
-// By-products go to the nearest rows that use them: priced by the steps between the two rows.
-const FLOW_COST = 1e-7
-// A crucible row's mixed feed takes the by-products below it after the rows of their own item do.
-const MIX_COST = 1e-5
-// The priority passes (see `solveRound`), each also the row holding it once it's solved.
-const SHORTFALL_PASS = 'shortfall'
-const LEAVING_PASS = 'leaving'
-const SPILL_PASS = 'spill'
-// What a row takes beyond what it needs, and what a recovery row's other outputs overflow, count
-// this many times what other rows spill (see the passes).
-const EXCESS_WEIGHT = 1000
-// Overflow an overflow target can't use is counted with shortfalls, so it uses all it can, but costs
-// less than any shortfall: falling short somewhere never stands in for leaving overflow unused (a
-// shortfall in a runaway loop would make it look like it settles).
-const UNUSED_OVERFLOW_COST = 1
-// A capped supply nothing takes costs more than what using it does (its row's crafts and the bus),
-// so a supply target takes all it can. Shortfalls are settled first (see the two passes below), so
-// leaving one never stands in for using the supply.
-const UNUSED_SUPPLY_COST = 1000
-
 /** Items per minute of `item` one machine running process `p` makes (output-belt cap included). */
 export function outputPerMachine(p: Process, item: string, mods: Modifiers): number | null {
   const out = p.outputs.find((s) => s.item === item)?.count ?? 0
@@ -213,17 +197,6 @@ function resolveTargets(plan: Plan, shape: PlanShape, mods: Modifiers): Resolved
         machineName: perMachine !== null ? (p?.machine?.name ?? null) : null,
       }
     })
-}
-
-/**
- * Net-surplus targets the solve sizes, per item: the target that covers what's left of what the
- * plan's rows take of it from the bus, and what the fed-back sources ahead of it supply.
- */
-interface Absorbing {
-  /** Index among the targets with an item (as `targets` and `shape.targetRows`). */
-  target: number
-  /** Items per minute the sources ahead of it can supply. */
-  ahead: number
 }
 
 /** Rounds of solving before the supply ahead of a net-surplus target settles (overflow moves with it). */
@@ -321,16 +294,6 @@ function solveFed(plan: Plan, catalog: ProcessCatalog, mods: Modifiers, floors: 
   return result
 }
 
-/** How each row (by id) runs without the plan's overflow and supply targets. */
-interface Baseline {
-  /** Crafts per minute. */
-  crafts: Map<string, number>
-  /** Items per minute of its own item it makes that nothing uses. */
-  overflow: Map<string, number>
-  /** Per item, items per minute the plan makes of it that nothing uses. */
-  surplus: Map<string, number>
-}
-
 /**
  * How each row runs with the plan's overflow and supply targets taking nothing: laid out as they
  * are (so the rows are the same), the rest of the plan is solved as it is without them.
@@ -355,22 +318,6 @@ function baselineCrafts(
   return { crafts, overflow, surplus: new Map(result.balances.map((b) => [b.item, b.surplus])) }
 }
 
-/** The root row of a row's tree. */
-function rootOf(n: PlanNode): PlanNode {
-  let r = n
-  while (r.parent) r = r.parent
-  return r
-}
-
-/** The row that supplies a row: itself, or the row a loop or separate build points to. */
-function supplierOf(n: PlanNode): PlanNode {
-  let s = n
-  while (((s.kind === 'loop' && !s.fedBack) || s.kind === 'separate') && s.ref) s = s.ref
-  return s
-}
-
-const isSupply = (n: PlanNode) => supplierOf(n) === n
-
 /**
  * What a row whose machines output something is called where that output goes: its recipe, or the
  * item it makes when it runs a recipe for another of its outputs (Athanors making Crude Silver
@@ -381,38 +328,7 @@ const sourceLabel = (n: PlanNode) => (n.process!.product === n.item ? n.process!
 /** A solved amount, with solver noise below `tol` dropped. */
 const cleaned = (x: number, tol: number) => (x > tol ? x : 0)
 
-/** Steps between two rows of the tree. */
-function distance(a: PlanNode, b: PlanNode): number {
-  const x = a.id.split('/')
-  const y = b.id.split('/')
-  let common = 0
-  while (common < x.length && common < y.length && x[common] === y[common]) common++
-  return x.length + y.length - 2 * common
-}
-
-/** Ingredients a row's process takes from the rows below it (heat and nutrients too), in the order of its children. */
-const ingredients = (p: Process) => p.inputs
-const outputOf = (p: Process, item: string) => p.outputs.find((s) => s.item === item)?.count ?? 0
-
-/**
- * Balances the plan as a linear program over the rows of the production tree. Each row's machines
- * feed only the row above them, as built in the factory:
- *   (row's output) + (by-products it takes) + import + deficit − surplus = (what the rows above it use)
- * A loop row adds its use to the row it loops back to, a separate build to the row gathering it.
- * By-products are the one exception: each row's side outputs can feed any row of their item,
- * the nearest first, and what's left over is surplus. They're only what rows make for their own use:
- * no row runs harder to make more of them for a row that can make its item itself. Heat and
- * nutrients are rows like any ingredient, burning or spreading the fuel or fertilizer below them.
- * Rows taking their item from the bus draw on a fed-back net-surplus target of it instead, where
- * there is one (`absorbing`).
- * A row with a floor runs at least that many crafts per minute; what nothing uses overflows.
- * An overflow target takes all of its item's overflow (the first such target in order that uses the
- * item does), its rows of the item drawing from it, and its rate is what that makes. The overflow
- * includes what the overflow target's own rows overflow, so chains and loops of them are solved
- * together. Its rows make only what it needs, so the overflow can't be used up by making extra.
- * Overflow it can't use is priced like a shortfall: a loop that overflows at least as much as it
- * takes would need an endless factory, so it takes none and is flagged as running away.
- */
+/** Solves the plan once as it's laid out (see `buildPlanLp` for the model, `PASSES` for how). */
 function solveRound(
   plan: Plan,
   catalog: ProcessCatalog,
@@ -431,394 +347,22 @@ function solveRound(
 ): PlanResult {
   const shape = unfold(plan, catalog)
   const targets = resolveTargets(plan, shape, mods)
-  const index = new Map(shape.nodes.map((n, k) => [n, k]))
-  const bal = (n: PlanNode) => `b:${index.get(supplierOf(n))}`
-
-  // Overflow targets (by index among the targets with an item), the rows that take their item's
-  // overflow under each, and per item the one that takes it.
-  const planIndex = plan.targets.flatMap((t, i) => (t.item ? [i] : []))
-  const takers = new Map<number, PlanNode[]>()
-  const inTaker = new Set<PlanNode>()
-  targets.forEach((_, i) => {
-    const item = consumedBy(plan.targets[planIndex[i]])
-    const row = shape.targetRows[i]
-    // A target sharing the row of an item built separately has no rows of its own.
-    if (!sizing || !item || !row || !isTargetRow(row.id)) return
-    takers.set(i, [])
-  })
-  for (const n of shape.nodes) {
-    const root = rootOf(n)
-    const i = shape.targetRows.indexOf(root)
-    if (!takers.has(i)) continue
-    inTaker.add(n)
-    if (n.kind === 'overflow') takers.get(i)!.push(n)
-  }
-  const takerOf = new Map<string, number>()
-  for (const [i, leaves] of takers) {
-    const item = consumedBy(plan.targets[planIndex[i]])!
-    if (leaves.length && !takerOf.has(item)) takerOf.set(item, i)
-  }
-  // Supply targets (by index among the targets with an item), their rows of the item they take from
-  // the bus, and per capped item the one taking what's left of it: the first in order that uses it.
-  const caps = new Map(Object.entries(plan.busSupply ?? {}))
-  const supplyRows = new Map<number, PlanNode[]>()
-  targets.forEach((_, i) => {
-    const row = shape.targetRows[i]
-    if (sizing && suppliedBy(plan.targets[planIndex[i]]) && row && isTargetRow(row.id)) supplyRows.set(i, [])
-  })
-  for (const n of shape.nodes) {
-    const i = shape.targetRows.indexOf(rootOf(n))
-    if (!supplyRows.has(i)) continue
-    inTaker.add(n)
-    if (n.kind === 'bus' && n.item === suppliedBy(plan.targets[planIndex[i]])) supplyRows.get(i)!.push(n)
-  }
-  const supplyTaker = new Map<string, number>()
-  for (const [i, rows] of supplyRows) {
-    const item = suppliedBy(plan.targets[planIndex[i]])!
-    if (rows.length && caps.has(item) && !supplyTaker.has(item)) supplyTaker.set(item, i)
-  }
+  const roles = targetRoles(plan, shape, targets, mods, sizing)
+  const { planIndex, takers, inTaker, takerOf, supplyRows, supplyTaker, machineCrafts } = roles
   // Overflow and supply targets take what the rest of the plan overflows or leaves as it is without
   // them: its targets' rows run as they would (running one harder could soak up the overflow or
   // supply into a surplus of its own).
-  const held =
-    takerOf.size || supplyTaker.size
-      ? baselineCrafts(plan, catalog, mods, absorbing, floors, room)
-      : null
-
-  // A target of a number of machines runs them: its row's crafts are fixed, and it delivers what they
-  // make and what's recovered into it (sizing it by one machine's own output, recovery shrank them).
-  const machineCrafts = new Map<number, number>()
-  targets.forEach((_, i) => {
-    const row = shape.targetRows[i]
-    const t = plan.targets[planIndex[i]]
-    if (t.unit === 'machines' && row?.kind === 'make' && isTargetRow(row.id) && row.process!.seconds > 0)
-      machineCrafts.set(i, (t.rate || 0) * craftsPerMachine(row.process!, mods))
+  const held = takerOf.size || supplyTaker.size ? baselineCrafts(plan, catalog, mods, absorbing, floors, room) : null
+  const { m, index, supplies, pooled, capped, flows, fedFrom, mixes, altared } = buildPlanLp({
+    plan,
+    catalog,
+    shape,
+    targets,
+    roles,
+    absorbing,
+    floors,
+    held,
   })
-  const machineRows = new Map([...machineCrafts].map(([i, x]) => [shape.targetRows[i]!, x]))
-
-  const m = new LpModel()
-  // What a column takes away from the row making an output, where the row's own recovery could take
-  // it (`LEAVING_PASS`), and what overflows that another row or an overflow target could have used
-  // (`SPILL_PASS`): see the passes below.
-  const leaves = (column: string, weight = 1) => m.weigh(LEAVING_PASS, column, weight)
-  const spills = (column: string, weight = 1) => m.weigh(SPILL_PASS, column, weight)
-  /** A shortfall column: weighed by its cost in the shortfall pass. */
-  const deficit = (name: string, coefficients: Record<string, number>, cost: number) => {
-    m.column(name, coefficients, cost)
-    m.weigh(SHORTFALL_PASS, name, cost)
-  }
-  // Columns of overflow going to an item's overflow pool, with the row overflowing it (see `oc:` below).
-  const overflowing: { column: string; item: string; from: PlanNode }[] = []
-
-  // Per item a fed-back net-surplus target covers: a pool its row and the sources ahead of it supply
-  // (up to `ahead`), and the plan's rows taking the item from the bus draw on. What they can't
-  // cover is a shortfall: the target's own chain uses more than it gives.
-  const pooled = new Map<string, Absorbing>()
-  for (const [item, a] of absorbing) {
-    const row = shape.targetRows[a.target]
-    if (!row) continue
-    pooled.set(item, a)
-    m.row(`g:${item}`)
-    deficit(`d:g:${item}`, { [`g:${item}`]: 1 }, MIN_DEFICIT_COST)
-    m.row(`ahead:${item}`, a.ahead)
-    m.column(`fa:${item}`, { [`g:${item}`]: 1, [`ahead:${item}`]: 1 }, 0)
-    m.column(`fu:${item}`, { [`ahead:${item}`]: 1 }, 0)
-    m.column(`fb:${item}`, { [bal(row)]: -1, [`g:${item}`]: 1 }, 0)
-  }
-
-  // Capped plan inputs a supply target takes what's left of (where the plan doesn't make the item in
-  // their place): rows taking one share the cap, falling short past it, and the target takes the
-  // rest. Elsewhere a cap sizes nothing: rows take what they need (the ledger warns past it).
-  const capped = new Map([...caps].filter(([item]) => !pooled.has(item) && supplyTaker.has(item)))
-  for (const [item, cap] of capped) {
-    m.row(`bc:${item}`, cap)
-    m.column(`bu:${item}`, { [`bc:${item}`]: 1 }, supplyTaker.has(item) ? UNUSED_SUPPLY_COST : 0)
-  }
-  for (const [item, i] of supplyTaker) if (capped.has(item)) m.column(`ts:${i}`, { [bal(shape.targetRows[i]!)]: -1 }, 0)
-  const deficitCost = (n: PlanNode) => Math.max(MIN_DEFICIT_COST, DEFICIT_COST * DEFICIT_DEPTH_FACTOR ** n.depth)
-
-  const supplies = shape.nodes.filter(isSupply)
-  for (const s of supplies) {
-    const k = index.get(s)!
-    m.row(`b:${k}`)
-    // An overflow target's rows of its item get only the overflow taken, and its other rows make no
-    // more than it needs. A row of an item an overflow target takes overflows into its pool, whether
-    // it makes the item or gets more of other rows' by-products than it needs. A row taking a capped
-    // item from the bus takes no more than it needs (the rest is for the others).
-    if (s.kind !== 'overflow' && !(s.kind === 'bus' && capped.has(s.item)) && (!inTaker.has(s) || floors.has(s.id))) {
-      const taken = takerOf.has(s.item)
-      m.column(`s:${k}`, { [`b:${k}`]: -1, ...(taken && { [`o:${s.item}`]: 1 }) }, SURPLUS_COST)
-      if (taken) overflowing.push({ column: `s:${k}`, item: s.item, from: s })
-      // A row taking more than it needs counts many times over, so no row runs harder to take more.
-      else spills(`s:${k}`, EXCESS_WEIGHT)
-    }
-    // Nothing makes it and the plan doesn't take it in: what other rows leave of it, else a shortfall.
-    if (s.unsupplied) deficit(`d:${k}`, { [`b:${k}`]: 1 }, deficitCost(s))
-    else if (s.kind === 'bus' && pooled.has(s.item)) m.column(`i:${k}`, { [`b:${k}`]: 1, [`g:${s.item}`]: -1 }, 0)
-    else if (s.kind === 'bus' && capped.has(s.item)) {
-      m.column(`i:${k}`, { [`b:${k}`]: 1, [`bc:${s.item}`]: 1 }, IMPORT_COST)
-      deficit(`d:${k}`, { [`b:${k}`]: 1 }, deficitCost(s))
-    } else if (s.kind === 'bus') m.column(`i:${k}`, { [`b:${k}`]: 1 }, IMPORT_COST)
-    // A row taking what other rows output only has that, and a recovery row only what it recovers:
-    // what it makes joins the supply of the row above it.
-    else if (s.kind === 'overflow' || s.kind === 'reclaim') continue
-    else if (s.recovers) m.column(`rc:${k}`, { [`b:${k}`]: -1, [bal(s.parent!)]: 1 }, 0)
-    else deficit(`d:${k}`, { [`b:${k}`]: 1 }, deficitCost(s))
-  }
-  targets.forEach((t, i) => {
-    const row = shape.targetRows[i]
-    if (row && machineCrafts.has(i)) m.column(`tm:${i}`, { [bal(row)]: -1 }, 0)
-    else if (row) m.raise(bal(row), t.rate)
-  })
-  // Each item's overflow pools (rows add to it as it overflows them) and goes to the rows of the
-  // overflow target taking it, sizing that target; what it can't use is priced as a shortfall.
-  for (const [item, i] of takerOf) {
-    m.row(`o:${item}`)
-    for (const leaf of takers.get(i)!) m.column(`od:${index.get(leaf)}`, { [`o:${item}`]: -1, [`b:${index.get(leaf)}`]: 1 }, 0)
-    m.column(`t:${i}`, { [bal(shape.targetRows[i]!)]: -1 }, 0)
-    deficit(`d:o:${item}`, { [`o:${item}`]: -1 }, UNUSED_OVERFLOW_COST)
-  }
-
-  // By-product pools: what one row makes of each side output, shared out to rows of that item,
-  // unless the row sends it to Knowledge Altars as it comes out.
-  const consumers = new Map<string, PlanNode[]>()
-  for (const s of supplies) if (s.takesLeftovers) consumers.set(s.item, [...(consumers.get(s.item) ?? []), s])
-  const toAltar = (n: PlanNode, item: string) => !!plan.altarOutputs?.[n.id]?.includes(item)
-  const sharedWith = (n: PlanNode, item: string) => (toAltar(n, item) ? [] : (consumers.get(item) ?? []))
-  // `fed`: from a fed-back target's output, not a row's by-products.
-  const flows: { name: string; from: PlanNode; to: PlanNode; fed?: boolean }[] = []
-
-  // Rows held to their crafts: rounded up, or as they are without the plan's overflow targets.
-  const fixedOf = (n: PlanNode) =>
-    (!inTaker.has(n) && isTargetRow(rootOf(n).id) ? held?.crafts.get(n.id) : undefined) ?? machineRows.get(n)
-  // Rows built separately serve the overflow and supply targets too, so they can't be held to their
-  // crafts; but they overflow no more than they do without them (else running one harder could still
-  // soak up the overflow or supply).
-  if (held)
-    for (const n of supplies) {
-      const k = index.get(n)!
-      if (n.kind !== 'make' || inTaker.has(n) || fixedOf(n) !== undefined || !m.hasColumn(`s:${k}`)) continue
-      m.row(`sc:${k}`, held.overflow.get(n.id) ?? 0)
-      m.set(`s:${k}`, `sc:${k}`, 1)
-      m.column(`scs:${k}`, { [`sc:${k}`]: 1 }, 0)
-    }
-  const heldToCrafts = (n: PlanNode) => floors.has(n.id) || fixedOf(n) !== undefined
-  // Fed-back targets (by index among the targets with an item) and the rows making their item
-  // elsewhere in the plan, which take what they make first (see `fedFrom` below). A net-surplus
-  // target grows to cover the plan's use instead.
-  // Targets after it (in order) of its item feed nothing: it covers all the plan takes.
-  const netTargets = new Map([...absorbing].map(([item, a]) => [item, a.target]))
-  const fedUsers = new Map<number, PlanNode[]>()
-  targets.forEach((t, i) => {
-    const row = shape.targetRows[i]
-    if (!row || !isTargetRow(row.id)) return
-    // Rows of its own chain looping back into it take its output (unfold decides whether they do).
-    const loops = supplies.filter((c) => c.fedBack && c.ref === row)
-    const net = netTargets.get(t.item)
-    const fed = (net === undefined || i < net) && targetFedBack(plan, plan.targets[planIndex[i]])
-    const users = fed
-      ? supplies.filter(
-          (c) => c.item === t.item && c.kind === 'make' && c.takesLeftovers && !c.recovers && !isTargetRow(c.id) && rootOf(c) !== row,
-        )
-      : []
-    if (users.length || loops.length) fedUsers.set(i, [...loops, ...users])
-  })
-  // Once a target feeds back into the plan's rows, none of them are held to how they run without the
-  // overflow and supply targets: what it covers changes what they need, and where chains share
-  // by-products, rows anywhere in the plan may have to run slower or a little harder for them to
-  // rebalance without overflowing. (What the rest of the plan overflows is still capped below.)
-  const unheld = fedUsers.size > 0
-  const sameRun = (n: PlanNode, c: PlanNode) => c.kind === 'make' && c.process!.id === n.process!.id
-  // Rows whose by-products can go to rows running something else (see `e:` below).
-  const sharing = new Set(
-    shape.nodes.filter(
-      (n) =>
-        n.kind === 'make' &&
-        !heldToCrafts(n) &&
-        n.process!.outputs.some(
-          (o) => o.item !== n.item && sharedWith(n, o.item).some((c) => !sameRun(n, c)),
-        ),
-    ),
-  )
-  // What each of those rows makes beyond what it's used for (`ex:`): its own overflow, plus what the
-  // extra crafts of the rows above it take (else a row above could run harder to soak up its
-  // overflow). Loops back up are left out, so it stays a chain down the tree.
-  const usesOf = new Map<PlanNode, PlanNode[]>()
-  for (const n of shape.nodes)
-    if (n.parent && n.kind !== 'loop') usesOf.set(supplierOf(n), [...(usesOf.get(supplierOf(n)) ?? []), n.parent])
-  const chain = new Set<PlanNode>()
-  const todo = [...sharing]
-  while (todo.length) {
-    const n = todo.pop()!
-    if (chain.has(n) || n.kind !== 'make' || heldToCrafts(n)) continue
-    chain.add(n)
-    todo.push(...(usesOf.get(n) ?? []))
-  }
-  for (const n of chain) {
-    const k = index.get(n)!
-    m.row(`xd:${k}`)
-    m.column(`ex:${k}`, { [`xd:${k}`]: 1 }, 0)
-    if (m.hasColumn(`s:${k}`)) m.set(`s:${k}`, `xd:${k}`, -1)
-  }
-  for (const n of chain) {
-    const ex = `ex:${index.get(n)}`
-    const made = outputOf(n.process!, n.item)
-    if (made <= 0) continue
-    ingredients(n.process!).forEach((s, j) => {
-      const c = n.children[j]
-      const below = c && c.kind !== 'loop' ? index.get(supplierOf(c)) : undefined
-      if (below !== undefined && m.hasColumn(`ex:${below}`)) m.add(ex, `xd:${below}`, -s.count / made)
-    })
-  }
-
-  // Recovery rows (and the reclaim rows under them) take other rows' outputs to turn them back into
-  // an item the plan uses.
-  const isRecovery = (c: PlanNode) => c.kind === 'reclaim' || !!c.recovers
-  /** The row a recovery row's chain (or a reclaim row's) recovers into. */
-  const joins = (c: PlanNode) => {
-    let a = c
-    while (a.recovers || a.kind === 'reclaim') a = a.parent!
-    return supplierOf(a)
-  }
-  const ownRecovery = (n: PlanNode, c: PlanNode) => isRecovery(c) && joins(c) === n
-  // Per column of a row's output it sends to Knowledge Altars, the item.
-  const altared = new Map<string, string>()
-  // Per pool of a row's output that its own recovery takes from, how much one of its items is
-  // (see the mixed feed below).
-  const leavingPools = new Set<string>()
-
-  for (const n of shape.nodes) {
-    if (n.kind !== 'make') continue
-    const p = n.process!
-    const k = index.get(n)!
-    const x = `x:${k}`
-    m.column(x, {}, CRAFT_COST * Math.max(p.seconds, 1) * (p.product === n.item ? 1 : SIDE_RUN_FACTOR))
-    const fixed = fixedOf(n)
-    if (fixed !== undefined && (!unheld || machineRows.has(n))) {
-      m.row(`h:${k}`, fixed)
-      m.set(x, `h:${k}`, 1)
-    }
-    const floor = floors.get(n.id)
-    if (floor) {
-      m.row(`r:${k}`, floor)
-      m.set(x, `r:${k}`, 1)
-      m.column(`rs:${k}`, { [`r:${k}`]: -1 }, 0)
-    }
-    m.add(x, `b:${k}`, outputOf(p, n.item))
-    for (const o of p.outputs) {
-      if (o.item === n.item || o.item.startsWith('@')) continue
-      const pool = `p:${k}:${o.item}`
-      const out = `ps:${k}:${o.item}`
-      m.row(pool)
-      m.add(x, pool, o.count)
-      // Sent to Knowledge Altars: all of it goes there, none to an overflow target.
-      const altar = toAltar(n, o.item)
-      if (altar) altared.set(out, o.item)
-      const taken = !altar && takerOf.has(o.item)
-      m.column(out, { [pool]: -1, ...(taken && { [`o:${o.item}`]: 1 }) }, SURPLUS_COST)
-      if (taken) overflowing.push({ column: out, item: o.item, from: n })
-      // A recovery row turns leftovers into something the plan uses: what its other outputs overflow
-      // counts as much as a row taking more than it needs (see the passes), so it doesn't trade one
-      // leftover for another unless nothing else can be done.
-      else if (!altar) spills(out, n.recovers ? EXCESS_WEIGHT : 1)
-      // By-products are what a row makes running for what it's used for: those of crafts beyond that
-      // only go to rows running the same process, which would make them the same way (Gentian Nectar
-      // from the Gentian row's nurseries). Rows with a producer of their own make the rest
-      // themselves, rather than a row in another branch running harder and overflowing. Rows held
-      // to their crafts are exempt: their extra machines are built anyway.
-      const extra = `e:${k}:${o.item}`
-      const made = outputOf(p, n.item)
-      const limited = sharing.has(n) && made > 0
-      if (limited) {
-        m.row(extra)
-        m.set(`ex:${k}`, extra, o.count / made)
-        m.set(out, extra, -1)
-        m.column(`es:${k}:${o.item}`, { [extra]: 1 }, 0)
-      }
-      const shared = sharedWith(n, o.item)
-      // Locality: what its own recovery could take leaves it only when that can't.
-      const local = shared.some((c) => ownRecovery(n, c))
-      if (local) {
-        leaves(out)
-        leavingPools.add(pool)
-      }
-      for (const c of shared) {
-        const name = `f:${k}>${index.get(c)}`
-        m.column(name, { [pool]: -1, [`b:${index.get(c)}`]: 1 }, FLOW_COST * (1 + distance(n, c)))
-        if (local && !ownRecovery(n, c)) leaves(name)
-        if (limited && sameRun(n, c)) m.set(name, extra, -1)
-        // Then rows using what's left as it is take it, before other rows' recovery does.
-        if (isRecovery(c) && !ownRecovery(n, c)) spills(name)
-        flows.push({ name, from: n, to: c })
-      }
-    }
-    ingredients(p).forEach((s, j) => {
-      const c = n.children[j]
-      if (c) m.add(x, bal(c), -s.count)
-    })
-  }
-
-  // A target fed back is one more leftover: rows making its item elsewhere in the plan take what it
-  // makes before they run their own recipe (Crude Shard refined from the plan's leftover Sand, the
-  // Quartz crushers making the rest). It makes what it's set to; what they don't take goes out. A
-  // net-surplus target grows to cover the plan's use instead (`pooled`), and rows taking the item
-  // from the bus are covered in the ledger.
-  const fedFrom = new Map<number, string[]>()
-  for (const [i, users] of fedUsers) {
-    const t = targets[i]
-    const row = shape.targetRows[i]!
-    // What it hands on is no more than it makes: its rate, or what the solve sizes it to.
-    const cap = `fbc:${i}`
-    const sized = [`tm:${i}`, `t:${i}`, `ts:${i}`].find((name) => m.hasColumn(name))
-    m.row(cap, sized ? 0 : t.rate)
-    if (sized) m.set(sized, cap, -1)
-    m.column(`fbs:${i}`, { [cap]: 1 }, 0)
-    fedFrom.set(
-      i,
-      users.map((c) => {
-        const name = `fbk:${i}>${index.get(c)}`
-        // Targets in order: the first fed back is taken first, as in the ledger.
-        m.column(name, { [cap]: 1, [`b:${index.get(c)}`]: 1 }, FLOW_COST * (1 + distance(row, c) + 1000 * i))
-        flows.push({ name, from: row, to: c, fed: true })
-        return name
-      }),
-    )
-  }
-
-  // A crucible row's mixed feed: it also refines the by-products of the row making its input as
-  // they come up the belt, a column of crafts (and heat) per item, sharing the row's output, floor
-  // and hold. Rows of those items that take by-products get them first; the crucibles take the rest.
-  const mixes = new Map<PlanNode, { item: string; process: Process; name: string; source: PlanNode }[]>()
-  for (const n of shape.nodes) {
-    if (n.kind !== 'make' || !n.mix?.length) continue
-    const k = index.get(n)!
-    const source = supplierOf(n.children[0])
-    const heat = n.children[n.process!.inputs.findIndex((s) => s.item === HEAT)]
-    const parts = []
-    for (const item of n.mix) {
-      const q = catalog.byId.get(paradoxId(item))
-      const pool = `p:${index.get(source)}:${item}`
-      if (!q || !m.hasRow(pool) || altared.has(`ps:${index.get(source)}:${item}`)) continue
-      const name = `m:${k}:${item}`
-      m.column(name, { [pool]: -q.inputs[0].count, [`b:${k}`]: 1 }, CRAFT_COST * Math.max(q.seconds, 1) + MIX_COST)
-      if (heat) m.add(name, bal(heat), -(q.inputs.find((s) => s.item === HEAT)?.count ?? 0))
-      for (const row of [`h:${k}`, `r:${k}`]) if (m.hasRow(row)) m.set(name, row, 1)
-      if (leavingPools.has(pool)) leaves(name, q.inputs[0].count)
-      parts.push({ item, process: q, name, source })
-    }
-    if (parts.length) mixes.set(n, parts)
-  }
-
-  // Rows no longer held could otherwise run harder to make more of what an overflow target takes:
-  // the rest of the plan overflows no more of it than without the plan's overflow targets.
-  if (held && unheld)
-    for (const item of takerOf.keys()) {
-      const cap = `oc:${item}`
-      for (const o of overflowing) if (o.item === item && !inTaker.has(o.from)) m.set(o.column, cap, 1)
-      const surplus = held.surplus.get(item) ?? 0
-      m.row(cap, surplus * (1 + 1e-6) + 1e-6)
-      m.column(`ocs:${item}`, { [cap]: 1 }, 0)
-    }
 
   const fail = (status: 'infeasible' | 'error', message?: string): PlanResult => ({
     status,
@@ -845,7 +389,7 @@ function solveRound(
   // rows take it before they import or make their item.
   // Each pass is held with `room`: about 10× the LP's feasibility tolerance (see lp.ts), or later
   // passes can find no solution. What they can still shift within that room is noise.
-  const solution = solveStaged(m, [SHORTFALL_PASS, LEAVING_PASS, SPILL_PASS], room)
+  const solution = solveStaged(m, PASSES, room)
   if (solution.status !== 'optimal') return fail(solution.status, solution.message)
   // Items per minute a held pass's room could still move: flows and recovery below it are noise.
   let noise = 0
