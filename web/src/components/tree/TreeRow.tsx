@@ -1,16 +1,16 @@
 import { type CSSProperties, useState, memo } from 'react'
-import { CATALYSTS, coinValue, heightMultiplier, isCauldronTarget, itemName, itemsByKey } from '../../lib/gameData'
+import { coinValue, isCauldronTarget, itemName, itemsByKey } from '../../lib/gameData'
 import { fmt, fmtMachines, wholeMachines } from '../../lib/format'
 import { buildingNameFor, noun } from '../../lib/plural'
 import type { FedOverflow } from '../../lib/money'
 import type { LogisticsCheck } from '../../lib/logistics'
 import { COIN_STACK, itemsPerSlot, onBelt } from '../../lib/machineRate'
-import { MAX_BANK_STACK, clampBankStack, type ProcessCatalog } from '../../lib/processes'
+import { type ProcessCatalog } from '../../lib/processes'
 import { type TreeNode } from '../../lib/tree'
 import { type LoopSourceChoice, type ProducerPick } from '../../lib/choices'
 import { BUS, isTargetRow, parentId, rowItem } from '../../lib/unfold'
 import type { Modifiers } from '../../lib/upgrades'
-import { ItemIcon, ItemLabel, SeedNote } from '../ItemIcon'
+import { ItemLabel, SeedNote } from '../ItemIcon'
 import { AltarDetail } from '../Exp'
 import { Money } from '../Money'
 import { OverflowTargetForm } from '../OverflowTargetForm'
@@ -18,14 +18,12 @@ import { BusDraw, FoldedPick } from '../FuelPick'
 import { CheckIcon } from '../CheckIcon'
 import { ProducerSelect } from '../ProducerSelect'
 import { choosable, reuseInfo } from '../rowPicks'
-import { NumberInput } from '../NumberInput'
 import {
   recovers,
   mergeHint,
   PLAN_ROOT,
   autoBuiltHint,
   FOLDED_VERB,
-  destinationName,
   edgeX,
   bandStyle,
   cardStyle,
@@ -37,6 +35,8 @@ import {
 import { BookmarkIcon, FlowIcon, BoxArrowIcon } from './icons'
 import { OverflowNote } from './OverflowNote'
 import type { LinkFn, TargetSlot } from './types'
+import { RowSettings } from './RowSettings'
+import { ByproductNotes } from './ByproductNotes'
 
 /**
  * One row of the production tree. Drawn again only when its own props change (see `sameRow`): the
@@ -483,96 +483,16 @@ export const TreeRow = memo(function TreeRow({
                 )}
               </div>
             )}
-            {/* A recovery row runs its recipe as it is: it has none of these settings. */}
-            {p?.acceptsCatalysts && node.kind === 'produce' && !node.recovery && (
-              <div className="catalysts" role="group" aria-label="Catalysts">
-                {CATALYSTS.map((c) => {
-                  const on = p.catalysts.includes(c.key)
-                  return (
-                    <button
-                      type="button"
-                      key={c.key}
-                      className={on ? 'catalyst on' : 'catalyst'}
-                      aria-pressed={on}
-                      title={`${itemsByKey.get(c.key)?.name}: ${c.description} (${c.charges.toLocaleString()} charges)`}
-                      onClick={() =>
-                        onCatalysts(
-                          node.id,
-                          on ? p.catalysts.filter((k) => k !== c.key) : [...p.catalysts, c.key],
-                          node.defaultCatalysts,
-                        )
-                      }
-                    >
-                      <ItemIcon item={c.key} size={16} />
-                      {c.effect[0].toUpperCase() + c.effect.slice(1)}
-                    </button>
-                  )
-                })}
-              </div>
-            )}
-            {p?.acceptsHeight && node.kind === 'produce' && !node.recovery && (
-              <label
-                className="build-height"
-                title={`The Height its inspect panel shows. The higher up it's built, the greater its output.`}
-              >
-                Height
-                <NumberInput
-                  min={0}
-                  step={1}
-                  value={p.height}
-                  onValue={(text) => onHeight(node.id, Math.max(0, Math.round(Number(text) || 0)), node.defaultHeight)}
-                  aria-label={`Height the ${p.machine?.name ?? 'machines'} are built at`}
-                />
-                <span className="hint-inline">
-                  ×{heightMultiplier(p.height).toLocaleString(undefined, { maximumFractionDigits: 3 })} output
-                </span>
-              </label>
-            )}
-            {p?.stack !== undefined && node.kind === 'produce' && !node.recovery && (
-              <label
-                className="bank-stack"
-                title={`The Conversion Amount its panel shows: coins in each stack it puts on the belt (1–${MAX_BANK_STACK}). Bigger stacks move more coins per belt.`}
-              >
-                Conversion amount
-                <NumberInput
-                  min={1}
-                  max={MAX_BANK_STACK}
-                  step={1}
-                  value={p.stack}
-                  onValue={(text) => onStack(node.id, clampBankStack(Number(text)), node.defaultStack)}
-                  aria-label={`Coins the ${p.machine?.name ?? 'machines'} output per belt entry`}
-                />
-                <span className="hint-inline">
-                  up to {fmt(p.stack * mods.beltSpeed)}/min per portal
-                </span>
-              </label>
-            )}
-            {node.mixable && node.kind === 'produce' && (
-              <div className="catalysts" role="group" aria-label="Crucible feed">
-                <button
-                  type="button"
-                  className={node.mixed ? 'catalyst on' : 'catalyst'}
-                  aria-pressed={!!node.mixed}
-                  title={`The ${node.mixable.map(itemName).join(' and ')} made below come up the same belt: the crucibles refine them too, each at its own speed, and the machines below run only for what's left`}
-                  onClick={() => onMixedFeed(node.id, !node.mixed, node.defaultMixed)}
-                >
-                  {node.mixable.map((i) => (
-                    <ItemIcon key={i} item={i} size={16} />
-                  ))}
-                  Also refine {node.mixable.map(itemName).join(' and ')}
-                </button>
-              </div>
-            )}
-            {node.mixParts && node.mixParts.filter((m) => m.rate > 0).length > 1 && (
-              <div className="note-line" title="How the crucibles split up, if each item gets crucibles of its own">
-                {node.mixParts.map((m, i) => (
-                  <span key={m.item}>
-                    {i > 0 && ' · '}
-                    <ItemLabel item={m.item} count={m.rate} size={16} /> in {fmtMachines(m.machines)}{' '}
-                    {buildingNameFor(p!.machine!.key, wholeMachines(m.machines))}
-                  </span>
-                ))}
-              </div>
+            {p && (
+              <RowSettings
+                node={node}
+                p={p}
+                mods={mods}
+                onCatalysts={onCatalysts}
+                onHeight={onHeight}
+                onStack={onStack}
+                onMixedFeed={onMixedFeed}
+              />
             )}
             {node.kind === 'byproduct' && <div className="note-line">♻ by-product of {sources}</div>}
             {node.kind !== 'byproduct' && node.fromByproduct > 0 && !node.reusedApart && (
@@ -583,60 +503,15 @@ export const TreeRow = memo(function TreeRow({
             {node.overflow > 0 && node.kind === 'produce' && (
               <OverflowNote item={node.item} amount={node.overflow} fed={fed} {...picking(node.item)} />
             )}
-            {node.byproducts.map((b) => (
-              <div key={b.item} className="note-line">
-                also makes <ItemLabel item={b.item} count={b.count} size={16} /> →{' '}
-                {b.to.map((t, i) => (
-                  <span key={t.id}>
-                    {i > 0 && ', '}
-                    {(b.to.length > 1 || b.overflow > 0) && `${fmt(t.amount)} `}
-                    {link(
-                      node,
-                      // The line for the by-products, where the row taking them shows one.
-                      (n) => n.reusedBy === t.id || (n.id === t.id && !n.reusedApart),
-                      t.direct ? `${itemName(rowItem(t.id))} crucibles` : destinationName(t.id, topName),
-                      `Show the ${t.direct ? 'crucibles refining it' : `${itemsByKey.get(b.item)?.name ?? b.item} row it feeds`}`,
-                    )}
-                  </span>
-                ))}
-                {b.overflow > 0 && (
-                  <>
-                    {b.to.length > 0 && ', '}
-                    <OverflowNote
-                      item={b.item}
-                      amount={b.overflow}
-                      fed={fed}
-                      inline
-                      counted={b.to.length > 0}
-                      {...picking(b.item)}
-                    />
-                  </>
-                )}
-                {b.toAltar && (
-                  <>
-                    {b.to.length > 0 && ', '}
-                    <span className="fed-text">{fmt(b.altar)}/min broken down at Knowledge Altars</span>
-                  </>
-                )}
-                {node.kind === 'produce' && !node.recovery && (b.toAltar || canAltar?.(b.item)) && (
-                  <>
-                    {' · '}
-                    <button
-                      type="button"
-                      className="tree-link"
-                      title={
-                        b.toAltar
-                          ? 'Let the rest of the plan take it again'
-                          : 'Break it down at Knowledge Altars as it comes out: nothing else takes it, so rows using it make their own'
-                      }
-                      onClick={() => onOutputAltar(node.id, b.item, !b.toAltar)}
-                    >
-                      {b.toAltar ? 'Route it instead' : 'Send to Knowledge Altars'}
-                    </button>
-                  </>
-                )}
-              </div>
-            ))}
+            <ByproductNotes
+              node={node}
+              fed={fed}
+              picking={picking}
+              link={link}
+              topName={topName}
+              canAltar={canAltar}
+              onOutputAltar={onOutputAltar}
+            />
             {using && (
               <OverflowTargetForm
                 item={using}
