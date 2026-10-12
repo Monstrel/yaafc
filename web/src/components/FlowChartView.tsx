@@ -307,8 +307,14 @@ export function FlowChartView({ tree, rootId, built, onClose, onShow }: Props) {
                   <div
                     key={loop.boxes.join()}
                     className={`flow-loop${hover?.loop === i ? ' lit' : ''}`}
+                    // Focus highlights it as hovering does, from the keyboard.
+                    tabIndex={0}
+                    role="group"
+                    aria-label={`Loop ${i + 1}`}
                     onPointerEnter={() => setHover({ loop: i })}
                     onPointerLeave={() => setHover(null)}
+                    onFocus={() => setHover({ loop: i })}
+                    onBlur={() => setHover(null)}
                   >
                     <div className="flow-loop-title">
                       <span className="flow-loop-badge">↻{i + 1}</span>
@@ -400,6 +406,9 @@ function Box({
       style={style}
       onPointerEnter={() => onHover(true)}
       onPointerLeave={() => onHover(false)}
+      // Focus on any of its buttons highlights it as hovering does, from the keyboard.
+      onFocus={() => onHover(true)}
+      onBlur={(e) => !e.currentTarget.contains(e.relatedTarget) && onHover(false)}
     >
       <button
         type="button"
