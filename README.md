@@ -41,8 +41,8 @@ Every push to `main` deploys to GitHub Pages. Before pushing, add a section for 
 [CHANGELOG.md](CHANGELOG.md), which the app shows on its Changelog page; `git log origin/main..HEAD`
 lists what's going out. Its format is at the top of the file, and `npm test` checks it.
 
-The deploy doesn't run the tests (the heavier solver tests are too slow on GitHub's runners); a
-pre-push hook runs them on your machine instead. Turn it on once per clone with
+The deploy runs the tests and doesn't publish if any fail. A pre-push hook also runs them on your
+machine, so a failure stops the push before it reaches the deploy. Turn it on once per clone with
 `git config core.hooksPath .githooks`; `git push --no-verify` skips it.
 
 ## Refreshing game data after a game update

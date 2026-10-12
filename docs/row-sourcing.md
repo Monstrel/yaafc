@@ -127,7 +127,7 @@ existing "build separately" grouping.
 - **Self-feeding fertilizer (Fertile Catalyst from a saved cauldron recipe, spread by its own
   nurseries).** Unaffected: the nurseries' Fertile Catalyst is a fertilizer use (rule 4), from
   outside or covered by feeding the target back, as today; the target row still makes it (rule 5).
-  The engine.test.ts "a loop where a saved cauldron recipe makes its own fertilizer" tests should
+  The planner.test.ts "a loop where a saved cauldron recipe makes its own fertilizer" tests should
   pass unchanged.
 - **Recipes that output their own input** (Steel Ingot returns Iron Ingot; Lapis Lazuli returns
   Shattered Crystal). Unaffected: the returned item is the row's own leftover, taken first.
@@ -158,9 +158,9 @@ existing "build separately" grouping.
 
 These change on purpose:
 
-- engine.test.ts "lets a row make its own instead of reusing a by-product, and go back"
+- planner.test.ts "lets a row make its own instead of reusing a by-product, and go back"
   (Impure Copper Powder defaulting to plan inputs).
-- engine.test.ts "takes any row from the bus instead of making it", "lets rows take up to what the
+- planner.test.ts "takes any row from the bus instead of making it", "lets rows take up to what the
   bus carries, and falls short past it", and other per-row bus-pick tests.
 - recovery.test.ts "never runs a row harder to feed another item's recovery" (numbers move under
   rule 1, intent stays).

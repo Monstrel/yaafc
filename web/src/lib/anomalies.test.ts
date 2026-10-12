@@ -13,7 +13,7 @@ const catalog = buildCatalog({ saved: [], machines: {}, mods, fertilizer: 'Basic
 const plan = (partial: Partial<Plan>): Plan => ({ id: 't', name: 't', targets: [], producers: {}, machines: {}, loopFeedback: true, ...partial })
 const anomalies = (p: Plan) => planAnomalies(p, solvePlan(p.autoOrganize ? organize(p, catalog) : p, catalog, mods))
 
-// Eternal Catalysts in the Gold Dust rows under an Eternal Catalyst target (see engine.test.ts).
+// Eternal Catalysts in the Gold Dust rows under an Eternal Catalyst target (see planner.test.ts).
 const gold = '0/Catalyst4/PhilosopherStone/Ruby/GoldDust5/GoldDust3'
 const eternal = (partial: Partial<Plan>) => setRowCatalysts(plan({ targets: [{ item: 'Catalyst4', rate: 1, feedback: true }], ...partial }), gold, ['Catalyst4'])
 

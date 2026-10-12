@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 
@@ -12,6 +13,8 @@ export default defineConfig({
   define: { __BUILD_ID__: JSON.stringify(buildId), __BUILD_TIME__: JSON.stringify(buildTime) },
   // The solver's worker loads HiGHS with a top-level await, which needs an ES module worker.
   worker: { format: 'es' },
+  // The heaviest solver tests take seconds here and several times that on GitHub's runners.
+  test: { testTimeout: 60_000 },
   plugins: [
     react(),
     {
