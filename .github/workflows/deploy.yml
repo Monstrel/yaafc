@@ -10,9 +10,11 @@ permissions:
   pages: write
   id-token: write
 
+# A deploy under way finishes (cancelled partway, it can leave the site half published); deploys
+# queued behind it are skipped for the newest one.
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:
