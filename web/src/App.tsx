@@ -12,9 +12,13 @@ import {
   forgetFolds,
   legacyProgress,
   newId,
+  discardRescued,
+  downloadRescued,
   readBackup,
+  rescuedData,
   useBackup,
   useOutdated,
+  useStorageIssues,
   usePersistentState,
   withoutLegacyProgress,
   type Backup,
@@ -111,6 +115,11 @@ export default function App() {
   useEffect(() => {
     if (outdated) outdatedDialog.current?.showModal()
   }, [outdated])
+  // Data that couldn't be read (a copy is kept until it's discarded), or changes that can't be saved.
+  const issues = useStorageIssues()
+  // Checked as it renders (a few keys): `setDiscarded` draws it again once the copy goes.
+  const [, setDiscarded] = useState(0)
+  const rescued = Object.keys(rescuedData()).length > 0
 
   const plan = plans.find((p) => p.id === activePlanId) ?? plans[0]
   const title = planTitle(plan)
@@ -218,13 +227,13 @@ export default function App() {
       )
       return
     }
+    // Everything is the file's: what it has none of starts over (a plan always has one).
+    const restored = backup.plans.length ? backup.plans : [emptyPlan('My factory')]
     setSaved(backup.savedRecipes)
-    if (backup.myDefaults) setMyDefaults(backup.myDefaults)
-    if (backup.progress) setProgress(backup.progress)
-    if (backup.plans.length) {
-      setPlans(backup.plans)
-      setActivePlanId(backup.plans[0].id)
-    }
+    setMyDefaults(backup.myDefaults ?? {})
+    setProgress(backup.progress ?? { upgrades: {} })
+    setPlans(restored)
+    setActivePlanId(restored[0].id)
     const recipes = backup.savedRecipes.length
     const plansRestored = backup.plans.length
     setStatus(`Restored ${recipes} ${noun(recipes, 'recipe')} and ${plansRestored} ${noun(plansRestored, 'plan')}.`)
@@ -287,6 +296,42 @@ export default function App() {
           />
         </div>
       </header>
+
+      {(rescued || issues.unsaved.length > 0) && (
+        <div className="storage-alerts" role="alert">
+          {issues.unsaved.length > 0 && (
+            <div className="panel warning storage-alert">
+              <span>
+                Your changes can&apos;t be saved in this browser right now (its storage is full or blocked): they&apos;ll
+                be lost when the page closes. Export a backup to keep them.
+              </span>
+              <button type="button" onClick={downloadBackup}>
+                Export
+              </button>
+            </div>
+          )}
+          {rescued && (
+            <div className="panel warning storage-alert">
+              <span>
+                Some of your saved data couldn&apos;t be read, so the calculator started without it. A copy of it was
+                kept: download it to recover what you can, or to send with a bug report.
+              </span>
+              <button type="button" onClick={downloadRescued}>
+                Download the copy
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  discardRescued()
+                  setDiscarded((n) => n + 1)
+                }}
+              >
+                Discard it
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       <dialog ref={importDialog} className="tree-dialog" onClose={() => setPending(null)}>
         {pending && <ImportChoices name={pending.name} backup={pending.backup} onChoose={importFile} />}
@@ -426,6 +471,8 @@ type ImportChoice = 'add' | 'replace' | 'cancel'
 function ImportChoices({ name, backup, onChoose }: { name: string; backup: Backup; onChoose: (how: ImportChoice) => void }) {
   const plans = backup.plans.length
   const recipes = backup.savedRecipes.length
+  // A file with nothing in it can't add anything, and replacing everything with it would only wipe it out.
+  const empty = !plans && !recipes && !Object.keys(backup.myDefaults ?? {}).length
   return (
     <>
       <h3>Import {name}?</h3>
@@ -441,7 +488,7 @@ function ImportChoices({ name, backup, onChoose }: { name: string; backup: Backu
         <button type="button" className="primary" autoFocus onClick={() => onChoose('add')} disabled={!plans && !recipes}>
           Add to mine
         </button>
-        <button type="button" className="danger" onClick={() => onChoose('replace')}>
+        <button type="button" className="danger" onClick={() => onChoose('replace')} disabled={empty}>
           Replace everything
         </button>
         <button type="button" onClick={() => onChoose('cancel')}>

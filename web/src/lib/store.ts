@@ -42,6 +42,71 @@ function writeText(key: string, text: string): boolean {
   }
 }
 
+/** The keys holding the player's data (rather than what a tab is looking at). */
+export const DATA_KEYS = ['plans', 'saved-recipes', 'my-defaults', 'progress'] as const
+const isData = (key: string) => (DATA_KEYS as readonly string[]).includes(key)
+
+/** Where a copy of stored data that couldn't be read is kept, so starting over doesn't lose it. */
+const RESCUED = 'rescued:'
+
+/** Problems keeping the player's data: some couldn't be read (a copy was kept), or can't be saved. */
+export interface StorageIssues {
+  /** Data keys whose stored data couldn't be read, or only in part: a copy of each is kept. */
+  unreadable: string[]
+  /** Data keys whose last change couldn't be saved (storage full or blocked). */
+  unsaved: string[]
+}
+
+/** The problems this tab has had keeping the player's data, as they come and go. */
+class IssueStore {
+  private issues: StorageIssues = { unreadable: [], unsaved: [] }
+  private listeners = new Set<() => void>()
+
+  subscribe = (listener: () => void) => {
+    this.listeners.add(listener)
+    return () => this.listeners.delete(listener)
+  }
+  get = () => this.issues
+
+  /** Notes a key as in a kind of trouble, or out of it. */
+  set(kind: keyof StorageIssues, key: string, on: boolean) {
+    const now = this.issues[kind]
+    if (now.includes(key) === on) return
+    this.issues = { ...this.issues, [kind]: on ? [...now, key] : now.filter((k) => k !== key) }
+    for (const listener of this.listeners) listener()
+  }
+}
+
+export const storageIssues = new IssueStore()
+export const useStorageIssues = () => useSyncExternalStore(storageIssues.subscribe, storageIssues.get)
+
+/**
+ * Keeps a copy of a key's text that couldn't be read (or only in part), before anything is saved over
+ * it: once per text, however many tabs read it.
+ */
+function rescue(key: string, text: string) {
+  try {
+    const kept = Object.keys(localStorage).filter((k) => k.startsWith(PREFIX + RESCUED + key + ':'))
+    if (kept.some((k) => localStorage.getItem(k) === text)) return
+  } catch {
+    return
+  }
+  writeText(`${RESCUED}${key}:${new Date().toISOString()}`, text)
+}
+
+/** Every copy of stored data that couldn't be read, by key (`plans:<when>`). */
+export function rescuedData(): Record<string, string> {
+  try {
+    return Object.fromEntries(
+      Object.keys(localStorage)
+        .filter((k) => k.startsWith(PREFIX + RESCUED))
+        .map((k) => [k.slice(PREFIX.length + RESCUED.length), localStorage.getItem(k) ?? '']),
+    )
+  } catch {
+    return {}
+  }
+}
+
 /** Where the deploy run of the build that last saved the player's data is kept. */
 const BUILD_KEY = 'build-run'
 const storedRun = () => Number(readText(BUILD_KEY)) || 0
@@ -114,9 +179,21 @@ export class StoredValue<T> {
     this.held = null
   }
 
+  /**
+   * The value stored as `text`. The player's data that can't be read, or only in part (a list losing
+   * entries it couldn't make sense of), is copied aside first and noted (see `storageIssues`).
+   */
   private fromText(text: string | null): T {
     const raw = parse(text)
-    return raw === undefined ? this.fresh() : (this.sanitize(raw) ?? this.fresh())
+    const value = raw === undefined ? undefined : this.sanitize(raw)
+    if (text && isData(this.key)) {
+      const lost = value === undefined || (Array.isArray(raw) && Array.isArray(value) && value.length < raw.length)
+      if (lost) {
+        rescue(this.key, text)
+        storageIssues.set('unreadable', this.key, true)
+      }
+    }
+    return value ?? this.fresh()
   }
 
   /** The value to start from. Only a value made from nothing stored needs saving. */
@@ -132,7 +209,9 @@ export class StoredValue<T> {
     if (text === this.held) return true
     if (this.tab.check()) return false
     this.tab.stamp()
-    if (!writeText(this.key, text)) return false
+    const saved = writeText(this.key, text)
+    if (isData(this.key)) storageIssues.set('unsaved', this.key, !saved)
+    if (!saved) return false
     this.stored = this.held = text
     return true
   }
@@ -296,9 +375,25 @@ export function downloadStoredData() {
       plans: readRaw('plans') ?? [],
       progress: readRaw('progress'),
       myDefaults: readRaw('my-defaults'),
+      rescued: rescuedData(),
     },
     'alchemy-calculator-rescue',
   )
+}
+
+/** Downloads the copies kept of stored data that couldn't be read, as they were stored. */
+export function downloadRescued() {
+  downloadJson({ rescued: rescuedData() }, 'alchemy-calculator-unreadable')
+}
+
+/** Drops the copies kept of stored data that couldn't be read. */
+export function discardRescued() {
+  try {
+    for (const key of Object.keys(localStorage)) if (key.startsWith(PREFIX + RESCUED)) localStorage.removeItem(key)
+  } catch {
+    // Storage blocked: nothing to drop.
+  }
+  for (const key of storageIssues.get().unreadable) storageIssues.set('unreadable', key, false)
 }
 
 /** Drops everything the app keeps in storage. */

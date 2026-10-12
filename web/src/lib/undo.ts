@@ -1,6 +1,6 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import { sanitizeMyDefaults, sanitizePlans, sanitizeProgress, sanitizeSavedRecipes } from './sanitize'
-import { newId, storedText } from './store'
+import { DATA_KEYS, newId, storedText } from './store'
 import type { MyDefaults, Plan, Progress, SavedRecipe } from './types'
 
 /** The player's data that undo steps back through. What a tab is looking at (the open plan, say) isn't. */
@@ -141,7 +141,6 @@ export const redo = (h: History, current: Snapshot) => move(h, current, 'redo')
 
 // Kept per tab, through reloads: sessionStorage is the tab's own.
 const SESSION_KEY = 'alchemy-calculator:undo'
-const DATA_KEYS = ['plans', 'saved-recipes', 'my-defaults', 'progress'] as const
 
 /** A short fingerprint of text, to tell whether the stored data is still what the history was kept against. */
 function hash(text: string): string {

@@ -1,20 +1,32 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { StoredValue, TabBuild } from './store'
+import { StoredValue, TabBuild, discardRescued, rescuedData, storageIssues } from './store'
 
 // One browser's localStorage, shared by the "tabs" below; `writes` counts what each test stores.
 let storage: Map<string, string>
 let writes: string[]
+/** Storage refuses every write while set. */
+let full = false
 beforeEach(() => {
   storage = new Map()
+  full = false
   writes = []
-  vi.stubGlobal('localStorage', {
+  const api = {
     getItem: (k: string) => storage.get(k) ?? null,
     setItem: (k: string, v: string) => {
+      if (full) throw new Error('QuotaExceededError')
       writes.push(k)
       storage.set(k, v)
     },
     removeItem: (k: string) => storage.delete(k),
-  })
+  }
+  // Like a browser's: its keys are what it stores.
+  vi.stubGlobal(
+    'localStorage',
+    new Proxy(api, {
+      ownKeys: () => [...storage.keys()],
+      getOwnPropertyDescriptor: (_, k) => (storage.has(k as string) ? { value: storage.get(k as string), enumerable: true, configurable: true } : undefined),
+    }),
+  )
 })
 afterEach(() => vi.unstubAllGlobals())
 
@@ -102,5 +114,52 @@ describe('sharing stored data between tabs', () => {
     const newer = tab(new TabBuild(6))
     newer.value.save({ a: 1, b: 2 })
     expect(storage.get('alchemy-calculator:build-run')).toBe('6')
+  })
+})
+
+describe("stored data that can't be read or saved", () => {
+  const PLANS = 'alchemy-calculator:plans'
+  // Like sanitizePlans: a list of what it can make sense of, undefined when that's nothing.
+  const sanitize = (v: unknown): number[] | undefined => {
+    if (!Array.isArray(v)) return undefined
+    const kept = v.filter((x) => typeof x === 'number')
+    return kept.length ? kept : undefined
+  }
+  const plans = () => new StoredValue<number[]>('plans', () => [], sanitize, new TabBuild(5))
+  afterEach(() => discardRescued())
+
+  it("keeps a copy of data it can't read before anything is saved over it, once", () => {
+    storage.set(PLANS, '[1, 2, {broken')
+    expect(plans().load()).toEqual([])
+    expect(Object.values(rescuedData())).toEqual(['[1, 2, {broken'])
+    expect(storageIssues.get().unreadable).toEqual(['plans'])
+    plans().load()
+    expect(Object.keys(rescuedData())).toHaveLength(1)
+  })
+
+  it('keeps a copy of a list it can read only some of', () => {
+    storage.set(PLANS, JSON.stringify([1, 'two', 3]))
+    expect(plans().load()).toEqual([1, 3])
+    expect(Object.values(rescuedData())).toEqual(['[1,"two",3]'])
+  })
+
+  it("leaves data it reads whole alone, and data that isn't the player's", () => {
+    storage.set(PLANS, JSON.stringify([1, 2]))
+    plans().load()
+    storage.set('alchemy-calculator:planner-side', '{broken')
+    new StoredValue<boolean>('planner-side', () => true, () => undefined, new TabBuild(5)).load()
+    expect(rescuedData()).toEqual({})
+    expect(storageIssues.get().unreadable).toEqual([])
+  })
+
+  it("says when a change can't be saved, until one can", () => {
+    const value = plans()
+    value.load()
+    full = true
+    expect(value.save([1])).toBe(false)
+    expect(storageIssues.get().unsaved).toEqual(['plans'])
+    full = false
+    expect(value.save([1, 2])).toBe(true)
+    expect(storageIssues.get().unsaved).toEqual([])
   })
 })

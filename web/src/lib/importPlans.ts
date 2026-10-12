@@ -46,8 +46,14 @@ export function mergeBackup(mine: { saved: SavedRecipe[]; plans: Plan[] }, backu
   }
   const saved = [...mine.saved, ...addedRecipes]
 
-  const remap = (producer: string) =>
-    producer.startsWith(SAVED) ? SAVED + (ids.get(producer.slice(SAVED.length)) ?? producer.slice(SAVED.length)) : producer
+  const mineIds = new Set(mine.saved.map((s) => s.id))
+  const remap = (producer: string) => {
+    if (!producer.startsWith(SAVED)) return producer
+    const id = producer.slice(SAVED.length)
+    // A recipe the file doesn't include stays missing (its rows fall back to their default), never
+    // one of the player's own that happens to share its id.
+    return SAVED + (ids.get(id) ?? (mineIds.has(id) ? `missing-${id}` : id))
+  }
   const defaults: MyDefaults = Object.fromEntries(
     Object.entries(backup.myDefaults ?? {}).map(([item, d]) => [item, { ...d, producer: remap(d.producer) }]),
   )

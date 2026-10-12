@@ -136,6 +136,14 @@ describe('adding a backup to your own plans', () => {
     expect(merged.plans.map((x) => x.id)).toEqual(['p', p.id])
   })
 
+  it("never points the file's plans at a recipe of yours that only shares an id with one it doesn't include", () => {
+    const mine = { saved: [recipe('a', one.inputs)], plans: [] }
+    const theirs = backupOf({ plans: [plan({ producers: { Catalyst2: 'cauldron:a' }, branches: { '0/Catalyst2': { producer: 'cauldron:a' } } })] })
+    const [added] = mergeBackup(mine, theirs, newId).added
+    expect(added.producers.Catalyst2).not.toBe('cauldron:a')
+    expect(added.branches!['0/Catalyst2'].producer).not.toBe('cauldron:a')
+  })
+
   it("makes the file's plans the way they were exported, without taking on its defaults", () => {
     const theirs = backupOf({
       plans: [plan({ targets: [{ item: 'Coke', rate: 10 }, { item: 'Salt', rate: 10 }] })],
