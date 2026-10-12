@@ -465,7 +465,9 @@ class PlanLpBuilder {
         m.column(lp.surplus(k), { [b]: -1, ...(taken && { [lp.overflow(s.item)]: 1 }) }, SURPLUS_COST)
         if (taken) this.overflowing.push({ column: lp.surplus(k), item: s.item, from: s })
         // A row taking more than it needs counts many times over, so no row runs harder to take more.
-        else this.spills(lp.surplus(k), EXCESS_WEIGHT)
+        // What a row rounded up makes beyond that is what its whole machines make: it overflows by design
+        // (counted as spilling, other rows grew to take it, and were rounded up in turn).
+        else if (!floors.has(s.id)) this.spills(lp.surplus(k), EXCESS_WEIGHT)
       }
       // Nothing makes it and the plan doesn't take it in: what other rows leave of it, else a shortfall.
       if (s.unsupplied) this.deficit(lp.deficit(k), { [b]: 1 }, this.deficitCost(s))
@@ -638,8 +640,8 @@ class PlanLpBuilder {
       if (taken) this.overflowing.push({ column: out, item: o.item, from: n })
       // A recovery row turns leftovers into something the plan uses: what its other outputs overflow
       // counts as much as a row taking more than it needs, so it doesn't trade one leftover for
-      // another unless nothing else can be done.
-      else if (!altar) this.spills(out, n.recovers ? EXCESS_WEIGHT : 1)
+      // another unless nothing else can be done. A row rounded up overflows by design (see `rowBalances`).
+      else if (!altar && !floors.has(n.id)) this.spills(out, n.recovers ? EXCESS_WEIGHT : 1)
       // By-products are what a row makes running for what it's used for: those of crafts beyond that
       // only go to rows running the same process, which would make them the same way (Gentian Nectar
       // from the Gentian row's nurseries). Rows with a producer of their own make the rest

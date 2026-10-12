@@ -171,6 +171,18 @@ describe('overflow targets', () => {
     expect(surplus(apart, 'Shard1')).toBe(0)
   })
 
+  it('has its output taken first however far down the targets it is', () => {
+    // Taking a fed-back target's output is priced by its place, but making the item instead costs its
+    // whole chain, down to what the plan takes in: a target 50 places down is still taken first.
+    for (const k of [0, 50]) {
+      const fillers = Array.from({ length: k }, () => ({ item: 'Salt', rate: 1 }))
+      const quartz = plan({ targets: [{ item: 'GoldDust3', rate: 3 }, ...fillers, { item: 'Shard1', rate: 2 }], producers: { Shard1: 'recipe:Shard1_Alt' } })
+      const r = solvePlan(setTargetFeedback(quartz, k + 1, true), catalog, mods)
+      expectBalanced(r)
+      expect(r.targets[k + 1].fedIn).toBeCloseTo(2)
+    }
+  })
+
   describe('fed back into a plan sharing by-products between chains', () => {
     // A player's Sol plan: its Perfect Diamond cauldrons take Gold Dust built separately, whose
     // Athanors share their by-products with the other Gold Dust chains (Ruby, Sapphire, Philosopher's

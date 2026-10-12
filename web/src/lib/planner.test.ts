@@ -1043,27 +1043,30 @@ describe('rounding rows up to whole machines', () => {
     expect(linen).toBeCloseTo(Math.round(linen))
   })
 
-  // Every row of a big plan rounded up: each round grows the rows below, and some rounds have no solution.
-  const everyRow = (rate: number) => {
-    const sol = plan({ targets: [{ item: 'Sol', rate }] })
+  // Every row of a plan rounded up.
+  const everyRow = (item: string, rate: number) => {
+    const p = plan({ targets: [{ item, rate }] })
     const ids: string[] = []
     const visit = (n: TreeNode) => {
       if (n.kind === 'produce') ids.push(n.id)
       n.children.forEach(visit)
     }
-    solvePlan(sol, catalog, mods).tree.forEach(visit)
-    return { ...sol, roundUp: ids }
+    solvePlan(p, catalog, mods).tree.forEach(visit)
+    return { ...p, roundUp: ids }
   }
 
-  it("keeps the last solve that worked when rounding more rows up has no solution, and says so", () => {
-    const r = solvePlan(everyRow(0.25), catalog, mods)
-    expect(r.status).toBe('ok')
-    expect(r.notice).toMatch(/Not every row rounded up/)
+  it("lets the extra output of rows rounded up overflow, rather than other rows growing to take it", () => {
+    // Steam boilers rounded up make far more than 2/min: it overflows, and the rows below (each
+    // rounded up too) settle, with no more room for noise than any plan.
+    const r = solvePlan(everyRow('Steam', 2), catalog, mods)
     expectBalanced(r)
+    expect(r.notice).toBeUndefined()
+    expect(r.noise).toBeLessThan(1e-6)
   })
 
   it("says so when rounding rows up doesn't settle", () => {
-    const r = solvePlan(everyRow(2), catalog, mods)
+    // Each round of Sol's rows rounded up grows the rows below them.
+    const r = solvePlan(everyRow('Sol', 2), catalog, mods)
     expect(r.status).toBe('ok')
     expect(r.notice).toMatch(/still use part of one/)
   })
