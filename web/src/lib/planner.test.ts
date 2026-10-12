@@ -530,11 +530,13 @@ describe('heat and nutrients as rows', () => {
     // Another setting for the bank, then back to the bus: as it was.
     expect(heatNetworks(solvePlan(setNetworkSource(banked, catalog, steam[0], 'boiler:High'), catalog, mods).tree).find((n) => n.fuel === 'Steam')!.source)
       .toMatchObject({ kind: 'row', row: { producer: 'boiler:High' } })
-    const back = setNetworkSource(banked, catalog, steam[0], BUS)
+    // The bank, gathering nothing now, goes with its pick as the planner prunes the plan.
+    const unbanked = setNetworkSource(banked, catalog, steam[0], BUS)
+    const back = pruneChoices(unbanked, catalog) ?? unbanked
+    expect(back.separate ?? []).toEqual([])
     const again = heatNetworks(solvePlan(back, catalog, mods).tree)
     expect(again).toHaveLength(1)
     expect(again[0]).toMatchObject({ key: 'bus:Steam', uses: { length: bus.uses.length } })
-    expect(pruneChoices(back, catalog)?.separate ?? back.separate ?? []).toEqual([])
   })
 
   it('switches what a whole network burns', () => {

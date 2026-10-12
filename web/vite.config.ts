@@ -20,7 +20,7 @@ export default defineConfig({
   // The solver's worker loads HiGHS with a top-level await, which needs an ES module worker.
   worker: { format: 'es' },
   // The heaviest solver tests take seconds here and several times that on GitHub's runners.
-  test: { testTimeout: 60_000 },
+  test: { testTimeout: 60_000, setupFiles: ['./src/test/rowsExist.ts'] },
   plugins: [
     react(),
     {
