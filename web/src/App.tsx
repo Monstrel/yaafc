@@ -14,6 +14,7 @@ import {
   newId,
   readBackup,
   useBackup,
+  useOutdated,
   usePersistentState,
   withoutLegacyProgress,
   type Backup,
@@ -104,6 +105,12 @@ export default function App() {
   const fileInput = useRef<HTMLInputElement>(null)
   const downloadBackup = useBackup(saved, plans, progress, myDefaults)
   const updateAvailable = useUpdateAvailable()
+  // A newer version saved the player's data: this tab can't save any more, so nothing can be changed here.
+  const outdated = useOutdated()
+  const outdatedDialog = useRef<HTMLDialogElement>(null)
+  useEffect(() => {
+    if (outdated) outdatedDialog.current?.showModal()
+  }, [outdated])
 
   const plan = plans.find((p) => p.id === activePlanId) ?? plans[0]
   const title = planTitle(plan)
@@ -285,7 +292,20 @@ export default function App() {
         {pending && <ImportChoices name={pending.name} backup={pending.backup} onChoose={importFile} />}
       </dialog>
 
-      {updateAvailable && (
+      <dialog ref={outdatedDialog} className="tree-dialog" onCancel={(e) => e.preventDefault()}>
+        <h3>Reload to keep working</h3>
+        <p>
+          A newer version of the calculator has saved your data in another tab. This tab runs an older version, which
+          could lose what the newer one added, so it can&apos;t make changes until it&apos;s reloaded.
+        </p>
+        <div className="tree-dialog-actions">
+          <button type="button" className="primary" autoFocus onClick={() => location.reload()}>
+            Reload
+          </button>
+        </div>
+      </dialog>
+
+      {!outdated && updateAvailable && (
         <div className="toast update-banner" role="status">
           <span>A new version of the calculator is available.</span>
           <button onClick={() => location.reload()}>Reload</button>

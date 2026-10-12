@@ -6,11 +6,17 @@ import { defineConfig } from 'vite'
 const buildId = process.env.GITHUB_SHA ?? `local-${Date.now()}`
 // Shown in the footer with the build id, so a bug report can be matched to a deploy.
 const buildTime = new Date().toISOString().slice(0, 16) + 'Z'
+// Deploys in order, so a tab can tell when a newer build saved the player's data (see src/lib/store.ts).
+const buildRun = Number(process.env.GITHUB_RUN_NUMBER) || 0
 
 // https://vite.dev/config/
 export default defineConfig({
   base: './',
-  define: { __BUILD_ID__: JSON.stringify(buildId), __BUILD_TIME__: JSON.stringify(buildTime) },
+  define: {
+    __BUILD_ID__: JSON.stringify(buildId),
+    __BUILD_TIME__: JSON.stringify(buildTime),
+    __BUILD_RUN__: JSON.stringify(buildRun),
+  },
   // The solver's worker loads HiGHS with a top-level await, which needs an ES module worker.
   worker: { format: 'es' },
   // The heaviest solver tests take seconds here and several times that on GitHub's runners.

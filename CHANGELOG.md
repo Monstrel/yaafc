@@ -8,11 +8,15 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
-## 2026-10-12T20:00Z
+## 2026-10-12T20:10Z
 
 - A by-product sent to Knowledge Altars now stays with its row when targets are reordered or
   removed, or a row is built separately or merged back, instead of being dropped or moving to a
   different row.
+- With the calculator open in more than one tab, a change in one no longer clears undo in the
+  others unless it actually changed something.
+- A tab still running an older version of the calculator now asks you to reload once a newer
+  version has saved your data, instead of saving over it and losing what the newer version added.
 
 ## 2026-10-11T23:08Z
 

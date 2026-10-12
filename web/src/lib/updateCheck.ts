@@ -2,8 +2,12 @@ import { useEffect, useState } from 'react'
 
 declare const __BUILD_ID__: string
 declare const __BUILD_TIME__: string
+declare const __BUILD_RUN__: number
 
 const isLocal = __BUILD_ID__.startsWith('local-')
+
+/** The deploy run that built this, counting up with each deploy (0 for a local build). */
+export const buildRun = __BUILD_RUN__
 
 /** This build as the footer shows it: a deployed build names its commit, a local one just says so. */
 export const buildInfo = {

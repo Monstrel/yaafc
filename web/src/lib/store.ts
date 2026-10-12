@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react'
+import { useCallback, useEffect, useEffectEvent, useState, useSyncExternalStore } from 'react'
 import { sanitizeMyDefaults, sanitizePlans, sanitizeProgress, sanitizeSavedRecipes } from './sanitize'
 import { blankTarget, type MyDefaults, type Plan, type Progress, type SavedRecipe } from './types'
+import { buildRun } from './updateCheck'
 
 const PREFIX = 'alchemy-calculator:'
 
@@ -40,6 +41,114 @@ function writeText(key: string, text: string): boolean {
   }
 }
 
+/** Where the deploy run of the build that last saved the player's data is kept. */
+const BUILD_KEY = 'build-run'
+const storedRun = () => Number(readText(BUILD_KEY)) || 0
+
+/**
+ * Which build a tab runs, against the one that last saved the player's data. A tab whose build is
+ * older than that one is outdated: it would drop what the newer build added when it saved (its
+ * sanitize doesn't know it), so it stops saving and taking in changes until it's reloaded.
+ */
+export class TabBuild {
+  readonly run: number
+  outdated = false
+  private listeners = new Set<() => void>()
+
+  constructor(run: number) {
+    this.run = run
+    this.check()
+  }
+
+  subscribe = (listener: () => void) => {
+    this.listeners.add(listener)
+    return () => this.listeners.delete(listener)
+  }
+  get = () => this.outdated
+
+  /** Whether the tab is outdated, finding out if a newer build has saved since it last looked. */
+  check(): boolean {
+    if (!this.outdated && storedRun() > this.run) {
+      this.outdated = true
+      for (const listener of this.listeners) listener()
+    }
+    return this.outdated
+  }
+
+  /** Marks the stored data as saved by this build, ahead of the data itself, so other tabs see it first. */
+  stamp() {
+    if (storedRun() !== this.run) writeText(BUILD_KEY, String(this.run))
+  }
+}
+
+/** This tab's build. */
+export const thisTab = new TabBuild(buildRun)
+
+/** Whether this tab runs an older build than the one that last saved the player's data. */
+export const useOutdated = () => useSyncExternalStore(thisTab.subscribe, thisTab.get)
+
+/**
+ * A value kept in localStorage under a key, as one tab holds it. It tells what's stored (the
+ * text last read or written) from what the tab holds (the sanitized value, as text): the two
+ * differ whenever sanitize changes what it reads, and only a change to what the tab holds is
+ * saved, so a value taken from another tab is never saved straight back.
+ */
+export class StoredValue<T> {
+  /** The text last read from or written to storage. */
+  private stored: string | null
+  /** What the tab holds, as text; null when it hasn't been saved (nothing was stored). */
+  private held: string | null
+
+  private key: string
+  private fresh: () => T
+  private sanitize: (v: unknown) => T | undefined
+  private tab: TabBuild
+
+  constructor(key: string, fresh: () => T, sanitize: (v: unknown) => T | undefined, tab: TabBuild = thisTab) {
+    this.key = key
+    this.fresh = fresh
+    this.sanitize = sanitize
+    this.tab = tab
+    this.stored = readText(key)
+    this.held = null
+  }
+
+  private fromText(text: string | null): T {
+    const raw = parse(text)
+    return raw === undefined ? this.fresh() : (this.sanitize(raw) ?? this.fresh())
+  }
+
+  /** The value to start from. Only a value made from nothing stored needs saving. */
+  load(): T {
+    const value = this.fromText(this.stored)
+    if (this.stored !== null) this.held = JSON.stringify(value)
+    return value
+  }
+
+  /** Saves the value if it changed (false when it can't be: storage full or blocked, or the tab outdated). */
+  save(value: T): boolean {
+    const text = JSON.stringify(value)
+    if (text === this.held) return true
+    if (this.tab.check()) return false
+    this.tab.stamp()
+    if (!writeText(this.key, text)) return false
+    this.stored = this.held = text
+    return true
+  }
+
+  /** What another tab stored since, if anything (undefined when nothing changed, or the tab is outdated). */
+  pull(): { value: T } | undefined {
+    if (this.tab.check()) return undefined
+    const text = readText(this.key)
+    if (text === this.stored) return undefined
+    const value = this.fromText(text)
+    // Dropped elsewhere (a deleted plan's folds, say) included: start over without storing it again.
+    this.stored = text
+    this.held = JSON.stringify(value)
+    return { value }
+  }
+}
+
 /**
  * useState that survives reloads via localStorage. `sanitize` checks what was stored (it may be
  * from an older version, or edited by hand) and returns undefined to start from `initial` instead.
@@ -48,7 +157,8 @@ function writeText(key: string, text: string): boolean {
  * happens and again whenever a tab comes back into view. `perTab` values (what a tab is looking
  * at, rather than the player's data) are only read when the tab opens, so each tab keeps its own
  * while the last one changed is what a new tab starts from. `onPull` hears of a value taken from
- * another tab, just before it is.
+ * another tab, just before it is. A tab running an older build than the one that last saved
+ * stops saving and taking in changes (see `TabBuild`).
  */
 export function usePersistentState<T>(
   key: string,
@@ -56,34 +166,27 @@ export function usePersistentState<T>(
   sanitize: (v: unknown) => T | undefined,
   { perTab = false, onPull }: { perTab?: boolean; onPull?: () => void } = {},
 ) {
-  const fresh = () => (typeof initial === 'function' ? (initial as () => T)() : initial)
-  const fromText = (text: string | null) => {
-    const raw = parse(text)
-    return raw === undefined ? fresh() : (sanitize(raw) ?? fresh())
-  }
-  // The stored text this tab's value came from or was last saved as, so a value taken from
-  // another tab isn't saved straight back, and a re-read that finds nothing new changes nothing.
-  const synced = useRef<string | null>(null)
-  const [value, setValue] = useState<T>(() => fromText(readText(key)))
+  const [stored] = useState(
+    () => new StoredValue(key, () => (typeof initial === 'function' ? (initial as () => T)() : initial), sanitize),
+  )
+  const [value, setValue] = useState<T>(() => stored.load())
 
   useEffect(() => {
-    const text = JSON.stringify(value)
-    if (text !== synced.current && writeText(key, text)) synced.current = text
-  }, [key, value])
+    stored.save(value)
+  }, [stored, value])
 
   const pull = useEffectEvent(() => {
-    const text = readText(key)
-    if (text === synced.current) return
-    const next = fromText(text)
-    // Dropped elsewhere (a deleted plan's folds, say): start over without storing it again.
-    synced.current = text ?? JSON.stringify(next)
+    const next = stored.pull()
+    if (!next) return
     onPull?.()
-    setValue(next)
+    setValue(next.value)
   })
   useEffect(() => {
     if (perTab) return
     const onStorage = (e: StorageEvent) => {
-      if (e.storageArea === localStorage && (e.key === null || e.key === PREFIX + key)) pull()
+      if (e.storageArea !== localStorage) return
+      if (e.key === PREFIX + BUILD_KEY) thisTab.check()
+      else if (e.key === null || e.key === PREFIX + key) pull()
     }
     // Storage events can be missed by a tab the browser froze or kept for back/forward.
     const onVisible = () => {
@@ -116,6 +219,8 @@ export const foldKey = (planId: string) => `tree-collapsed:${planId}`
 
 /** Drops the folded rows of plans other than `keep` (plans deleted, and past undoing). */
 export function forgetFolds(keep: Set<string>) {
+  // An outdated tab may not know of plans a newer build's tabs made.
+  if (thisTab.check()) return
   const fold = PREFIX + foldKey('')
   try {
     for (const key of Object.keys(localStorage)) {
