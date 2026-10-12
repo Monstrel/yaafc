@@ -246,6 +246,8 @@ describe('overflow targets', () => {
       expectBalanced(fed)
       expect(fed.targets[1]).toMatchObject({ rate: expect.closeTo(made), fedIn: expect.closeTo(made) })
       expect(overflowing(fed)).toEqual(overflowing(out))
+      // Held to what the plan solved without the target (not to the amounts shown), nothing falls short.
+      for (const r of [out, fed]) expect(r.balances.filter((b) => b.deficit > 0)).toEqual([])
     })
 
     it("doesn't run the rows it frees harder to make more of what it takes", () => {

@@ -10,7 +10,18 @@ import type { Plan } from './types'
 import { absorbers, supplyAhead } from './ledger'
 import { consumedBy, suppliedBy, unfold, type PlanShape } from './unfold'
 import type { Modifiers } from './upgrades'
-import { LEAVING_PASS, PASSES, SHORTFALL_PASS, SPILL_PASS, buildPlanLp, targetRoles, type Absorbing, type Baseline } from './solverModel'
+import {
+  LEAVING_PASS,
+  PASSES,
+  SHORTFALL_PASS,
+  SPILL_PASS,
+  buildPlanLp,
+  lp,
+  targetRoles,
+  type Absorbing,
+  type Baseline,
+  type PlanLp,
+} from './solverModel'
 import { Tolerance, readSolution } from './solverResult'
 
 export interface ProcessRun {
@@ -249,19 +260,32 @@ function baselineCrafts(
   room: number,
 ): Baseline {
   const crafts = new Map<string, number>()
-  const overflow = new Map<string, number>()
-  const visit = (n: TreeNode) => {
-    if (n.run) crafts.set(n.id, n.run.craftsPerMinute)
-    overflow.set(n.id, n.overflow)
-    n.children.forEach(visit)
+  const overflow = new Map<string, Map<string, number>>()
+  const { solved } = solveRoundWith(plan, catalog, mods, absorbing, floors, { sizing: false, room })
+  if (!solved) return { crafts, overflow }
+  // As the LP solved it, not as the tree shows it: what's held must be what the solve could do.
+  const { model, values } = solved
+  const v = (name: string) => Tolerance.value(values.get(name) ?? 0)
+  for (const [n, k] of model.index) {
+    if (n.kind !== 'make') continue
+    crafts.set(n.id, v(lp.crafts(k)))
+    const out = new Map<string, number>()
+    if (model.m.hasColumn(lp.surplus(k))) out.set(n.item, v(lp.surplus(k)))
+    for (const o of n.process!.outputs)
+      if (model.m.hasColumn(lp.poolSurplus(k, o.item)) && !model.altared.has(lp.poolSurplus(k, o.item)))
+        out.set(o.item, v(lp.poolSurplus(k, o.item)))
+    overflow.set(n.id, out)
   }
-  const result = solveRound(plan, catalog, mods, absorbing, floors, { sizing: false, room })
-  result.tree.forEach(visit)
-  return { crafts, overflow, surplus: new Map(result.balances.map((b) => [b.item, b.surplus])) }
+  return { crafts, overflow }
 }
 
 /** Solves the plan once as it's laid out (see `buildPlanLp` for the model, `PASSES` for how). */
-function solveRound(
+function solveRound(...args: Parameters<typeof solveRoundWith>): PlanResult {
+  return solveRoundWith(...args).result
+}
+
+/** `solveRound`, with the LP it solved and its values when it solved. */
+function solveRoundWith(
   plan: Plan,
   catalog: ProcessCatalog,
   mods: Modifiers,
@@ -276,7 +300,7 @@ function solveRound(
     /** Room each priority pass is held with, relative to what it reached and absolute. */
     room: number
   },
-): PlanResult {
+): { result: PlanResult; solved?: { model: PlanLp; values: Map<string, number> } } {
   const shape = unfold(plan, catalog)
   const targets = resolveTargets(plan, shape, mods)
   const roles = targetRoles(plan, shape, targets, mods, sizing)
@@ -299,12 +323,12 @@ function solveRound(
   // Each pass is held with `room`: about 10× the LP's feasibility tolerance (see lp.ts), or later
   // passes can find no solution. What they can still shift within that room is noise.
   const solution = solveStaged(model.m, PASSES, room)
-  if (solution.status !== 'optimal') return fail(solution.status, solution.message)
+  if (solution.status !== 'optimal') return { result: fail(solution.status, solution.message) }
   // Items per minute a held pass's room could still move (flows and recovery below it are noise),
   // and of shortfall the shortfall pass's room could (its weights price them).
   let noise = 0
   for (const pass of [LEAVING_PASS, SPILL_PASS]) noise += solution.held.get(pass)?.room ?? 0
   const shortfall = solution.held.get(SHORTFALL_PASS)
   const tolerance = new Tolerance(noise, shortfall ? shortfall.room / shortfall.minWeight : 0)
-  return readSolution({ plan, mods, shape, targets, roles, model, values: solution.values, tolerance })
+  return { result: readSolution({ plan, mods, shape, targets, roles, model, values: solution.values, tolerance }), solved: { model, values: solution.values } }
 }

@@ -135,14 +135,12 @@ export interface Absorbing {
   ahead: number
 }
 
-/** How each row (by id) runs without the plan's overflow and supply targets. */
+/** How each row (by id) runs without the plan's overflow and supply targets, as the LP solved it. */
 export interface Baseline {
   /** Crafts per minute. */
   crafts: Map<string, number>
-  /** Items per minute of its own item it makes that nothing uses. */
-  overflow: Map<string, number>
-  /** Per item, items per minute the plan makes of it that nothing uses. */
-  surplus: Map<string, number>
+  /** Per item, items per minute it overflows of it: its own item, and side outputs nothing takes. */
+  overflow: Map<string, Map<string, number>>
 }
 
 /** The root row of a row's tree. */
@@ -522,7 +520,7 @@ class PlanLpBuilder {
     for (const n of this.supplies) {
       const k = this.k(n)
       if (n.kind !== 'make' || roles.inTaker.has(n) || this.fixedOf(n) !== undefined || !m.hasColumn(lp.surplus(k))) continue
-      m.row(lp.surplusCap(k), held.overflow.get(n.id) ?? 0)
+      m.row(lp.surplusCap(k), held.overflow.get(n.id)?.get(n.item) ?? 0)
       m.set(lp.surplus(k), lp.surplusCap(k), 1)
       m.column(lp.surplusCapSlack(k), { [lp.surplusCap(k)]: 1 }, 0)
     }
@@ -741,7 +739,7 @@ class PlanLpBuilder {
 
   /**
    * Rows no longer held could otherwise run harder to make more of what an overflow target takes:
-   * the rest of the plan overflows no more of it than without the plan's overflow targets.
+   * the rest of the plan's rows overflow no more of it than they do without the plan's overflow targets.
    */
   private overflowCaps() {
     const { m } = this
@@ -749,8 +747,12 @@ class PlanLpBuilder {
     if (!held || !this.unheld) return
     for (const item of roles.takerOf.keys()) {
       const cap = lp.overflowCap(item)
-      for (const o of this.overflowing) if (o.item === item && !roles.inTaker.has(o.from)) m.set(o.column, cap, 1)
-      const surplus = held.surplus.get(item) ?? 0
+      let surplus = 0
+      for (const o of this.overflowing)
+        if (o.item === item && !roles.inTaker.has(o.from)) {
+          m.set(o.column, cap, 1)
+          surplus += held.overflow.get(o.from.id)?.get(item) ?? 0
+        }
       m.row(cap, surplus * (1 + 1e-6) + 1e-6)
       m.column(lp.overflowCapSlack(item), { [cap]: 1 }, 0)
     }
