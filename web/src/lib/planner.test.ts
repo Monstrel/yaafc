@@ -55,8 +55,9 @@ import {
 } from './choices'
 import { sanitizePlans } from './sanitize'
 import { dropUnits, setUnits, unitChoices, unitScales, wholePerCopy } from './units'
-import { BOILER_HEAT, BUS, resolveChoice, unfold, type PlanNode } from './unfold'
-import { organize } from './separateAll'
+import { BOILER_HEAT, BUS, isInput, resolveChoice, unfold, type PlanNode } from './unfold'
+import { canSeparateShared, organize } from './separateAll'
+import { separationsOf } from './separate'
 import { BOILER_SETTINGS, STEAM_HEAT } from './steamBoiler'
 import type { MyDefaults, Plan, SavedRecipe } from './types'
 import { modifiers } from './upgrades'
@@ -171,6 +172,21 @@ describe('producers per branch', () => {
 
   // Two targets of Coke: a row each.
   const coke = plan({ targets: [{ item: 'Coke', rate: 10 }, { item: 'Coke', rate: 10 }] })
+
+  it('keeps the picks of rows burning or recovering an item when its other rows change', () => {
+    const own = {
+      '0/Steel/@heat/Coal': { producer: 'recipe:Coal' },
+      '0/Steel/Iron/recover:Coal@recipe:R': { producer: 'recipe:R2' },
+    }
+    const picked = plan({ branches: { ...own, '0/Steel/Iron/Coal': { producer: 'recipe:Coal_Alt' } } })
+    // Taken in on an ingredient row: taken in everywhere, but the fuel and recovery rows keep theirs.
+    const taken = chooseProducer(picked, catalog, { item: 'Coal', producer: BUS, row: '0/Steel/Iron/Coal' })
+    expect(taken.producers.Coal).toBe(BUS)
+    expect(taken.branches).toEqual(own)
+    // A pick on a row above them replaces the picks of its item's rows below, not theirs.
+    const above = chooseProducer(plan({ branches: own }), catalog, { item: 'Coal', producer: 'recipe:Coal', row: '0/Steel', everywhere: false })
+    expect(above.branches).toMatchObject(own)
+  })
 
   it('applies a pick to its own branch only', () => {
     const p = chooseProducer(coke, catalog, { item: 'Coke', producer: 'recipe:Coke_Alt', row: '0/Coke' })
@@ -974,6 +990,17 @@ describe("the bus's capped supply", () => {
     expect(fc(flax).result.targets[2].made).toBeGreaterThan(0)
   })
 
+  it("never gathers the plan's other rows of its item into a supply target's row when organizing", () => {
+    // Every Flax nursery on Fertile Catalyst, the supply target's included: set up alike.
+    const fertile = buildCatalog({ saved: [], machines: {}, mods, fertilizer: 'Catalyst2' })
+    const bandages = plan({ targets: [{ item: 'Bandage', rate: 10 }], producers: { [NUTRIENTS]: 'fert:Catalyst2' } })
+    const flax = addSupplyTarget(setBusSupply(bandages, 'Catalyst2', 1), 'Flax', 'Catalyst2')
+    const organized = organize({ ...flax, autoOrganize: true }, fertile)
+    expect(separationsOf(organized.separate).map((s) => s.item)).not.toContain('Flax')
+    // Settled: nothing left to gather (gathering it into the target only had it merged back).
+    expect(canSeparateShared(organized, fertile)).toBe(false)
+  })
+
   it('makes none from a supply the plan leaves uncapped', () => {
     const open = addSupplyTarget(coke, 'Flax', 'Catalyst2')
     const { result } = fc(open)
@@ -1199,6 +1226,22 @@ describe('my defaults', () => {
     const [row] = solvePlan(other, catalogWith(mine), mods).tree
     expect(row.producer).toBe('recipe:Salt_Alt')
     expect(row.mine).toBe(true)
+  })
+
+  it('takes an item in everywhere when the saved default does, but a target still makes it', () => {
+    const catalog = catalogWith({ Salt: { producer: BUS } })
+    // A target's own row makes its item.
+    const [row] = solvePlan(salt, catalog, mods).tree
+    expect(row.kind).toBe('produce')
+    // Elsewhere it's a plan input: every row takes it in, branch picks or not.
+    expect(isInput(salt, catalog, 'Salt')).toBe(true)
+    const picked = plan({ branches: { '0/Brine/Salt': { producer: 'recipe:Salt' } } })
+    expect(resolveChoice(picked, catalog, 'Salt', '0/Brine/Salt').producer).toBe(BUS)
+    // Making it on a row makes it everywhere, as with an input the plan declares.
+    const made = chooseProducer(plan({}), catalog, { item: 'Salt', producer: 'recipe:Salt', row: '0/Brine/Salt' })
+    expect(made.producers.Salt).toBe('recipe:Salt')
+    expect(made.branches ?? {}).toEqual({})
+    expect(isInput(made, catalog, 'Salt')).toBe(false)
   })
 
   it('is only offered where saving would change something', () => {

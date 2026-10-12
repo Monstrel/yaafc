@@ -204,11 +204,15 @@ export const isBurned = (id: string) => {
 /**
  * Whether the plan takes `item` in from outside (a plan input), for every row of it but rows paying,
  * burning or spreading it (they pick their own) and a target's own row (the plan makes its targets).
- * The player says so plan-wide, or on a row (plans saved before inputs were per item).
+ * The player says so plan-wide, on a row (plans saved before inputs were per item), or in a saved
+ * default the plan follows (it has no pick of its own for the item).
  */
-export function isInput(plan: Plan, item: string): boolean {
+export function isInput(plan: Plan, catalog: ProcessCatalog, item: string): boolean {
   if (isPseudo(item)) return false
-  if (plan.producers[item] === BUS) return true
+  const own = plan.producers[item]
+  if (own === BUS) return true
+  // An older plan's 'import', or no pick of its own and a saved default: as the plan's producer reads.
+  if ((own === IMPORT || (!own && catalog.mine[item])) && planChoice(plan, catalog, item).producer === BUS) return true
   return Object.entries(plan.branches ?? {}).some(([id, pick]) => pick.producer === BUS && rowItem(id) === item && !isBurned(id) && !isTargetRow(id))
 }
 
@@ -260,7 +264,8 @@ export function planChoice(plan: Plan, catalog: ProcessCatalog, item: string, as
   if ((choice === BUS && !isPseudo(item) && !asTarget) || (choice && makes(catalog.byId.get(choice), item)))
     return { producer: choice, mine: false }
   const mine = myDefault(catalog, item)
-  if (mine) return { ...mine, mine: true }
+  // A target's own row makes its item, though the player takes it in elsewhere.
+  if (mine && !(asTarget && mine.producer === BUS)) return { ...mine, mine: true }
   return { producer: defaultProducer(catalog, item, asTarget), mine: false }
 }
 
@@ -283,7 +288,7 @@ export function resolveChoice(
   const allowed = (producer: string) => !(underBoiler(item, id) && producer === STEAM_HEAT_ID)
   const burned = isBurned(id)
   // Every row of an item the plan takes in imports it, whatever its branch picks.
-  if (!burned && !isTargetRow(id) && isInput(plan, item)) return { producer: BUS, own: false, mine: false, ...NO_SETUP }
+  if (!burned && !isTargetRow(id) && isInput(plan, catalog, item)) return { producer: BUS, own: false, mine: false, ...NO_SETUP }
   for (let at = inherited ? parentId(id) : id; at !== null; at = parentId(at)) {
     const pick = plan.branches?.[at]
     if (!pick || rowItem(at) !== item || !allowed(pick.producer)) continue
@@ -483,7 +488,7 @@ export function unfold(plan: Plan, catalog: ProcessCatalog): PlanShape {
     if (a && a.item === item && (choice.process ? sameRecipe(a.process!, choice.process) : choice.producer === BUS && !isBurned(id))) {
       const i = targetOf.get(a)!
       const t = plan.targets[i]
-      if (!loopsFedBack(plan, t)) return leaf(item, id, depth, parent, { ...choice, producer: isInput(plan, item) ? BUS : '' }, i)
+      if (!loopsFedBack(plan, t)) return leaf(item, id, depth, parent, { ...choice, producer: isInput(plan, catalog, item) ? BUS : '' }, i)
       return create(item, id, depth, parent, { kind: 'loop', ref: a, loopTarget: i, ...(t.unit !== 'net' && { fedBack: true }), ...picked(choice) })
     }
     if (!choice.process) return leaf(item, id, depth, parent, choice)

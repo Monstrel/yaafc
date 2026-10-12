@@ -1341,7 +1341,8 @@ function TreeRow({
                 )}
               </div>
             )}
-            {p?.acceptsCatalysts && node.kind === 'produce' && (
+            {/* A recovery row runs its recipe as it is: it has none of these settings. */}
+            {p?.acceptsCatalysts && node.kind === 'produce' && !node.recovery && (
               <div className="catalysts" role="group" aria-label="Catalysts">
                 {CATALYSTS.map((c) => {
                   const on = p.catalysts.includes(c.key)
@@ -1367,7 +1368,7 @@ function TreeRow({
                 })}
               </div>
             )}
-            {p?.acceptsHeight && node.kind === 'produce' && (
+            {p?.acceptsHeight && node.kind === 'produce' && !node.recovery && (
               <label
                 className="build-height"
                 title={`The Height its inspect panel shows. The higher up it's built, the greater its output.`}
@@ -1385,7 +1386,7 @@ function TreeRow({
                 </span>
               </label>
             )}
-            {p?.stack !== undefined && node.kind === 'produce' && (
+            {p?.stack !== undefined && node.kind === 'produce' && !node.recovery && (
               <label
                 className="bank-stack"
                 title={`The Conversion Amount its panel shows: coins in each stack it puts on the belt (1–${MAX_BANK_STACK}). Bigger stacks move more coins per belt.`}

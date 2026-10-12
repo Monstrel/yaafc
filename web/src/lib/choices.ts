@@ -4,7 +4,7 @@ import { DEFAULT_BANK_STACK, defaultMachine, defaultProducer, type ProcessCatalo
 import { separationKey, separationsOf } from './separate'
 import type { TreeNode } from './tree'
 import { blankTarget, type MyDefault, type MyDefaults, type Plan } from './types'
-import { BUS, isBurned, isInput, isTargetRow, parentId, planProducer, resolveChoice, rowItem, unfold } from './unfold'
+import { BUS, isBurned, isInput, isRecoveryId, isTargetRow, parentId, planProducer, resolveChoice, rowItem, unfold } from './unfold'
 
 export interface ProducerPick {
   item: string
@@ -25,29 +25,36 @@ function withoutProducer(branches: Plan['branches'], drop: (id: string) => boole
   return branches && Object.fromEntries(Object.entries(branches).filter(([id]) => !drop(id)))
 }
 
+/** Rows picking their own producer whatever the item's other rows use: paying, burning or spreading it, or recovering it. */
+const picksOwn = (id: string) => isBurned(id) || isRecoveryId(id)
+
 /**
  * Applies a producer pick. On a row it covers that row's branch: the row and every row of its
  * item below it, replacing picks made further down. A pick matching what the row would inherit
  * anyway isn't stored. Everywhere, it becomes the plan-wide producer and clears the item's
- * branch picks. Whether rows take by-products first stays as it was: the producer makes the rest.
+ * branch picks. Rows picking their own (`picksOwn`) keep theirs either way. Whether rows take
+ * by-products first stays as it was: the producer makes the rest.
  */
 export function chooseProducer(plan: Plan, catalog: ProcessCatalog, pick: ProducerPick): Plan {
   const { item, producer, machine, row } = pick
   // Plan inputs are per item: taking one in on a row takes it in for every row of it, and making
   // it on a row of an item taken in makes it everywhere. Rows paying, burning or spreading it pick
   // their own, and a target's own row always makes it.
-  if (row && !pick.everywhere && !isBurned(row) && !isTargetRow(row) && (producer === BUS || isInput(plan, item)))
+  if (row && !pick.everywhere && !isBurned(row) && !isTargetRow(row) && (producer === BUS || isInput(plan, catalog, item)))
     return chooseProducer(plan, catalog, { ...pick, everywhere: true })
   if (!row || pick.everywhere)
     return {
       ...plan,
       producers: { ...plan.producers, [item]: producer },
       machines: machine ? { ...plan.machines, [producer]: machine } : plan.machines,
-      branches: withoutProducer(plan.branches, (id) => rowItem(id) === item),
+      branches: withoutProducer(plan.branches, (id) => rowItem(id) === item && !picksOwn(id)),
     }
   const next = {
     ...plan,
-    branches: withoutProducer(plan.branches, (id) => (id === row || id.startsWith(`${row}/`)) && rowItem(id) === item),
+    branches: withoutProducer(
+      plan.branches,
+      (id) => (id === row || (id.startsWith(`${row}/`) && !picksOwn(id))) && rowItem(id) === item,
+    ),
   }
   const inherited = resolveChoice(next, catalog, item, row)
   const chosen = catalog.byId.get(producer)

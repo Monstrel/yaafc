@@ -8,7 +8,7 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
-## 2026-10-12T20:22Z
+## 2026-10-12T20:35Z
 
 - A by-product sent to Knowledge Altars now stays with its row when targets are reordered or
   removed, or a row is built separately or merged back, instead of being dropped or moving to a
@@ -25,6 +25,18 @@ out.
   again.
 - Removing or reordering targets no longer briefly shows one target's numbers on another.
 - Using a recipe from the Cauldron page now scrolls to and highlights the row it went on.
+- A target is always made by its own row, even when your saved default for its item is to take it
+  in. Elsewhere in the plan, a saved default to take an item in now works like a declared plan
+  input: every row takes it in, and picking a recipe for it on a row makes it everywhere.
+- With auto-organize on, a target using an input's supply no longer keeps "Build shared items
+  separately" offered when there's nothing to build.
+- Changing how an item is made on one row, or everywhere, no longer resets the rows burning,
+  spreading or recovering it that chose their own.
+- Recovery rows no longer show catalyst, height or conversion amount settings, which they don't
+  use.
+- The plan overview no longer stops updating if one plan's summary fails.
+- If the calculator can't start, "Download my data" now includes data it couldn't read, as it was
+  stored.
 
 ## 2026-10-11T23:08Z
 

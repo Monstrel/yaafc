@@ -2,7 +2,7 @@ import { moveRows } from './choices'
 import { runKey, type ProcessCatalog } from './processes'
 import { separationKey, separationsOf, withSeparation } from './separate'
 import type { Plan, Separation } from './types'
-import { consumedBy, inRecovery, resolveChoice, unfold, type PlanNode } from './unfold'
+import { consumedBy, inRecovery, resolveChoice, suppliedBy, unfold, type PlanNode } from './unfold'
 
 /** Rows from the root of its tree down to `n`. */
 function chain(n: PlanNode): PlanNode[] {
@@ -69,8 +69,9 @@ function* sharedSeparations(plan: Plan, catalog: ProcessCatalog): Generator<Plan
   let p = plan
   for (;;) {
     const { nodes, targetRows } = unfold(p, catalog)
-    // An overflow target's row makes only its overflow: it never gathers other uses.
-    const overflowRows = new Set(targetRows.filter((_, i) => consumedBy(filled[i])))
+    // An overflow or supply target's row makes only what its overflow or supply comes to: it never
+    // gathers other uses (as in `unfold`).
+    const overflowRows = new Set(targetRows.filter((_, i) => consumedBy(filled[i]) || suppliedBy(filled[i])))
     const byItem = new Map<string, PlanNode[]>()
     // Heat and nutrients go to the machines on their furnaces and in their nurseries, and rows
     // recovering outputs to the row they recover into: never gathered.

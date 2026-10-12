@@ -25,9 +25,10 @@ function parse(text: string | null): unknown {
 /** The text `usePersistentState` stored under a key (null when missing or storage is blocked). */
 export const storedText = readText
 
-/** What a key holds, parsed but unchecked (undefined when missing or unreadable). */
+/** What a key holds, parsed but unchecked; its text as it is when that doesn't parse (undefined when missing). */
 function readRaw(key: string): unknown {
-  return parse(readText(key))
+  const text = readText(key)
+  return parse(text) ?? (text || undefined)
 }
 
 /** Whether the text was stored (false when storage is full or blocked). */
@@ -285,7 +286,7 @@ export function useBackup(savedRecipes: SavedRecipe[], plans: Plan[], progress: 
 
 /**
  * Download what storage holds, as is, in the backup layout: for when the app can't start, so
- * nothing is lost by starting over.
+ * nothing is lost by starting over. A key whose text doesn't parse goes in as that text.
  */
 export function downloadStoredData() {
   downloadJson(
