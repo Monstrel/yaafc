@@ -134,6 +134,8 @@ function runawayItems(
 export interface PlanResult {
   status: 'ok' | 'infeasible' | 'error'
   message?: string
+  /** Something the solve couldn't do, though it solved (rounding rows up that wouldn't all round). */
+  notice?: string
   targets: ResolvedTarget[]
   /** Machines per process (on its machine), summed over the tree's rows. */
   runs: ProcessRun[]
@@ -239,36 +241,55 @@ export function solvePlan(plan: Plan, catalog: ProcessCatalog, mods: Modifiers):
   // A priority pass whose optimum is itself at the solver's noise floor (a millionth of an item,
   // weighed up to 10⁶) can leave the next pass no solution within the usual room: such a plan is
   // solved again holding the passes with 100× more.
-  const result = solveRounded(plan, catalog, mods, 1e-8)
-  return result.status === 'infeasible' ? solveRounded(plan, catalog, mods, 1e-6) : result
+  const first = solveRounded(plan, catalog, mods, 1e-8)
+  if (first.result.status !== 'infeasible' && !first.failed) return first.result
+  const again = solveRounded(plan, catalog, mods, 1e-6)
+  return again.result.status === 'ok' && !again.failed ? again.result : first.result.status === 'ok' ? first.result : again.result
 }
 
-/** Solves the plan (see `solvePlan`), holding each priority pass with `room` (see `solveRound`). */
-function solveRounded(plan: Plan, catalog: ProcessCatalog, mods: Modifiers, room: number): PlanResult {
+const UNSETTLED_ROUNDING =
+  'Some rows rounded up to whole machines still use part of one: rounding them up kept growing the rows below them.'
+const FAILED_ROUNDING =
+  "Not every row rounded up to whole machines could be: the plan has no solution with all of them rounded up, so some still use part of one."
+
+/**
+ * Solves the plan (see `solvePlan`), holding each priority pass with `room` (see `solveRound`).
+ * When rounding can't finish, the last solve that worked comes back with a notice saying so
+ * (`failed`: a solve with more rows rounded up had no solution).
+ */
+function solveRounded(plan: Plan, catalog: ProcessCatalog, mods: Modifiers, room: number): { result: PlanResult; failed?: boolean } {
   const rounded = new Set(plan.roundUp ?? [])
+  // A target of a number of machines runs just those: its row isn't rounded (see `machineCrafts`).
+  plan.targets.filter((t) => t.item).forEach((t, i) => t.unit === 'machines' && rounded.delete(`${i}/${t.item}`))
   const floors = new Map<string, number>()
   const utilization = (n: TreeNode) => checkProcess(n.run!.process, mods)?.utilization ?? 1
-  let result = solveFed(plan, catalog, mods, floors, room)
-  for (let round = 0; rounded.size && round < MAX_ROUNDING_ROUNDS && result.status === 'ok'; round++) {
-    let raised = false
+  /** Higher floors for rounded rows still using part of a machine (none once all run whole ones). */
+  const raises = (result: PlanResult) => {
+    const out = new Map<string, number>()
     const { copies } = unitScales(result.tree, plan.units, utilization)
     const visit = (n: TreeNode) => {
       const p = n.run?.process
       // Rows running on overflow can't run faster than it comes: their whole machines run underfed.
       if (rounded.has(n.id) && n.kind === 'produce' && p?.machine && p.seconds > 0 && !onOverflow(n)) {
         const built = wholeMachines(p, n.machines / (copies.get(n.id) ?? 1), mods)
-        if (built !== null && built.count > built.exact + 1e-9) {
-          floors.set(n.id, (built.count / built.exact) * n.run!.craftsPerMinute)
-          raised = true
-        }
+        if (built !== null && built.count > built.exact + 1e-9) out.set(n.id, (built.count / built.exact) * n.run!.craftsPerMinute)
       }
       n.children.forEach(visit)
     }
     result.tree.forEach(visit)
-    if (!raised) break
-    result = solveFed(plan, catalog, mods, floors, room)
+    return out
   }
-  return result
+  let result = solveFed(plan, catalog, mods, floors, room)
+  for (let round = 0; rounded.size && result.status === 'ok'; round++) {
+    const raised = raises(result)
+    if (!raised.size) break
+    if (round === MAX_ROUNDING_ROUNDS) return { result: { ...result, notice: UNSETTLED_ROUNDING } }
+    for (const [id, floor] of raised) floors.set(id, floor)
+    const next = solveFed(plan, catalog, mods, floors, room)
+    if (next.status !== 'ok') return { result: { ...result, notice: FAILED_ROUNDING }, failed: true }
+    result = next
+  }
+  return { result }
 }
 
 /**

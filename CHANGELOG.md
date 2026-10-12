@@ -8,7 +8,7 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
-## 2026-10-12T20:10Z
+## 2026-10-12T20:22Z
 
 - A by-product sent to Knowledge Altars now stays with its row when targets are reordered or
   removed, or a row is built separately or merged back, instead of being dropped or moving to a
@@ -17,6 +17,14 @@ out.
   others unless it actually changed something.
 - A tab still running an older version of the calculator now asks you to reload once a newer
   version has saved your data, instead of saving over it and losing what the newer version added.
+- A target set in machines keeps that many machines when its row is rounded up to whole machines,
+  instead of the plan failing to solve. Rows below it still round up.
+- When not every row rounded up to whole machines can be, the plan keeps the rows it could round
+  and says so, instead of showing an error.
+- Typing in a row's Height or Conversion amount box no longer loses digits while the plan solves
+  again.
+- Removing or reordering targets no longer briefly shows one target's numbers on another.
+- Using a recipe from the Cauldron page now scrolls to and highlights the row it went on.
 
 ## 2026-10-11T23:08Z
 

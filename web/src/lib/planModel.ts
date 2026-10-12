@@ -61,6 +61,8 @@ export interface PlanModel {
   mods: Modifiers
   catalog: ProcessCatalog
   result: PlanResult | null
+  /** The targets `result` was solved for: while `solving`, they may not be the plan's now. */
+  solvedTargets: Plan['targets'] | null
   /** Whether a solve for the plan as it is now is still on its way (`result`, if any, is older). */
   solving: boolean
 }
@@ -90,9 +92,9 @@ export function usePlanModel(plan: Plan, progress: Progress, saved: SavedRecipe[
       if (result) startTransition(() => setSolved({ plan: toSolve, context, result }))
     })
   }, [toSolve, context])
-  const result = solved?.plan.id === plan.id ? solved.result : null
+  const current = solved?.plan.id === plan.id ? solved : null
   const pending = solved?.plan !== toSolve || solved.context !== context
-  return { mods, catalog, result, solving: pending }
+  return { mods, catalog, result: current?.result ?? null, solvedTargets: current?.plan.targets ?? null, solving: pending }
 }
 
 // The overview's solves queue in a worker of their own: unlike the open plan's, none may be skipped.

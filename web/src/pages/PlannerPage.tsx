@@ -200,9 +200,16 @@ export function PlannerPage({
     else if (pruneChoices(plan, catalog)) onUpdatePlan(null, (p) => pruneChoices(p, catalog) ?? p)
     else if (organized !== plan) updateStoredPlan(null, (p) => (p === plan ? organized : p))
   }, [plan, catalog, organized, onUpdatePlan, updateStoredPlan])
-  // result.targets skips rows with no item chosen yet; line them back up with the rows.
+  // result.targets skips targets with no item chosen yet; line them back up with the targets solved.
+  // While a solve for changed targets is on its way, each target takes what was solved for it (or for
+  // a target of its item in its place), so none shows another's numbers.
+  const solvedTargets = model.solvedTargets ?? []
   let resolvedIndex = 0
-  const resolvedByRow = plan.targets.map((t) => (t.item ? result.targets[resolvedIndex++] : undefined))
+  const solvedByPlace = solvedTargets.map((t) => (t.item ? result.targets[resolvedIndex++] : undefined))
+  const solvedByTarget = new Map(solvedTargets.map((t, i) => [t, solvedByPlace[i]]))
+  const resolvedByRow = plan.targets.map((t, i) =>
+    !t.item ? undefined : solvedByTarget.has(t) ? solvedByTarget.get(t) : solvedTargets[i]?.item === t.item ? solvedByPlace[i] : undefined,
+  )
   const ledger = useMemo(() => ledgers(plan, result), [plan, result])
   const drawn = useMemo(() => new Set(ledger.map((l) => l.item)), [ledger])
   const logistics = useMemo(() => checkLogistics(result.runs, mods), [result, mods])
@@ -321,16 +328,18 @@ export function PlannerPage({
       const id = ids[same ? (ids.indexOf(s.id) + 1) % ids.length : 0]
       return { id, n: (s?.n ?? 0) + 1, of: ids }
     })
-  // A recipe just put on a row from the Cauldron page: show that row, once the plan has a tree to show it in.
-  const [revealedRow, setRevealedRow] = useState<string | null>(null)
-  if (reveal && model.result && revealedRow !== reveal) {
-    setRevealedRow(reveal)
-    showRow([reveal])
-  }
-  // Shown once: coming back to the planner later starts at the top again.
+  // A recipe just put on a row from the Cauldron page: show that row, once the plan has a tree to show
+  // it in. Asked for after the tree is drawn, so the tree sees the request arrive (one there when it
+  // first draws is taken as already shown). Shown once: coming back to the planner later starts at the top again.
+  const hasTree = model.result !== null
+  const revealRow = useEffectEvent((row: string) => {
+    showRow([row])
+    onRevealed()
+  })
   useEffect(() => {
-    if (revealedRow) onRevealed()
-  }, [revealedRow, onRevealed])
+    // oxlint-disable-next-line react/set-state-in-effect -- the request must come after the tree mounts
+    if (reveal && hasTree) revealRow(reveal)
+  }, [reveal, hasTree])
   /** The target just added, whose item picker opens. */
   // Whether the upgrades and defaults column shows beside the plan (two-column layout only).
   const [sideOpen, setSideOpen] = usePersistentState<boolean>('planner-side', true, (v) => (typeof v === 'boolean' ? v : undefined), {
@@ -397,6 +406,7 @@ export function PlannerPage({
     const absorbs = ledger.some((l) => l.absorbedBy === i)
     return {
       rootId: targetRoots[i],
+      byMachines: t.unit === 'machines',
       item: (
         <ItemPicker
           value={t.item || null}
@@ -639,6 +649,11 @@ export function PlannerPage({
           ) : (
             <>
               {result.status !== 'ok' && <div className="panel warning" data-flip="unsolved">Could not solve this plan: {result.message}</div>}
+              {result.status === 'ok' && result.notice && (
+                <div className="panel warning" data-flip="notice">
+                  {result.notice}
+                </div>
+              )}
 
               {!model.result ? (
                 // A quick first solve shows nothing in between: only a slow one says it's working.

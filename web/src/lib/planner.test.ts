@@ -1006,6 +1006,41 @@ describe('rounding rows up to whole machines', () => {
     expect(rowOf(rounded, '0/Bandage/Linen').rate).toBeCloseTo(rowOf(exact, '0/Bandage/Linen').rate * 1.2)
   })
 
+  it("leaves a target set in machines on the machines it names, rounding the rows below", () => {
+    const set = plan({ targets: [{ item: 'Bandage', rate: 2.5, unit: 'machines' }], roundUp: ['0/Bandage', '0/Bandage/Linen'] })
+    const r = solvePlan(set, catalog, mods)
+    expectBalanced(r)
+    expect(r.notice).toBeUndefined()
+    expect(rowOf(r, '0/Bandage').machines).toBeCloseTo(2.5)
+    const linen = rowOf(r, '0/Bandage/Linen').machines
+    expect(linen).toBeCloseTo(Math.round(linen))
+  })
+
+  // Every row of a big plan rounded up: each round grows the rows below, and some rounds have no solution.
+  const everyRow = (rate: number) => {
+    const sol = plan({ targets: [{ item: 'Sol', rate }] })
+    const ids: string[] = []
+    const visit = (n: TreeNode) => {
+      if (n.kind === 'produce') ids.push(n.id)
+      n.children.forEach(visit)
+    }
+    solvePlan(sol, catalog, mods).tree.forEach(visit)
+    return { ...sol, roundUp: ids }
+  }
+
+  it("keeps the last solve that worked when rounding more rows up has no solution, and says so", () => {
+    const r = solvePlan(everyRow(0.25), catalog, mods)
+    expect(r.status).toBe('ok')
+    expect(r.notice).toMatch(/Not every row rounded up/)
+    expectBalanced(r)
+  })
+
+  it("says so when rounding rows up doesn't settle", () => {
+    const r = solvePlan(everyRow(2), catalog, mods)
+    expect(r.status).toBe('ok')
+    expect(r.notice).toMatch(/still use part of one/)
+  })
+
   it('rounds rows below a rounded row after it grows', () => {
     const both = setRoundUp(setRoundUp(bandages, '0/Bandage', true), '0/Bandage/Linen', true)
     const r = solvePlan(both, catalog, mods)

@@ -29,6 +29,7 @@ import { HeatView } from './HeatView'
 import { ProducerSelect } from './ProducerSelect'
 import { RowSearch } from './RowSearch'
 import { choosable, reuseInfo } from './rowPicks'
+import { NumberInput } from './NumberInput'
 
 interface Props {
   /** Fold state is remembered per plan. */
@@ -111,6 +112,8 @@ interface Props {
 export interface TargetSlot {
   /** The root row meeting the target, once it has one (none without an item). */
   rootId: string | null
+  /** Set in machines: its row runs just that many, so it isn't rounded up. */
+  byMachines?: boolean
   /** In the item column: which item. */
   item: ReactNode
   /** In the rate column: how much of it. */
@@ -829,6 +832,7 @@ export function ProductionTree({
           <MachinesMenu
             node={machinesMenu.node}
             rounded={rounded.has(machinesMenu.node.id)}
+            byMachines={!!slotByRow.get(machinesMenu.node.id)?.byMachines}
             belts={machinesMenu.node.run ? logistics.get(machinesMenu.node.run.key) : undefined}
             onChoose={chooseRounding}
             copiesAbove={copiesAbove(machinesMenu.node.id)}
@@ -1369,14 +1373,11 @@ function TreeRow({
                 title={`The Height its inspect panel shows. The higher up it's built, the greater its output.`}
               >
                 Height
-                <input
-                  type="number"
+                <NumberInput
                   min={0}
                   step={1}
                   value={p.height}
-                  onChange={(e) =>
-                    onHeight(node.id, Math.max(0, Math.round(Number(e.target.value) || 0)), node.defaultHeight)
-                  }
+                  onValue={(text) => onHeight(node.id, Math.max(0, Math.round(Number(text) || 0)), node.defaultHeight)}
                   aria-label={`Height the ${p.machine?.name ?? 'machines'} are built at`}
                 />
                 <span className="hint-inline">
@@ -1390,13 +1391,12 @@ function TreeRow({
                 title={`The Conversion Amount its panel shows: coins in each stack it puts on the belt (1–${MAX_BANK_STACK}). Bigger stacks move more coins per belt.`}
               >
                 Conversion amount
-                <input
-                  type="number"
+                <NumberInput
                   min={1}
                   max={MAX_BANK_STACK}
                   step={1}
                   value={p.stack}
-                  onChange={(e) => onStack(node.id, clampBankStack(Number(e.target.value)), node.defaultStack)}
+                  onValue={(text) => onStack(node.id, clampBankStack(Number(text)), node.defaultStack)}
                   aria-label={`Coins the ${p.machine?.name ?? 'machines'} output per belt entry`}
                 />
                 <span className="hint-inline">
@@ -2190,6 +2190,7 @@ const endsCard = (edges: Edge[], card: number) =>
 function MachinesMenu({
   node,
   rounded,
+  byMachines,
   belts,
   onChoose,
   copiesAbove,
@@ -2199,6 +2200,8 @@ function MachinesMenu({
 }: {
   node: TreeNode
   rounded: boolean
+  /** The row's target is set in machines, which it runs as they are. */
+  byMachines: boolean
   belts: LogisticsCheck | undefined
   onChoose: (round: boolean) => void
   /** Copies built of the line the row sits in. */
@@ -2224,6 +2227,8 @@ function MachinesMenu({
   const rate = node.rate / copiesAbove
   // A row running on overflow can't run faster than it comes: rounded up, its machines run underfed.
   const fed = onOverflow(node)
+  // A target set in machines runs just those, whatever was picked here before.
+  if (byMachines) rounded = false
   return (
     <>
       <div className="tree-menu-title">Machines for {itemsByKey.get(node.item)?.name}</div>
@@ -2238,14 +2243,16 @@ function MachinesMenu({
           </span>
         </span>
       </button>
-      <button type="button" role="menuitemradio" aria-checked={rounded} onClick={() => onChoose(true)}>
+      <button type="button" role="menuitemradio" aria-checked={rounded} disabled={byMachines} onClick={() => onChoose(true)}>
         <span className="tree-menu-check" aria-hidden>
           {rounded ? '✓' : ''}
         </span>
         <span>
           Round up to whole machines
           <span className="tree-menu-hint">
-            {fed
+            {byMachines
+              ? 'the target sets how many it runs'
+              : fed
               ? `${whole} ${names(whole)}${perCopy}, running underfed on the overflow below`
               : rounded
               ? 'the extra output overflows'
