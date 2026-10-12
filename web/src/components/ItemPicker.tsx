@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Item } from '../lib/gameData'
 import { GAP, MARGIN, popoverSide } from '../lib/popover'
 import { ItemIcon } from './ItemIcon'
@@ -17,6 +17,11 @@ interface Props {
   defaultOpen?: boolean
 }
 
+/**
+ * A button showing the item chosen, opening a searchable list of items (a combobox: the arrow keys
+ * move through the list as you type, Enter chooses, Escape closes). It closes when focus or a click
+ * goes elsewhere, and choosing or closing puts focus back on the button.
+ */
 export function ItemPicker({
   value,
   options,
@@ -31,6 +36,9 @@ export function ItemPicker({
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
   const root = useRef<HTMLDivElement>(null)
+  const button = useRef<HTMLButtonElement>(null)
+  const listId = useId()
+  const optionId = (i: number) => `${listId}-${i}`
   const selected = options.find((o) => o.key === value)
 
   const filtered = useMemo(() => {
@@ -64,15 +72,37 @@ export function ItemPicker({
     el.style.left = `${Math.max(MARGIN - anchor.left, Math.min(0, vw - MARGIN - anchor.left - el.offsetWidth))}px`
   }, [open])
 
-  const choose = (key: string | null) => {
-    onChange(key)
+  const close = () => {
     setOpen(false)
     setQuery('')
+    button.current?.focus()
   }
+  const choose = (key: string | null) => {
+    onChange(key)
+    close()
+  }
+  // The option the arrow keys are on stays in view.
+  useEffect(() => {
+    if (open) document.getElementById(`${listId}-${active}`)?.scrollIntoView({ block: 'nearest' })
+  }, [open, active, listId])
 
   return (
-    <div className={`picker ${compact ? 'compact' : ''}`} ref={root}>
-      <button type="button" className={`picker-button ${selected ? '' : 'empty'}`} onClick={() => setOpen(!open)}>
+    <div
+      className={`picker ${compact ? 'compact' : ''}`}
+      ref={root}
+      onBlur={(e) => {
+        // Tabbing away closes it too, not only a click elsewhere.
+        if (open && !root.current?.contains(e.relatedTarget as Node | null)) setOpen(false)
+      }}
+    >
+      <button
+        type="button"
+        ref={button}
+        className={`picker-button ${selected ? '' : 'empty'}`}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
         {selected ? (
           <>
             <ItemIcon item={selected.key} size={compact ? 20 : 22} />
@@ -86,11 +116,17 @@ export function ItemPicker({
         </span>
       </button>
       {open && (
-        <div className="picker-popover" role="listbox" ref={pop}>
+        <div className="picker-popover" ref={pop}>
           <input
             autoFocus
             className="picker-search"
             placeholder="Search…"
+            role="combobox"
+            aria-label="Search items"
+            aria-expanded
+            aria-controls={listId}
+            aria-autocomplete="list"
+            aria-activedescendant={filtered[active] ? optionId(active) : undefined}
             value={query}
             onChange={(e) => {
               setQuery(e.target.value)
@@ -100,14 +136,14 @@ export function ItemPicker({
               if (e.key === 'ArrowDown') setActive((a) => Math.min(a + 1, filtered.length - 1))
               else if (e.key === 'ArrowUp') setActive((a) => Math.max(a - 1, 0))
               else if (e.key === 'Enter' && filtered[active]) choose(filtered[active].key)
-              else if (e.key === 'Escape') setOpen(false)
+              else if (e.key === 'Escape') close()
               else return
               e.preventDefault()
             }}
           />
-          <div className="picker-list">
+          <div className="picker-list" role="listbox" id={listId} aria-label={placeholder}>
             {allowClear && value && (
-              <button type="button" className="picker-option clear" onClick={() => choose(null)}>
+              <button type="button" tabIndex={-1} className="picker-option clear" onClick={() => choose(null)}>
                 Clear
               </button>
             )}
@@ -115,6 +151,8 @@ export function ItemPicker({
               <button
                 type="button"
                 key={o.key}
+                id={optionId(i)}
+                tabIndex={-1}
                 role="option"
                 aria-selected={o.key === value}
                 className={`picker-option ${i === active ? 'active' : ''} ${o.key === value ? 'selected' : ''}`}
