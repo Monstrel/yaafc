@@ -1,13 +1,19 @@
-import { type Dispatch, type SetStateAction, useEffect, useMemo, useRef, useState } from 'react'
+import { type Dispatch, type SetStateAction, useMemo } from 'react'
 import { ItemIcon, ItemLabel } from '../components/ItemIcon'
 import { IngredientFilter, PrefToggle } from '../components/IngredientFilter'
 import { ItemPicker } from '../components/ItemPicker'
-import { cauldronStats, evaluate, findRecipes, recipeSignature, type CauldronMode, type CauldronResult } from '../lib/cauldron'
+import {
+  cauldronStats,
+  evaluate,
+  findRecipes,
+  recipeSignature,
+  type CauldronMode,
+  type CauldronResult,
+} from '../lib/cauldron'
 import { HEAT, MONEY, NUTRIENTS, cauldronIngredients, cauldronTargets, itemName, itemsByKey } from '../lib/gameData'
 import { diagnoseNoResults, type FinderQuery } from '../lib/diagnose'
 import { fmt, fmtSeconds } from '../lib/format'
 import { noun } from '../lib/plural'
-import { placePopover } from '../lib/popover'
 import {
   allowedIngredients,
   builtinGroups,
@@ -23,6 +29,7 @@ import { sanitizePrefs, type CauldronSearch } from '../lib/sanitize'
 import { usePersistentState } from '../lib/store'
 import { pickableRows, type PickableRow, type TreeNode } from '../lib/tree'
 import type { SavedRecipe } from '../lib/types'
+import { useAnchoredMenu } from '../lib/useAnchoredMenu'
 
 interface Props {
   saved: SavedRecipe[]
@@ -64,38 +71,26 @@ export function CauldronPage({
   }
 
   // A result's ingredient opens its own preference control, like its row in the preferences tree.
-  const [prefMenu, setPrefMenu] = useState<{ item: string; at: DOMRect } | null>(null)
-  const prefMenuRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!prefMenu || !prefMenuRef.current) return
-    prefMenuRef.current.showPopover()
-    placePopover(prefMenuRef.current, prefMenu.at)
-  }, [prefMenu])
-  const openPrefMenu = (item: string, button: HTMLElement) => {
-    setPrefMenu({ item, at: button.getBoundingClientRect() })
-  }
+  const prefMenus = useAnchoredMenu<{ item: string }>()
+  const prefMenu = prefMenus.subject
+  const openPrefMenu = (item: string, button: HTMLElement) => prefMenus.show({ item }, button)
   // The results reorder (or drop the row) on any change: close rather than point at a moved row.
   const choosePref = (p: IngredientPrefs) => {
-    prefMenuRef.current?.hidePopover()
+    prefMenus.hide()
     changePrefs(p)
   }
 
   // Use: a recipe goes on a row of the open plan making its item; with several rows, a menu says which.
   const rowsOf = (item: string) => (planTree ? pickableRows(planTree, item) : [])
-  const [useMenu, setUseMenu] = useState<{ recipe: Recipe; rows: PickableRow[]; at: DOMRect } | null>(null)
-  const useMenuRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!useMenu || !useMenuRef.current) return
-    useMenuRef.current.showPopover()
-    placePopover(useMenuRef.current, useMenu.at, 'right')
-  }, [useMenu])
+  const useMenus = useAnchoredMenu<{ recipe: Recipe; rows: PickableRow[] }>('right')
+  const useMenu = useMenus.subject
   const applyRecipe = (recipe: Recipe, button: HTMLElement) => {
     const rows = rowsOf(recipe.output)
     if (rows.length === 1) return onUse(recipe.mode, recipe.inputs, recipe.output, rows[0].id)
-    setUseMenu({ recipe, rows, at: button.getBoundingClientRect() })
+    useMenus.show({ recipe, rows }, button)
   }
   const applyTo = (row: string | null) => {
-    useMenuRef.current?.hidePopover()
+    useMenus.hide()
     if (useMenu) onUse(useMenu.recipe.mode, useMenu.recipe.inputs, useMenu.recipe.output, row)
   }
 
@@ -309,12 +304,7 @@ export function CauldronPage({
         </section>
       </div>
 
-      <div
-        ref={useMenuRef}
-        popover="auto"
-        className="pref-menu use-menu"
-        onToggle={(e) => e.newState === 'closed' && setUseMenu(null)}
-      >
+      <div {...useMenus.props} className="pref-menu use-menu">
         {useMenu && (
           <>
             <div className="pref-menu-title">
@@ -333,12 +323,7 @@ export function CauldronPage({
         )}
       </div>
 
-      <div
-        ref={prefMenuRef}
-        popover="auto"
-        className="pref-menu"
-        onToggle={(e) => e.newState === 'closed' && setPrefMenu(null)}
-      >
+      <div {...prefMenus.props} className="pref-menu">
         {prefMenu && (
           <>
             <div className="pref-menu-title">

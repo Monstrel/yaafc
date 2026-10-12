@@ -4,7 +4,6 @@ import { fmt } from '../lib/format'
 import { noun } from '../lib/plural'
 import { sanitizeStrings } from '../lib/sanitize'
 import { followScrollAnchor, releaseScrollAnchor } from '../lib/flip'
-import { placePopover } from '../lib/popover'
 import { foldKey, usePersistentState } from '../lib/store'
 import type { FedOverflow } from '../lib/money'
 import type { LogisticsCheck } from '../lib/logistics'
@@ -41,6 +40,7 @@ import { UnmarkMenu, ToolbarMenu, type AnchorDecision, AnchorChoice, MachinesMen
 import { type TargetSlot, type LinkFn } from './tree/types'
 import { TreeRow, Edges } from './tree/TreeRow'
 import { useStable } from '../lib/useStable'
+import { useAnchoredMenu } from '../lib/useAnchoredMenu'
 
 interface Props {
   /** Fold state is remembered per plan. */
@@ -215,20 +215,9 @@ export function ProductionTree({
   }, [all])
 
   // "Build separately" menu: where to gather this row's item (or move it to, when it's gathered already).
-  const [menu, setMenu] = useState<{
-    node: TreeNode
-    anchors: TreeNode[]
-    moving?: Separation
-    /** The button it opened from. */
-    at: DOMRect
-  } | null>(null)
-  const menuRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!menu || !menuRef.current) return
-    menuRef.current.showPopover()
-    // The button sits at the right end of its row: line the menu up with its right edge.
-    placePopover(menuRef.current, menu.at, 'right')
-  }, [menu])
+  // The button sits at the right end of its row: the menu lines up with its right edge.
+  const separateMenu = useAnchoredMenu<{ node: TreeNode; anchors: TreeNode[]; moving?: Separation }>('right')
+  const menu = separateMenu.subject
   const openMenu = (node: TreeNode, button: HTMLElement) => {
     // Top-of-plan groups only sit under the target on screen: their own tree starts at the group.
     const above = (id: string) => {
@@ -250,34 +239,22 @@ export function ProductionTree({
       .map((id) => byId.get(id)!.node)
       .filter((a) => a.kind === 'produce' && a.item !== node.item && !here(a))
       .reverse()
-    setMenu({
-      node,
-      anchors,
-      moving,
-      at: button.getBoundingClientRect(),
-    })
+    separateMenu.show({ node, anchors, moving }, button)
   }
 
   // Machines menu: run a row on just what it needs, or round it up to whole machines.
-  const [machinesMenu, setMachinesMenu] = useState<{ node: TreeNode; at: DOMRect } | null>(null)
-  const machinesRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!machinesMenu || !machinesRef.current) return
-    machinesRef.current.showPopover()
-    placePopover(machinesRef.current, machinesMenu.at, 'right')
-  }, [machinesMenu])
-  const openMachinesMenu = (node: TreeNode, button: HTMLElement) => {
-    setMachinesMenu({ node, at: button.getBoundingClientRect() })
-  }
+  const machines = useAnchoredMenu<{ node: TreeNode }>('right')
+  const machinesMenu = machines.subject
+  const openMachinesMenu = (node: TreeNode, button: HTMLElement) => machines.show({ node }, button)
   const chooseRounding = (on: boolean) => {
-    machinesRef.current?.hidePopover()
+    machines.hide()
     if (machinesMenu) onRoundUp(machinesMenu.node.id, on)
   }
   const utilization = (n: TreeNode) => logistics.get(n.run!.key)?.utilization ?? 1
   /** Copies built of the line a row sits in (not counting its own units). */
   const copiesAbove = (id: string) => (units.copies.get(id) ?? 1) / (units.own.get(id) ?? 1)
   const chooseUnits = (count: number | null) => {
-    machinesRef.current?.hidePopover()
+    machines.hide()
     if (!machinesMenu) return
     const { node } = machinesMenu
     const of = wholePerCopy(node, copiesAbove(node.id), utilization)
@@ -297,20 +274,15 @@ export function ProductionTree({
       : checklist.auto.has(n.id)
         ? 'auto'
         : null
-  const [unmarkMenu, setUnmarkMenu] = useState<{ node: TreeNode; at: DOMRect } | null>(null)
-  const unmarkRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!unmarkMenu || !unmarkRef.current) return
-    unmarkRef.current.showPopover()
-    placePopover(unmarkRef.current, unmarkMenu.at)
-  }, [unmarkMenu])
+  const unmarking = useAnchoredMenu<{ node: TreeNode }>()
+  const unmarkMenu = unmarking.subject
   const checkRow = (node: TreeNode, box: HTMLElement) => {
     if (!builtRows.has(node.id)) return onBuilt(branchOf(node), true)
     if (!checklist.below.get(node.id)?.built) return onBuilt([node.id], false)
-    setUnmarkMenu({ node, at: box.getBoundingClientRect() })
+    unmarking.show({ node }, box)
   }
   const unmark = (branch: boolean) => {
-    unmarkRef.current?.hidePopover()
+    unmarking.hide()
     if (unmarkMenu) onBuilt(branch ? branchOf(unmarkMenu.node) : [unmarkMenu.node.id], false)
   }
   /** Folds every branch built all the way down, leaving what's still to build in view. */
@@ -353,7 +325,7 @@ export function ProductionTree({
     if (confirm) dialogRef.current?.showModal()
   }, [confirm])
   const chooseAnchor = (node: TreeNode, anchor: TreeNode, moving?: Separation) => {
-    menuRef.current?.hidePopover()
+    separateMenu.hide()
     const count = all.filter((e) => e.node.kind === 'produce' && e.node.item === anchor.item).length
     if (count > 1) setConfirm({ node, anchor, count, moving })
     else {
@@ -381,16 +353,9 @@ export function ProductionTree({
   })
 
   // A link to several rows lists them to choose from.
-  const [places, setPlaces] = useState<{ title: string; rows: Placed[]; at: DOMRect } | null>(null)
-  const placesRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!places || !placesRef.current) return
-    placesRef.current.showPopover()
-    placePopover(placesRef.current, places.at)
-  }, [places])
-  const openPlaces = useStable((title: string, rows: Placed[], button: HTMLElement) => {
-    setPlaces({ title, rows, at: button.getBoundingClientRect() })
-  })
+  const placesMenu = useAnchoredMenu<{ title: string; rows: Placed[] }>()
+  const places = placesMenu.subject
+  const openPlaces = useStable((title: string, rows: Placed[], button: HTMLElement) => placesMenu.show({ title, rows }, button))
 
   useEffect(() => {
     if (!pulse) return
@@ -657,13 +622,7 @@ export function ProductionTree({
         </div>
       )}
 
-      <div
-        ref={menuRef}
-        popover="auto"
-        className="tree-menu"
-        role="menu"
-        onToggle={(e) => e.newState === 'closed' && setMenu(null)}
-      >
+      <div {...separateMenu.props} className="tree-menu" role="menu">
         {menu && (
           <>
             <div className="tree-menu-title">
@@ -676,7 +635,7 @@ export function ProductionTree({
                 type="button"
                 role="menuitem"
                 onClick={() => {
-                  menuRef.current?.hidePopover()
+                  separateMenu.hide()
                   followGathered(menu.node.item)
                   onSeparate({ item: menu.node.item }, true, menu.node.id, menu.moving)
                 }}
@@ -705,7 +664,7 @@ export function ProductionTree({
                   type="button"
                   role="menuitem"
                   onClick={() => {
-                    menuRef.current?.hidePopover()
+                    separateMenu.hide()
                     onSeparate(menu.moving!, false)
                   }}
                 >
@@ -725,14 +684,7 @@ export function ProductionTree({
         )}
       </div>
 
-      <div
-        ref={placesRef}
-        popover="auto"
-        className="tree-menu"
-        role="menu"
-        aria-label={places?.title}
-        onToggle={(e) => e.newState === 'closed' && setPlaces(null)}
-      >
+      <div {...placesMenu.props} className="tree-menu" role="menu" aria-label={places?.title}>
         {places && (
           <>
             <div className="tree-menu-title">{places.title}</div>
@@ -750,7 +702,7 @@ export function ProductionTree({
                   role="menuitem"
                   key={row.node.id}
                   onClick={() => {
-                    placesRef.current?.hidePopover()
+                    placesMenu.hide()
                     goTo(row)
                   }}
                 >
@@ -768,13 +720,7 @@ export function ProductionTree({
         )}
       </div>
 
-      <div
-        ref={machinesRef}
-        popover="auto"
-        className="tree-menu"
-        role="menu"
-        onToggle={(e) => e.newState === 'closed' && setMachinesMenu(null)}
-      >
+      <div {...machines.props} className="tree-menu" role="menu">
         {machinesMenu && (
           <MachinesMenu
             node={machinesMenu.node}
@@ -790,13 +736,7 @@ export function ProductionTree({
         )}
       </div>
 
-      <div
-        ref={unmarkRef}
-        popover="auto"
-        className="tree-menu"
-        role="menu"
-        onToggle={(e) => e.newState === 'closed' && setUnmarkMenu(null)}
-      >
+      <div {...unmarking.props} className="tree-menu" role="menu">
         {unmarkMenu && (
           <UnmarkMenu
             node={unmarkMenu.node}
