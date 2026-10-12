@@ -271,7 +271,7 @@ describe('producers per branch', () => {
       const loaded = setRowCatalysts(coke, '1/Coke', ['Catalyst2'])
       expect(pruneChoices(loaded, athanor)).toBeNull()
       const plain = chooseProducer(loaded, athanor, { item: 'Coke', producer: 'recipe:Coke', machine: 'Athanor', row: '1/Coke' })
-      expect(pruneChoices(plain, athanor)?.rowCatalysts).toEqual({})
+      expect(pruneChoices(plain, athanor)).toMatchObject({ rowCatalysts: undefined })
       expect(setRowCatalysts(loaded, '1/Coke', []).rowCatalysts).toEqual({})
     })
 
@@ -287,7 +287,7 @@ describe('producers per branch', () => {
   it('forgets picks for rows that left the plan', () => {
     const p = chooseProducer(sol, catalog, { item: 'FairyDust', producer: 'import', row: first.id })
     expect(pruneChoices(p, catalog)).toBeNull()
-    expect(pruneChoices({ ...p, targets: [{ item: 'WoodBoard', rate: 1 }] }, catalog)?.branches).toEqual({})
+    expect(pruneChoices({ ...p, targets: [{ item: 'WoodBoard', rate: 1 }] }, catalog)).toMatchObject({ branches: undefined })
   })
 })
 
@@ -304,7 +304,7 @@ describe('forgetting choices', () => {
     const pruned = pruneChoices(plan({ targets: [{ item: 'WoodBoard', rate: 1 }], ...choices }), catalog)!
     expect(pruned.producers).toEqual({ [HEAT]: 'fuel:Coal', [NUTRIENTS]: 'fert:BasicFertilizer' })
     expect(pruned.machines).toEqual({})
-    expect(pruned.rowCatalysts).toEqual({})
+    expect(pruned.rowCatalysts).toBeUndefined()
   })
 
   it('runs Steam Boilers on the game’s Low/Medium/High settings, scaled by Factory Efficiency', () => {

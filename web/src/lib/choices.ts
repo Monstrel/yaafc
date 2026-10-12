@@ -4,7 +4,14 @@ import { DEFAULT_BANK_STACK, defaultMachine, defaultProducer, type ProcessCatalo
 import { separationKey, separationsOf } from './separate'
 import type { TreeNode } from './tree'
 import { blankTarget, type MyDefault, type MyDefaults, type Plan } from './types'
-import { BUS, isBurned, isInput, isRecoveryId, isTargetRow, parentId, planProducer, resolveChoice, rowItem, unfold } from './unfold'
+import { BUS, isBurned, isInput, isRecoveryId, isTargetRow, parentId, planProducer, resolveChoice, rowItem, unfold, type PlanNode } from './unfold'
+import {
+  ROW_FIELDS,
+  ROW_KEYS,
+  fromEntries,
+  mapRowSettings,
+  rowEntries,
+} from './rowSettings'
 
 export interface ProducerPick {
   item: string
@@ -375,8 +382,8 @@ export function reorderTargets(plan: Plan, order: number[]): Plan {
 }
 
 /**
- * Moves per-row picks, catalysts, heights, coin stacks, build-separately rows, rounding, units, built marks and
- * outputs sent to Knowledge Altars to the rows' new ids. `remap` gives null for a row that's gone (dropping its settings), or several ids for a
+ * Moves every row setting (see `ROW_FIELDS`) and build-separately choice made on a row to the rows'
+ * new ids. `remap` gives null for a row that's gone (dropping its settings), or several ids for a
  * row copied to several places. Where rows land on the same id, the one with the lowest `rank` wins.
  */
 export function moveRows(
@@ -385,33 +392,20 @@ export function moveRows(
   rank: (id: string) => number = () => 0,
 ): Plan {
   const to = (id: string) => [remap(id) ?? []].flat()
-  const rows = <T>(record: Record<string, T> | undefined) => {
-    if (!record) return record
-    const out = new Map<string, { v: T; rank: number }>()
-    for (const [id, v] of Object.entries(record))
+  const moved: Partial<Plan> = {}
+  for (const key of ROW_KEYS) {
+    if (!plan[key]) continue
+    const out = new Map<string, { v: unknown; rank: number }>()
+    for (const [id, v] of rowEntries(plan, key))
       for (const k of to(id)) if (!out.has(k) || rank(id) < out.get(k)!.rank) out.set(k, { v, rank: rank(id) })
-    return Object.fromEntries([...out].map(([k, x]) => [k, x.v]))
+    ;(moved as Record<string, unknown>)[key] = fromEntries(key, [...out].map(([k, x]) => [k, x.v]))
   }
   const separate =
     plan.separate &&
     separationsOf(plan.separate)
       .flatMap((s) => (s.at ? to(s.at).map((at) => ({ ...s, at })) : [s]))
       .filter((s, i, all) => all.findIndex((o) => separationKey(o) === separationKey(s)) === i)
-  const roundUp = plan.roundUp && [...new Set(plan.roundUp.flatMap(to))]
-  const built = plan.built && [...new Set(plan.built.flatMap(to))]
-  return {
-    ...plan,
-    branches: rows(plan.branches),
-    rowCatalysts: rows(plan.rowCatalysts),
-    rowHeights: rows(plan.rowHeights),
-    rowStacks: rows(plan.rowStacks),
-    separate,
-    roundUp: roundUp?.length ? roundUp : undefined,
-    mixedFeed: rows(plan.mixedFeed),
-    units: rows(plan.units),
-    built: built?.length ? built : undefined,
-    altarOutputs: rows(plan.altarOutputs),
-  }
+  return { ...plan, ...moved, separate }
 }
 
 export const moveTarget = (plan: Plan, from: number, to: number) => {
@@ -603,15 +597,14 @@ export function clearBranchChoice(plan: Plan, row: string): Plan {
 }
 
 /**
- * Drops producer, machine, catalyst, height, coin stack, branch and build-separately choices (and built marks) for
- * items, processes and rows no longer in the plan, so an item that's removed and added back starts from its default
+ * Drops producer, machine and build-separately choices, and row settings (see `ROW_FIELDS`), for
+ * items, processes and rows no longer in the plan (or rows that no longer take them), so an item that's removed and added back starts from its default
  * recipe instead of whatever was last picked for it. A build-separately choice that gathers
  * nothing (its anchor no longer sits above the item, say) goes too. Fuel and fertilizer choices
  * are plan-wide settings and always kept. Returns null when there's nothing to drop.
  */
 export function pruneChoices(plan: Plan, catalog: ProcessCatalog): Plan | null {
   const { nodes } = unfold(plan, catalog)
-  const rows = new Set(nodes.map((n) => n.id))
   const items = new Set(nodes.map((n) => n.item))
   const processes = new Set(nodes.flatMap((n) => (n.process ? [n.process.id] : [])))
   const gathering = new Set(nodes.flatMap((n) => (n.separation ? [separationKey(n.separation)] : [])))
@@ -623,16 +616,13 @@ export function pruneChoices(plan: Plan, catalog: ProcessCatalog): Plan | null {
   // The plan's defaults for what it burns, spreads and pays with stay while they still exist.
   const p = keep(plan.producers, (item) => (item.startsWith('@') ? catalog.byId.has(plan.producers[item]) : items.has(item)))
   const m = keep(plan.machines, (id) => processes.has(id))
-  // Catalysts stay with a row only while its machines can take them.
-  const loadable = new Set(nodes.flatMap((n) => (n.process?.acceptsCatalysts ? [n.id] : [])))
-  const c = keep(plan.rowCatalysts, (id) => loadable.has(id))
-  // Heights stay with a row only while its machines' output depends on it.
-  const raised = new Set(nodes.flatMap((n) => (n.process?.acceptsHeight ? [n.id] : [])))
-  const h = keep(plan.rowHeights, (id) => raised.has(id))
-  // Coin stacks stay with a row only while it converts coins.
-  const converting = new Set(nodes.flatMap((n) => (n.process?.stack !== undefined ? [n.id] : [])))
-  const k = keep(plan.rowStacks, (id) => converting.has(id))
-  const b = keep(plan.branches, (id) => rows.has(id))
+  // Each row setting stays with its row while the row has use for it (see `ROW_FIELDS`).
+  const byRow = new Map(nodes.map((n) => [n.id, n]))
+  const rowSettings = mapRowSettings(plan, (key, id, value) => {
+    const field = ROW_FIELDS[key]
+    if (field.shape === 'list') return field.keep(byRow.get(id)) ? value : undefined
+    return (field.keep as (row: PlanNode | undefined, value: unknown) => unknown)(byRow.get(id), value)
+  })
   const separate = plan.separate && separationsOf(plan.separate).filter((s) => gathering.has(separationKey(s)))
   const s = separate?.length !== plan.separate?.length
   // Fed-back items stay while the plan still makes them (as a row's item or a side output).
@@ -642,50 +632,19 @@ export function pruneChoices(plan: Plan, catalog: ProcessCatalog): Plan | null {
   // So do items broken down at altars.
   const altarItems = plan.altarItems?.filter((item) => made.has(item))
   const a = altarItems?.length !== plan.altarItems?.length
-  // Rounding and units stay with rows its machines still run on.
-  const running = new Set(nodes.flatMap((n) => (n.kind === 'make' ? [n.id] : [])))
-  const roundUp = plan.roundUp?.filter((id) => running.has(id))
-  const u = roundUp?.length !== plan.roundUp?.length
-  // A mixed feed stays with a crucible row while the row below it makes something it can refine.
-  const mixable = new Set(nodes.flatMap((n) => (n.mixable?.length ? [n.id] : [])))
-  const x = keep(plan.mixedFeed, (id) => mixable.has(id))
-  const units = keep(plan.units, (id) => running.has(id))
-  // Outputs sent to Knowledge Altars stay with a row while its machines still make them.
-  const outputs = new Map(nodes.flatMap((n): [string, string[]][] => (n.kind === 'make' ? [[n.id, n.process!.outputs.map((o) => o.item)]] : [])))
-  let r = false
-  const altarOutputs =
-    plan.altarOutputs &&
-    Object.fromEntries(
-      Object.entries(plan.altarOutputs).flatMap(([id, items]) => {
-        const kept = items.filter((item) => outputs.get(id)?.includes(item))
-        if (kept.length !== items.length) r = true
-        return kept.length ? [[id, kept]] : []
-      }),
-    )
-  // Only machines get built: marks stay with rows that run some.
-  const built = plan.built?.filter((id) => running.has(id))
-  const d = built?.length !== plan.built?.length
   // Caps on the bus's supply stay while the plan takes the item from the bus.
   const drawn = new Set(nodes.flatMap((n) => (n.kind === 'bus' ? [n.item] : [])))
   const caps = keep(plan.busSupply, (item) => drawn.has(item))
-  const dropped = [p, m, c, h, k, b, x, units, caps].some((y) => y.dropped) || s || r || f || a || u || d
+  const dropped = [p, m, caps].some((y) => y.dropped) || rowSettings.changed || s || f || a
   if (!dropped) return null
   return {
     ...plan,
     producers: p.record!,
     machines: m.record!,
-    rowCatalysts: c.record,
-    rowHeights: h.record && Object.keys(h.record).length ? h.record : undefined,
-    rowStacks: k.record && Object.keys(k.record).length ? k.record : undefined,
-    branches: b.record,
+    ...rowSettings.settings,
     separate,
-    altarOutputs: altarOutputs && Object.keys(altarOutputs).length ? altarOutputs : undefined,
     feedbackItems: feedbackItems?.length ? feedbackItems : undefined,
     altarItems: altarItems?.length ? altarItems : undefined,
-    roundUp: roundUp?.length ? roundUp : undefined,
-    mixedFeed: x.record && Object.keys(x.record).length ? x.record : undefined,
-    units: units.record && Object.keys(units.record).length ? units.record : undefined,
-    built: built?.length ? built : undefined,
     busSupply: caps.record && Object.keys(caps.record).length ? caps.record : undefined,
   }
 }

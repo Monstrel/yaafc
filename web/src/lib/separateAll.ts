@@ -3,6 +3,7 @@ import { runKey, type ProcessCatalog } from './processes'
 import { separationKey, separationsOf, withSeparation } from './separate'
 import type { Plan, Separation } from './types'
 import { consumedBy, inRecovery, resolveChoice, suppliedBy, unfold, type PlanNode } from './unfold'
+import { ROW_FIELDS, ROW_KEYS, rowEntries } from './rowSettings'
 
 /** Rows from the root of its tree down to `n`. */
 function chain(n: PlanNode): PlanNode[] {
@@ -30,14 +31,8 @@ function branchSettings(plan: Plan, row: string): string {
       .flatMap(([id, v]) => (under(id, row) === null ? [] : [[under(id, row), v] as const]))
       .sort(([a], [b]) => (a! < b! ? -1 : 1))
   return JSON.stringify([
-    pick(plan.branches),
-    pick(plan.rowCatalysts),
-    pick(plan.rowHeights),
-    pick(plan.rowStacks),
-    pick(plan.units),
-    (plan.roundUp ?? []).flatMap((id) => under(id, row) ?? []).sort(),
-    pick(plan.mixedFeed),
-    pick(plan.altarOutputs),
+    // Every row setting that changes how the plan is made (see `ROW_FIELDS`).
+    ...ROW_KEYS.filter((key) => ROW_FIELDS[key].makes).map((key) => pick(Object.fromEntries(rowEntries(plan, key)))),
     separationsOf(plan.separate).flatMap((s) => (s.at && under(s.at, row) !== null ? [[s.item, s.anchor, under(s.at, row)]] : [])),
   ])
 }
