@@ -8,7 +8,7 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
-## 2026-10-12T21:08Z
+## 2026-10-12T21:24Z
 
 - A by-product sent to Knowledge Altars now stays with its row when targets are reordered or
   removed, or a row is built separately or merged back, instead of being dropped or moving to a
@@ -40,6 +40,11 @@ out.
 - Rounding rows up to whole machines no longer makes the rows below them grow to take the extra
   output: it overflows instead, and plans with many rows rounded up need far fewer machines.
 - Plans with overflow targets fed back no longer show tiny phantom shortfalls.
+- The planner's menus (machines, build separately, built checklist, and the Cauldron page's) can be
+  used from the keyboard: focus moves into the menu, the arrow keys move between choices, and
+  Escape returns to the button.
+- Big plans respond faster: hovering a unit's ×N badge, opening a menu or folding a branch no
+  longer redraws every row.
 
 ## 2026-10-11T23:08Z
 
