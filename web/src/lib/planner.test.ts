@@ -1069,6 +1069,7 @@ describe('reordering targets', () => {
     ],
     branches: { '0/A/X': { producer: 'p:a' }, '1/B/X': { producer: 'p:b' } },
     rowCatalysts: { '1/B': ['Catalyst1'] },
+    altarOutputs: { '0/A/X': ['Z'], '1/B/X': ['Z'] },
     separate: [{ item: 'X', anchor: 'B', at: '1/B' }, { item: 'Y' }],
   })
 
@@ -1077,6 +1078,7 @@ describe('reordering targets', () => {
     expect(moved.targets.map((t) => t.item)).toEqual(['B', 'A', ''])
     expect(moved.branches).toEqual({ '1/A/X': { producer: 'p:a' }, '0/B/X': { producer: 'p:b' } })
     expect(moved.rowCatalysts).toEqual({ '0/B': ['Catalyst1'] })
+    expect(moved.altarOutputs).toEqual({ '1/A/X': ['Z'], '0/B/X': ['Z'] })
     expect(moved.separate).toEqual([{ item: 'X', anchor: 'B', at: '0/B' }, { item: 'Y' }])
     expect(moveTarget(moved, 0, 2)).toEqual(base)
   })
@@ -1086,6 +1088,7 @@ describe('reordering targets', () => {
     expect(removed.targets.map((t) => t.item)).toEqual(['', 'B'])
     expect(removed.branches).toEqual({ '0/B/X': { producer: 'p:b' } })
     expect(removed.rowCatalysts).toEqual({ '0/B': ['Catalyst1'] })
+    expect(removed.altarOutputs).toEqual({ '0/B/X': ['Z'] })
     expect(removed.separate).toEqual([{ item: 'X', anchor: 'B', at: '0/B' }, { item: 'Y' }])
   })
 })

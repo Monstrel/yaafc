@@ -1,4 +1,4 @@
-import { releases, type Release } from '../lib/changelog'
+import { changelogError, releases, type Release } from '../lib/changelog'
 
 const dayFormat = new Intl.DateTimeFormat(undefined, { weekday: 'short', year: 'numeric', month: 'long', day: 'numeric' })
 const timeFormat = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' })
@@ -20,6 +20,7 @@ export function ChangelogPage() {
       <section className="panel">
         <h2>Changelog</h2>
         <p className="hint">What changed in each update, newest first.</p>
+        {changelogError && <p className="warn-text">The changelog couldn&apos;t be read ({changelogError}).</p>}
       </section>
       {byDay(releases).map(({ day, releases }) => (
         <section key={day} className="panel">

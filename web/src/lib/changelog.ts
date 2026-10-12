@@ -40,4 +40,11 @@ export function parseChangelog(source: string): Release[] {
   return releases
 }
 
-export const releases = parseChangelog(text)
+/** Why CHANGELOG.md couldn't be read, if it couldn't: the pages then show no releases, not a crash. */
+export let changelogError: string | undefined
+export let releases: Release[] = []
+try {
+  releases = parseChangelog(text)
+} catch (e) {
+  changelogError = e instanceof Error ? e.message : String(e)
+}

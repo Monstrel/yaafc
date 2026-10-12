@@ -37,6 +37,7 @@ function branchSettings(plan: Plan, row: string): string {
     pick(plan.units),
     (plan.roundUp ?? []).flatMap((id) => under(id, row) ?? []).sort(),
     pick(plan.mixedFeed),
+    pick(plan.altarOutputs),
     separationsOf(plan.separate).flatMap((s) => (s.at && under(s.at, row) !== null ? [[s.item, s.anchor, under(s.at, row)]] : [])),
   ])
 }

@@ -343,8 +343,7 @@ export const convertOverflowTarget = (plan: Plan, index: number, rate: number): 
 
 /**
  * Puts the targets in a new order (`order` lists old indexes; leaving one out removes it). Tree
- * row ids start with their target's place, so per-row picks, catalysts, heights, coin stacks and build-separately rows
- * move with their target, and a removed target's go with it.
+ * row ids start with their target's place, so per-row settings (see `moveRows`) move with their target, and a removed target's go with it.
  */
 export function reorderTargets(plan: Plan, order: number[]): Plan {
   // Row ids number only the targets with an item.
@@ -369,8 +368,8 @@ export function reorderTargets(plan: Plan, order: number[]): Plan {
 }
 
 /**
- * Moves per-row picks, catalysts, heights, coin stacks, build-separately rows, rounding, units and built marks to
- * the rows' new ids. `remap` gives null for a row that's gone (dropping its settings), or several ids for a
+ * Moves per-row picks, catalysts, heights, coin stacks, build-separately rows, rounding, units, built marks and
+ * outputs sent to Knowledge Altars to the rows' new ids. `remap` gives null for a row that's gone (dropping its settings), or several ids for a
  * row copied to several places. Where rows land on the same id, the one with the lowest `rank` wins.
  */
 export function moveRows(
@@ -404,6 +403,7 @@ export function moveRows(
     mixedFeed: rows(plan.mixedFeed),
     units: rows(plan.units),
     built: built?.length ? built : undefined,
+    altarOutputs: rows(plan.altarOutputs),
   }
 }
 

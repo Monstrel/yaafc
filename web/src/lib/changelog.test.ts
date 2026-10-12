@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { parseChangelog, releases } from './changelog'
+import { changelogError, parseChangelog, releases } from './changelog'
 
 describe('changelog', () => {
   it('lists every release newest first, each with changes', () => {
+    expect(changelogError).toBeUndefined()
     expect(releases.length).toBeGreaterThan(0)
     for (const [i, r] of releases.entries()) {
       expect(r.changes.length, r.date.toISOString()).toBeGreaterThan(0)

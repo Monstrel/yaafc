@@ -8,6 +8,12 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
+## 2026-10-12T20:00Z
+
+- A by-product sent to Knowledge Altars now stays with its row when targets are reordered or
+  removed, or a row is built separately or merged back, instead of being dropped or moving to a
+  different row.
+
 ## 2026-10-11T23:08Z
 
 - Targets for items Dispatch Portals buy (Bandages, Gloom Spores, Pocket Watches, Fertile
