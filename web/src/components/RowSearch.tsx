@@ -93,7 +93,10 @@ export function RowSearch({ rows, onGo }: Props) {
         role="search"
         aria-label="Find rows making an item"
         onKeyDown={(e) => {
-          if (!item || (e.target as HTMLElement).closest('.picker-popover')) return
+          // Enter steps through the matches from the item's picker (Space still opens it), like a
+          // browser's find bar; the step and clear buttons keep their own keys.
+          const el = e.target as HTMLElement
+          if (!item || el.closest('.picker-popover') || el.closest('[data-own-keys]')) return
           if (e.key === 'ArrowDown' || (e.key === 'Enter' && !e.shiftKey)) go((index ?? -1) + 1)
           else if (e.key === 'ArrowUp' || (e.key === 'Enter' && e.shiftKey)) go((index ?? 0) - 1)
           else return
@@ -116,13 +119,13 @@ export function RowSearch({ rows, onGo }: Props) {
             <span className="row-search-count" aria-live="polite">
               {index === null ? `${matches.length} ${matches.length === 1 ? 'row' : 'rows'}` : `${index + 1} of ${matches.length}`}
             </span>
-            <button type="button" className="compact-button" title={`Previous row making ${name}`} aria-label="Previous match" onClick={() => go((index ?? 0) - 1)}>
+            <button type="button" data-own-keys className="compact-button" title={`Previous row making ${name}`} aria-label="Previous match" onClick={() => go((index ?? 0) - 1)}>
               ▲
             </button>
-            <button type="button" className="compact-button" title={`Next row making ${name}`} aria-label="Next match" onClick={() => go((index ?? -1) + 1)}>
+            <button type="button" data-own-keys className="compact-button" title={`Next row making ${name}`} aria-label="Next match" onClick={() => go((index ?? -1) + 1)}>
               ▼
             </button>
-            <button type="button" className="compact-button row-search-clear" title="Stop finding" aria-label="Clear search" onClick={() => choose(null)}>
+            <button type="button" data-own-keys className="compact-button row-search-clear" title="Stop finding" aria-label="Clear search" onClick={() => choose(null)}>
               ×
             </button>
           </>
