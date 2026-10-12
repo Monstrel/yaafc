@@ -1,7 +1,4 @@
-
-
-/** A bookmark: use this row's setup as my default. */
-/** A bookmark: outlined, or filled for a saved default. */
+/** A bookmark (use this row's setup as my default): outlined, or filled for a saved default. */
 export function BookmarkIcon({ filled = false }: { filled?: boolean }) {
   return (
     <svg

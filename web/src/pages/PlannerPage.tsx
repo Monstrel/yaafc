@@ -280,7 +280,6 @@ export function PlannerPage({
     // oxlint-disable-next-line react/set-state-in-effect -- the request must come after the tree mounts
     if (reveal && hasTree) revealRow(reveal)
   }, [reveal, hasTree])
-  /** The target just added, whose item picker opens. */
   // Whether the upgrades and defaults column shows beside the plan (two-column layout only).
   const [sideOpen, setSideOpen] = usePersistentState<boolean>('planner-side', true, (v) => (typeof v === 'boolean' ? v : undefined), {
     perTab: true,
@@ -305,6 +304,7 @@ export function PlannerPage({
     addEventListener('keydown', listener)
     return () => removeEventListener('keydown', listener)
   }, [overview])
+  /** The target just added, whose item picker opens. */
   const [added, setAdded] = useState<{ plan: string; index: number } | null>(null)
   const addTarget = () => {
     // A plan with only its blank target uses that one: show it instead of adding another.

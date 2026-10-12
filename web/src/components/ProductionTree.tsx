@@ -52,7 +52,6 @@ interface Props {
   onResetProducer: (row: string) => void
   /** Looks for a new cauldron recipe for a row's item on the Cauldron page. */
   onFindCauldron: (row: TreeNode) => void
-  /** Loads catalysts into one row's machines. */
   /** Loads catalysts into a row ('inherited': what it loads without its own setting). */
   onCatalysts: (row: string, catalysts: string[], inherited: string[]) => void
   /** Builds a row's machines at a height ('inherited': the height without its own setting). */
@@ -186,7 +185,8 @@ export function ProductionTree({
   const rootIds = JSON.stringify(slots.map((s) => s.rootId))
   const { view, slotRows } = useMemo(() => viewOf(tree, JSON.parse(rootIds)), [tree, rootIds])
   const slotByRow = new Map(slots.map((s, i) => [slotRows[i], s]))
-  const targets = view[0]?.id === PLAN_ROOT ? view[0].children : view  /** What items built at the top of the plan are shown "with". */
+  const targets = view[0]?.id === PLAN_ROOT ? view[0].children : view
+  /** What items built at the top of the plan are shown "with". */
   const topName = topAnchorName(tree)
   // Rows where "Use as my default" would change something: only those offer it.
   const savable = useMemo(() => {

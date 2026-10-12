@@ -107,7 +107,6 @@ export const TreeRow = memo(function TreeRow({
   onProducer: (pick: ProducerPick) => void
   onResetProducer: (row: string) => void
   onFindCauldron: (row: TreeNode) => void
-  /** Loads catalysts into one row's machines. */
   /** Loads catalysts into a row ('inherited': what it loads without its own setting). */
   onCatalysts: (row: string, catalysts: string[], inherited: string[]) => void
   /** Builds a row's machines at a height ('inherited': the height without its own setting). */

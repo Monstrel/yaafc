@@ -246,10 +246,6 @@ export function TargetNotes({
 }
 
 /**
- * What an overflow target takes, or why it takes nothing: its recipes don't use the item, a target
- * above takes it all, or nothing overflows. It can become an ordinary target at any time.
- */
-/**
  * What a supply target takes of the bus's capped supply, or why it takes nothing: the bus's supply
  * isn't capped, its recipes don't take the item from the bus, or a target above takes it all. It can
  * become an ordinary target at any time.
@@ -340,6 +336,10 @@ function DispatchTargetNote({ terms, beltSpeed }: { terms: DispatchTerms; beltSp
   )
 }
 
+/**
+ * What an overflow target takes, or why it takes nothing: its recipes don't use the item, a target
+ * above takes it all, or nothing overflows. It can become an ordinary target at any time.
+ */
 function OverflowTargetNote({
   consumes,
   use,
