@@ -26,9 +26,17 @@ export interface LpSolution {
   values: Map<string, number>
 }
 
-const num = (v: number) => (Number.isFinite(v) ? String(v) : '0')
+/** A number in the LP's text: one that isn't finite is a mistake in the model, not something to solve. */
+const num = (v: number, what: () => string) => {
+  if (!Number.isFinite(v)) throw new Error(`LP ${what()} is ${v}`)
+  return String(v)
+}
 
-/** Minimizes Σ cost·x subject to the equalities, with every column ≥ 0. */
+/**
+ * Minimizes Σ cost·x subject to the equalities, with every column ≥ 0. Throws on a mistake in the
+ * model (a coefficient on a row it doesn't have, a number that isn't finite) rather than solving
+ * something else.
+ */
 export function solveLP(lp: LinearProgram): LpSolution {
   // LP-format identifiers can't contain the ':' and '@' our names use, so map them.
   const rowNames = Object.keys(lp.equalities)
@@ -42,16 +50,20 @@ export function solveLP(lp: LinearProgram): LpSolution {
     const id = colId.get(c)!
     for (const [key, v] of Object.entries(lp.columns[c])) {
       if (!v) continue
-      const term = `${v < 0 ? '-' : '+'} ${num(Math.abs(v))} ${id}`
+      const term = `${v < 0 ? '-' : '+'} ${num(Math.abs(v), () => `coefficient ${c} × ${key}`)} ${id}`
       if (key === 'cost') objective.push(term)
-      else rows.get(key)?.push(term)
+      else {
+        const row = rows.get(key)
+        if (!row) throw new Error(`LP column ${c} has a coefficient on unknown row ${key}`)
+        row.push(term)
+      }
     }
   }
   const text = [
     'Minimize',
     ` obj: ${objective.length ? objective.join(' ') : '0 x0'}`,
     'Subject To',
-    ...rowNames.map((r) => ` ${rowId.get(r)}: ${(rows.get(r) ?? []).join(' ') || '0 x0'} = ${num(lp.equalities[r])}`),
+    ...rowNames.map((r) => ` ${rowId.get(r)}: ${(rows.get(r) ?? []).join(' ') || '0 x0'} = ${num(lp.equalities[r], () => `row ${r}`)}`),
     'End',
   ].join('\n')
 
