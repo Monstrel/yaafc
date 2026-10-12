@@ -8,7 +8,7 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
-## 2026-10-12T21:36Z
+## 2026-10-12T21:54Z
 
 - A by-product sent to Knowledge Altars now stays with its row when targets are reordered or
   removed, or a row is built separately or merged back, instead of being dropped or moving to a
@@ -43,8 +43,12 @@ out.
 - The planner's menus (machines, build separately, built checklist, and the Cauldron page's) can be
   used from the keyboard: focus moves into the menu, the arrow keys move between choices, and
   Escape returns to the button.
-- Big plans respond faster: hovering a unit's ×N badge, opening a menu or folding a branch no
-  longer redraws every row.
+- Big plans respond faster: hovering a unit's ×N badge, opening a menu, folding a branch or typing
+  a target amount no longer redraws every row.
+- More of the planner works from the keyboard: in the find-rows search, Enter on "Previous match"
+  and "Clear search" does what they say; the item picker closes when you tab away and returns to
+  its button after you choose; and focusing a flow chart box or loop highlights it as hovering
+  does. Screen readers now announce the item picker's list and the item you're on.
 - If your saved data can't be read, the calculator keeps a copy of it and says so, so you can
   download it instead of losing it.
 - If your changes can't be saved (the browser's storage is full or blocked), the calculator now
