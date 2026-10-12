@@ -10,8 +10,6 @@ import { Spinner } from '../components/Spinner'
 import { useNoticeable } from '../lib/useNoticeable'
 import { ledgers, targetFedBack } from '../lib/ledger'
 import { releaseScrollAnchor, useFlip } from '../lib/flip'
-import { setNetworkFuel, setNetworkSource } from '../lib/heatChoices'
-import type { HeatNetwork } from '../lib/heatNetworks'
 import {
   HEAT,
   MAX_TIER,
@@ -33,9 +31,6 @@ import { STEAM_HEAT_ID, defaultProducer } from '../lib/processes'
 import type { PlanModel } from '../lib/planModel'
 import { namedAfterTargets, planTitle, targetsName } from '../lib/planName'
 import {
-  chooseProducer,
-  clearBranchChoice,
-  keepDefaultInPlan,
   addProvider,
   addOverflowTarget,
   addSupplyTarget,
@@ -49,42 +44,22 @@ import {
   migrateLoopFeedback,
   moveTarget,
   removeTarget,
-  setAltar,
-  setOutputAltar,
-  setLoopSource,
-  type LoopSourceChoice,
   setItemFeedback,
   setTargetFeedback,
   pruneChoices,
-  rememberSetup,
   ownPicks,
-  setBuilt,
   setPlanDefault,
-  setRoundUp,
-  setMixedFeed,
   followDefault,
-  setRowCatalysts,
-  setRowHeight,
-  setRowStack,
-  type ProducerPick,
 } from '../lib/choices'
 import type { PlanResult } from '../lib/solver'
 import { separationsOf } from '../lib/separate'
-import { canSeparateShared, mergeSingleUses, organize, separateShared, setSeparation } from '../lib/separateAll'
-import { BOILER_HEAT, parentId, planProducer, rowItem } from '../lib/unfold'
-import { dropUnits, setUnits, unitScales } from '../lib/units'
+import { canSeparateShared, mergeSingleUses, organize } from '../lib/separateAll'
+import { BOILER_HEAT, parentId, planProducer } from '../lib/unfold'
+import { dropUnits, unitScales } from '../lib/units'
 import type { TreeNode } from '../lib/tree'
 import { altarMods, planBuildings } from '../lib/planSummary'
 import { usePersistentState } from '../lib/store'
-import {
-  blankTarget,
-  type MyDefaults,
-  type Plan,
-  type PlanTarget,
-  type Progress,
-  type SavedRecipe,
-  type Separation,
-} from '../lib/types'
+import { blankTarget, type MyDefaults, type Plan, type PlanTarget, type Progress, type SavedRecipe } from '../lib/types'
 import {
   DISPATCH_UPGRADES,
   PLANNER_UPGRADES,
@@ -101,6 +76,8 @@ import { TargetLink } from '../components/planner/TargetLink'
 import { BusPanel, PlanDefaults, ResourceUsers } from '../components/planner/BusPanel'
 import { TargetAmount, TargetNotes } from '../components/planner/TargetControls'
 import { LogisticsLine, ResearchTier, SidebarIcon, MyDefaultsPanel } from '../components/planner/PlanPanels'
+import { usePlanActions } from '../components/planner/usePlanActions'
+import { useStable } from '../lib/useStable'
 
 /** What each planner upgrade series currently does, shown under its name. */
 const UPGRADE_EFFECTS: Record<string, (m: Modifiers) => string> = {
@@ -150,9 +127,6 @@ interface Props {
 }
 
 const NO_ROWS: string[] = []
-
-/** A tree row's name in undo's list. */
-const rowName = (row: string) => itemName(rowItem(row))
 
 /** A tree row gone from the plan is held in place by the row above it. */
 const flipParent = (key: string) => {
@@ -233,23 +207,6 @@ export function PlannerPage({
     if (stale) onUpdatePlan(null, (p) => dropUnits(p, units.stale, plan.units))
   }, [stale, units, plan.units, onUpdatePlan])
 
-  const setProducer = (pick: ProducerPick) =>
-    onUpdatePlan(`Change how ${itemName(pick.item)} is made`, (p) => chooseProducer(p, catalog, pick))
-  const setNetworkBurn = (net: HeatNetwork, producer: string, machine?: string) =>
-    onUpdatePlan(`Change what a ${itemName(net.fuel)} heat network burns`, (p) => setNetworkFuel(p, catalog, net, producer, machine))
-  const setNetworkSupply = (net: HeatNetwork, producer: string, machine?: string) =>
-    onUpdatePlan(`Change where a ${itemName(net.fuel)} heat network gets its fuel`, (p) => setNetworkSource(p, catalog, net, producer, machine))
-  const resetProducer = (row: string) => onUpdatePlan(`Reset the pick for ${rowName(row)}`, (p) => clearBranchChoice(p, row))
-  const outputAltar = (row: string, item: string, on: boolean) =>
-    onUpdatePlan(
-      `${on ? 'Send' : 'Stop sending'} ${rowName(row)}'s ${itemName(item)} ${on ? 'to' : 'from'} Knowledge Altars`,
-      (p) => setOutputAltar(p, row, item, on),
-    )
-  const loopSource = (row: TreeNode, source: LoopSourceChoice) =>
-    onUpdatePlan(
-      source === 'fed' ? `Feed back the ${itemName(row.item)} target` : `Take ${itemName(row.item)} in as a plan input`,
-      (p) => setLoopSource(p, catalog, row, source, result.tree),
-    )
   /**
    * The fuel or fertilizer (heat or nutrients) rows burn or spread unless their branch picks
    * another. Changing it keeps those picks; the rows making them can follow it too.
@@ -290,35 +247,6 @@ export function PlannerPage({
       />
     )
   }
-  const setCatalysts = (row: string, catalysts: string[], inherited: string[]) =>
-    onUpdatePlan(`Change catalysts for ${rowName(row)}`, (p) => setRowCatalysts(p, row, catalysts, inherited))
-  const setHeight = (row: string, height: number, inherited: number) =>
-    onUpdatePlan(`Change height for ${rowName(row)}`, (p) => setRowHeight(p, row, height, inherited))
-  const setStack = (row: string, stack: number, inherited: number) =>
-    onUpdatePlan(`Change stacking for ${rowName(row)}`, (p) => setRowStack(p, row, stack, inherited))
-  const remember = (row: TreeNode) => {
-    const next = rememberSetup(plan, catalog, result.tree, row)
-    const label = `Save default for ${itemName(row.item)}`
-    onMyDefaults(label, next.mine)
-    onUpdatePlan(label, () => next.plan)
-  }
-  const forget = (item: string, label = `Forget default for ${itemName(item)}`) =>
-    onMyDefaults(label, Object.fromEntries(Object.entries(myDefaults).filter(([k]) => k !== item)))
-  /** Un-saves a default from a row: this plan stays made that way; only other plans lose it. */
-  const unsave = (item: string) => {
-    const saved = myDefaults[item]
-    const label = `Unsave default for ${itemName(item)}`
-    if (saved) onUpdatePlan(label, (p) => keepDefaultInPlan(p, result.tree, item, saved))
-    forget(item, label)
-  }
-  // Choosing by hand where an item is built turns auto organize off, so it doesn't undo the choice.
-  const setSeparate = (s: Separation, on: boolean, from?: string, replacing?: Separation) =>
-    onUpdatePlan(
-      `${on ? 'Build' : 'Stop building'} ${itemName(s.item)} separately${plan.autoOrganize ? ' (auto organize off)' : ''}`,
-      (p) => ({ ...setSeparation(p, catalog, s, on, from, replacing), autoOrganize: undefined }),
-    )
-  const setAutoOrganize = (on: boolean) =>
-    onUpdatePlan(`Turn ${on ? 'on' : 'off'} auto organize`, (p) => ({ ...p, autoOrganize: on || undefined }))
   // Whether the plan-wide build-separately buttons would change anything (never, auto-organized).
   const canSeparate = useMemo(() => !plan.autoOrganize && canSeparateShared(plan, catalog), [plan, catalog])
   const canMerge = useMemo(() => !plan.autoOrganize && mergeSingleUses(plan, catalog) !== plan, [plan, catalog])
@@ -328,6 +256,10 @@ export function PlannerPage({
   // Targets are set in their own rows of the production tree.
   const [shownTarget, setShownTarget] = useState<{ index: number; n: number } | null>(null)
   const showTarget = (index: number) => setShownTarget((s) => ({ index, n: (s?.n ?? 0) + 1 }))
+  // What the tree's rows change, each keeping its identity so rows that didn't change aren't drawn again.
+  const actions = usePlanActions({ plan, catalog, tree: result.tree, myDefaults, onUpdatePlan, onMyDefaults, showTarget })
+  // The app makes this anew whenever a plan changes: held still, so typing a target amount redraws no rows.
+  const findCauldron = useStable(onFindCauldron)
   // Rows shown from links elsewhere on the page: each click on the same rows shows the next of them.
   const [shownRow, setShownRow] = useState<{ id: string; n: number; of: string[] } | null>(null)
   const showRow = (ids: string[]) =>
@@ -535,8 +467,6 @@ export function PlannerPage({
     [result.tree, logistics, units, money, altar],
   )
   const totalMachines = buildings.reduce((t, b) => t + b.count, 0)
-  const altarOverflow = (item: string, on: boolean) =>
-    onUpdatePlan(`${on ? 'Break down' : 'Stop breaking down'} ${itemName(item)} overflow at Knowledge Altars`, (p) => setAltar(p, item, on))
   const heatUsers = useMemo(() => resourceUsers(result.tree, logistics, 'heat', units.copies), [result.tree, logistics, units])
   const nutrientUsers = useMemo(() => resourceUsers(result.tree, logistics, 'nutrients', units.copies), [result.tree, logistics, units])
 
@@ -594,7 +524,7 @@ export function PlannerPage({
               </label>
             ))}
           </section>
-          <MyDefaultsPanel defaults={myDefaults} catalog={catalog} onForget={forget} />
+          <MyDefaultsPanel defaults={myDefaults} catalog={catalog} onForget={actions.forget} />
         </aside>
 
         <main className="planner-main" ref={main}>
@@ -800,7 +730,7 @@ export function PlannerPage({
                       onUpdatePlan(`Use overflow of ${itemName(item)}`, (p) => addOverflowTarget(p, item, consumes))
                       showTarget(plan.targets.length)
                     }}
-                    onAltar={altarOverflow}
+                    onAltar={actions.altarOverflow}
                     onCap={(item, cap) => onUpdatePlan(`Change input supply of ${itemName(item)}`, (p) => setBusSupply(p, item, cap))}
                     onUseSupply={(item, consumes) => {
                       onUpdatePlan(`Use input supply of ${itemName(item)}`, (p) => addSupplyTarget(p, item, consumes))
@@ -818,54 +748,38 @@ export function PlannerPage({
                       planId={plan.id}
                       tree={result.tree}
                       ledger={ledger}
-                      onNetworkFuel={setNetworkBurn}
-                      onNetworkSource={setNetworkSupply}
+                      onNetworkFuel={actions.setNetworkBurn}
+                      onNetworkSource={actions.setNetworkSupply}
                       catalog={catalog}
-                      onProducer={setProducer}
-                      onResetProducer={resetProducer}
-                      onFindCauldron={onFindCauldron}
-                      onOutputAltar={outputAltar}
-                      onLoopSource={loopSource}
-                      onRemember={remember}
-                      onForget={unsave}
-                      onCatalysts={setCatalysts}
-                      onHeight={setHeight}
-                      onStack={setStack}
-                      onSeparate={setSeparate}
-                      onSeparateShared={
-                        canSeparate ? () => onUpdatePlan('Build shared items separately', (p) => separateShared(p, catalog)) : undefined
-                      }
-                      onMergeSingles={canMerge ? () => onUpdatePlan('Merge single-use builds', (p) => mergeSingleUses(p, catalog)) : undefined}
+                      onProducer={actions.setProducer}
+                      onResetProducer={actions.resetProducer}
+                      onFindCauldron={findCauldron}
+                      onOutputAltar={actions.outputAltar}
+                      onLoopSource={actions.loopSource}
+                      onRemember={actions.remember}
+                      onForget={actions.unsave}
+                      onCatalysts={actions.setCatalysts}
+                      onHeight={actions.setHeight}
+                      onStack={actions.setStack}
+                      onSeparate={actions.setSeparate}
+                      onSeparateShared={canSeparate ? actions.separateShared : undefined}
+                      onMergeSingles={canMerge ? actions.mergeSingles : undefined}
                       autoOrganize={!!plan.autoOrganize}
-                      onAutoOrganize={setAutoOrganize}
+                      onAutoOrganize={actions.setAutoOrganize}
                       logistics={logistics}
                       mods={mods}
                       roundUp={plan.roundUp ?? NO_ROWS}
                       fed={fed}
-                      onUseOverflow={(item, consumes) => {
-                        onUpdatePlan(`Use overflow of ${itemName(item)}`, (p) => addOverflowTarget(p, item, consumes))
-                        showTarget(plan.targets.length)
-                      }}
+                      onUseOverflow={actions.takeOverflow}
                       altarLeft={altarLeft}
-                      onAltar={altarOverflow}
+                      onAltar={actions.altarOverflow}
                       canAltar={canAltar}
-                      onRoundUp={(row, on) => onUpdatePlan(`${on ? 'Round up' : 'Stop rounding up'} ${rowName(row)}`, (p) => setRoundUp(p, row, on))}
-                      onMixedFeed={(row, on, inherited) =>
-                        onUpdatePlan(`${on ? 'Mix by-products into' : 'Stop mixing by-products into'} ${rowName(row)}`, (p) =>
-                          setMixedFeed(p, row, on, inherited),
-                        )
-                      }
+                      onRoundUp={actions.roundUp}
+                      onMixedFeed={actions.mixedFeed}
                       units={units}
-                      onUnits={(row, unit) =>
-                        onUpdatePlan(`Build ${rowName(row)} ${unit ? 'in units' : 'as one line'}`, (p) => setUnits(p, row, unit))
-                      }
+                      onUnits={actions.units}
                       built={plan.built ?? NO_ROWS}
-                      onBuilt={(rows, on) =>
-                        onUpdatePlan(
-                          `${on ? 'Check off' : 'Uncheck'} ${rows.length === 1 ? rowName(rows[0]) : `${rows.length} rows`}`,
-                          (p) => setBuilt(p, rows, on),
-                        )
-                      }
+                      onBuilt={actions.built}
                       targets={plan.targets.map(targetSlot)}
                       onAddTarget={addTarget}
                       shownTarget={shownTarget}
