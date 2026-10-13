@@ -9,9 +9,11 @@ import {
   recipeSignature,
   type CauldronMode,
   type CauldronResult,
+  type FoundRecipe,
 } from '../lib/cauldron'
 import { HEAT, MONEY, NUTRIENTS, cauldronIngredients, cauldronTargets, itemName, itemsByKey } from '../lib/gameData'
 import { diagnoseNoResults, type FinderQuery } from '../lib/diagnose'
+import { releaseScrollAnchor, useFlip } from '../lib/flip'
 import { fmt, fmtSeconds } from '../lib/format'
 import { noun } from '../lib/plural'
 import {
@@ -88,11 +90,15 @@ export function CauldronPage({
   // Working down a chain: an ingredient a cauldron can make becomes the next target, and the trail
   // keeps the targets above it. Going to one already on the trail goes back up to it.
   const finder = useRef<HTMLElement>(null)
+  // Results glide to their new places (into or out of the saved ones, re-sorted), keeping the one
+  // just used where it was on screen.
+  useFlip(finder)
   const goTo = (item: string, trail: string[]) => update({ target: item, trail, mustInclude: null, page: 0 })
   const findFor = (item: string) => {
     prefMenus.hide()
     const above = search.trail.indexOf(item)
     goTo(item, above >= 0 ? search.trail.slice(0, above) : [...search.trail, ...(target ? [target] : [])])
+    releaseScrollAnchor()
     finder.current?.scrollIntoView({ block: 'start', behavior: 'smooth' })
   }
 
@@ -130,8 +136,25 @@ export function CauldronPage({
     )
   }, [target, mode, mustInclude, sort, prefs])
 
+  // Recipes already saved for the target lead the results, whatever the filters, and aren't
+  // repeated below them. Ones for the other cauldron are only counted.
+  const savedHere = useMemo(() => {
+    const here: (FoundRecipe & { name?: string })[] = []
+    let otherMode = 0
+    for (const s of target ? saved : []) {
+      if (s.output !== target) continue
+      if (s.mode !== mode) otherMode++
+      else {
+        const result = evaluate(s.mode, s.inputs)
+        if (result?.output.key === target) here.push({ mode: s.mode, inputs: s.inputs, result, name: s.name })
+      }
+    }
+    return { here, otherMode }
+  }, [saved, target, mode])
+  const unsaved = useMemo(() => found.filter((r) => !savedSignatures.has(recipeSignature(r.mode, r.inputs))), [found, savedSignatures])
+
   // The stored page may be past the end if the results changed since.
-  const page = Math.min(search.page, Math.max(0, Math.ceil(found.length / PAGE) - 1))
+  const page = Math.min(search.page, Math.max(0, Math.ceil(unsaved.length / PAGE) - 1))
   const setPage = (p: number) => update({ page: p })
 
   const targetItem = target ? itemsByKey.get(target) : undefined
@@ -139,6 +162,41 @@ export function CauldronPage({
   const targetRows = target ? rowsOf(target) : []
   const using = targetRows.length > 0
   const stats = targetItem ? cauldronStats(targetItem.cauldronTarget) : null
+
+  const columns = 3 + slots + (using ? 1 : 0)
+  const recipeRow = (r: FoundRecipe & { name?: string }) => {
+    const sig = recipeSignature(r.mode, r.inputs)
+    return (
+      <tr key={sig} title={r.name} data-flip={sig}>
+        <td>
+          <StarButton saved={savedSignatures.has(sig)} onClick={() => onToggleSave(r.mode, r.inputs, r.result.output.key)} />
+        </td>
+        {r.inputs.map((k, i) => (
+          <td key={i} className={preferred.has(k) ? 'ingredient preferred-ingredient' : 'ingredient'}>
+            <button
+              type="button"
+              className="ingredient-button"
+              title={`Set preference for ${itemsByKey.get(k)?.name ?? k}`}
+              aria-haspopup="true"
+              onClick={(e) => openPrefMenu(k, e.currentTarget)}
+            >
+              <ItemLabel item={k} />
+            </button>
+          </td>
+        ))}
+        <td className="num">{fmt(r.result.value)}</td>
+        <td className={`num ${r.result.offset >= 0 ? 'over' : 'under'}`}>
+          {r.result.offset >= 0 ? '+' : ''}
+          {fmt(r.result.offset)}
+        </td>
+        {using && (
+          <td className="use-cell">
+            <UseButton onClick={(button) => applyRecipe({ mode: r.mode, inputs: r.inputs, output: r.result.output.key }, button)} />
+          </td>
+        )}
+      </tr>
+    )
+  }
 
   return (
     <div className={`page cauldron-page mode-${mode}`}>
@@ -265,7 +323,21 @@ export function CauldronPage({
             </p>
           )}
 
-          {found.length > 0 && (
+          {savedHere.otherMode > 0 && targetItem && (
+            <p className="hint">
+              You&apos;ve also saved {savedHere.otherMode} {noun(savedHere.otherMode, 'recipe')} for {targetItem.name} in the{' '}
+              {mode === 'normal' ? 'Advanced Cauldron' : 'Cauldron'}.{' '}
+              <button
+                type="button"
+                className="compact-button"
+                onClick={() => update({ mode: mode === 'normal' ? 'advanced' : 'normal', page: 0 })}
+              >
+                Show {savedHere.otherMode === 1 ? 'it' : 'them'}
+              </button>
+            </p>
+          )}
+
+          {(unsaved.length > 0 || savedHere.here.length > 0) && (
             <>
               <table className="recipes">
                 <thead>
@@ -277,54 +349,42 @@ export function CauldronPage({
                     {using && <th />}
                   </tr>
                 </thead>
-                <tbody>
-                  {found.slice(page * PAGE, (page + 1) * PAGE).map((r) => {
-                    const sig = recipeSignature(r.mode, r.inputs)
-                    const isSaved = savedSignatures.has(sig)
-                    return (
-                      <tr key={sig}>
-                        <td>
-                          <StarButton saved={isSaved} onClick={() => onToggleSave(r.mode, r.inputs, r.result.output.key)} />
-                        </td>
-                        {r.inputs.map((k, i) => (
-                          <td key={i} className={preferred.has(k) ? 'ingredient preferred-ingredient' : 'ingredient'}>
-                            <button
-                              type="button"
-                              className="ingredient-button"
-                              title={`Set preference for ${itemsByKey.get(k)?.name ?? k}`}
-                              aria-haspopup="true"
-                              onClick={(e) => openPrefMenu(k, e.currentTarget)}
-                            >
-                              <ItemLabel item={k} />
-                            </button>
-                          </td>
-                        ))}
-                        <td className="num">{fmt(r.result.value)}</td>
-                        <td className={`num ${r.result.offset >= 0 ? 'over' : 'under'}`}>
-                          {r.result.offset >= 0 ? '+' : ''}
-                          {fmt(r.result.offset)}
-                        </td>
-                        {using && (
-                          <td className="use-cell">
-                            <UseButton onClick={(button) => applyRecipe({ mode: r.mode, inputs: r.inputs, output: r.result.output.key }, button)} />
-                          </td>
-                        )}
+                {savedHere.here.length > 0 && (
+                  <tbody>
+                    <tr className="recipes-group" data-flip="group:saved">
+                      <th colSpan={columns} scope="colgroup">
+                        Saved
+                      </th>
+                    </tr>
+                    {savedHere.here.map(recipeRow)}
+                  </tbody>
+                )}
+                {unsaved.length > 0 && (
+                  <tbody>
+                    {savedHere.here.length > 0 && (
+                      <tr className="recipes-group" data-flip="group:found">
+                        <th colSpan={columns} scope="colgroup">
+                          Found
+                        </th>
                       </tr>
-                    )
-                  })}
-                </tbody>
+                    )}
+                    {unsaved.slice(page * PAGE, (page + 1) * PAGE).map(recipeRow)}
+                  </tbody>
+                )}
               </table>
-              <div className="pager">
-                <button disabled={page === 0} onClick={() => setPage(page - 1)}>
-                  ‹ Prev
-                </button>
-                <span>
-                  {page + 1} / {Math.ceil(found.length / PAGE)}
-                </span>
-                <button disabled={(page + 1) * PAGE >= found.length} onClick={() => setPage(page + 1)}>
-                  Next ›
-                </button>
-              </div>
+              {unsaved.length > PAGE && (
+                <div className="pager">
+                  <button disabled={page === 0} onClick={() => setPage(page - 1)}>
+                    ‹ Prev
+                  </button>
+                  <span>
+                    {page + 1} / {Math.ceil(unsaved.length / PAGE)}
+                  </span>
+                  <button disabled={(page + 1) * PAGE >= unsaved.length} onClick={() => setPage(page + 1)}>
+                    Next ›
+                  </button>
+                </div>
+              )}
             </>
           )}
           {target && found.length === 0 && (

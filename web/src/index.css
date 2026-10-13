@@ -945,6 +945,14 @@ table.recipes td.ingredient {
   padding-right: 18px;
 }
 
+/* Labels the results' sections: recipes already saved for the target, then the rest found. */
+table.recipes .recipes-group th {
+  padding-top: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 11px;
+}
+
 /* Opens the ingredient's prefer/avoid control; reads as plain text until hovered. */
 .ingredient-button {
   max-width: 100%;
