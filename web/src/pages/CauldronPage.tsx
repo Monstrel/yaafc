@@ -1,4 +1,4 @@
-import { type Dispatch, type SetStateAction, useMemo } from 'react'
+import { type Dispatch, type SetStateAction, useMemo, useRef } from 'react'
 import { ItemIcon, ItemLabel } from '../components/ItemIcon'
 import { IngredientFilter, PrefToggle } from '../components/IngredientFilter'
 import { ItemPicker } from '../components/ItemPicker'
@@ -50,6 +50,8 @@ interface Props {
 
 const PAGE = 50
 
+const craftable = new Set(cauldronTargets.map((i) => i.key))
+
 export function CauldronPage({
   saved,
   onToggleSave,
@@ -82,6 +84,16 @@ export function CauldronPage({
   const choosePref = (p: IngredientPrefs) => {
     prefMenus.hide()
     changePrefs(p)
+  }
+  // Working down a chain: an ingredient a cauldron can make becomes the next target, and the trail
+  // keeps the targets above it. Going to one already on the trail goes back up to it.
+  const finder = useRef<HTMLElement>(null)
+  const goTo = (item: string, trail: string[]) => update({ target: item, trail, mustInclude: null, page: 0 })
+  const findFor = (item: string) => {
+    prefMenus.hide()
+    const above = search.trail.indexOf(item)
+    goTo(item, above >= 0 ? search.trail.slice(0, above) : [...search.trail, ...(target ? [target] : [])])
+    finder.current?.scrollIntoView({ block: 'start', behavior: 'smooth' })
   }
 
   // Use: a recipe goes on a row of the open plan making its item; with several rows, a menu says which.
@@ -186,8 +198,30 @@ export function CauldronPage({
             onChange={changePrefs}
           />
         </aside>
-        <section className="panel">
+        <section className="panel" ref={finder}>
           <h2>Find recipes</h2>
+          {target && search.trail.length > 0 && (
+            <nav className="chain-trail" aria-label="Recipe chain">
+              {search.trail.map((k, i) => (
+                <span key={`${i}/${k}`} className="chain-step">
+                  <button
+                    type="button"
+                    className="chain-crumb"
+                    title={`Back to recipes for ${itemName(k)}`}
+                    onClick={() => goTo(k, search.trail.slice(0, i))}
+                  >
+                    <ItemLabel item={k} size={18} />
+                  </button>
+                  <span className="chain-sep" aria-hidden>
+                    ›
+                  </span>
+                </span>
+              ))}
+              <span className="chain-current" aria-current="step">
+                <ItemLabel item={target} size={18} />
+              </span>
+            </nav>
+          )}
           <div className="filters">
             <label>
               Target
@@ -195,7 +229,7 @@ export function CauldronPage({
                 value={target}
                 options={cauldronTargets}
                 detail={(it) => fmt(it.cauldronTarget)}
-                onChange={(k) => update({ target: k, page: 0 })}
+                onChange={(k) => update({ target: k, trail: [], page: 0 })}
               />
             </label>
             <label>
@@ -348,6 +382,11 @@ export function CauldronPage({
                 onChange={(p) => choosePref(setItemPrefs(prefs, [prefMenu.item], p))}
               />
             </div>
+            {craftable.has(prefMenu.item) && prefMenu.item !== target && (
+              <button type="button" className="use-menu-row use-menu-all" onClick={() => findFor(prefMenu.item)}>
+                Find recipes for {itemsByKey.get(prefMenu.item)?.name ?? prefMenu.item}
+              </button>
+            )}
           </>
         )}
       </div>

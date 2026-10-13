@@ -193,6 +193,8 @@ export interface CauldronSearch {
   mustInclude: string | null
   sort: 'offset' | 'cost'
   page: number
+  /** The targets above this one, top first, when it was reached by following an ingredient down a chain. */
+  trail: string[]
 }
 
 /** An empty mix and search. */
@@ -203,6 +205,7 @@ export const newCauldronSearch = (): CauldronSearch => ({
   mustInclude: null,
   sort: 'cost',
   page: 0,
+  trail: [],
 })
 
 /** The Cauldron tab's mix and search, keeping only item keys `known` accepts. */
@@ -221,6 +224,8 @@ export function sanitizeCauldronSearch(v: unknown, known: (key: string) => boole
     mustInclude: item(v.mustInclude),
     sort: oneOf<'offset' | 'cost'>('offset', 'cost')(v.sort) ?? 'cost',
     page: page !== undefined && page >= 0 ? Math.floor(page) : 0,
+    // Without its target, a trail leads nowhere.
+    trail: item(v.target) ? (strings(v.trail) ?? []).filter(known) : [],
   }
 }
 

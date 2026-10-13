@@ -166,7 +166,7 @@ export default function App() {
         : machineTier(ADVANCED_CAULDRON) > model.catalog.tier
           ? 'normal'
           : search.mode
-    setSearch((s) => ({ ...s, mode, target: row.item, mustInclude: null, page: 0 }))
+    setSearch((s) => ({ ...s, mode, target: row.item, mustInclude: null, page: 0, trail: [] }))
     setTab('cauldron')
   }
   /**

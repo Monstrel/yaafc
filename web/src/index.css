@@ -857,6 +857,46 @@ td.use-cell {
   align-items: flex-end;
 }
 
+/* The targets above this one, when it was reached by following an ingredient down a chain. */
+.chain-trail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+
+.chain-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.chain-crumb {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.chain-crumb:hover,
+.chain-crumb:focus-visible {
+  border-color: var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.chain-sep {
+  color: var(--muted);
+}
+
+.chain-current {
+  padding: 2px 6px;
+  font-weight: 600;
+}
+
 .filters label,
 .stacked {
   display: flex;
