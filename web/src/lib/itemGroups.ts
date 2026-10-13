@@ -153,6 +153,20 @@ export function planGroups(planName: string, made: Iterable<string>, overflow: I
   ].filter((g) => g.items.size > 0)
 }
 
+/** Items you've saved a cauldron recipe for: ingredients for the next recipe in a chain. */
+export function savedGroups(outputs: Iterable<string>): ItemGroup[] {
+  return [
+    {
+      id: 'saved',
+      name: 'Saved recipe products',
+      description: "Items you've saved a cauldron recipe for — build on them to chain recipes",
+      items: onlyUsable(outputs),
+      icon: buildingIcon('Cauldron'),
+      badge: '★',
+    },
+  ].filter((g) => g.items.size > 0)
+}
+
 export type Preference = 'prefer' | 'avoid'
 
 /** Per-item preferences; items not listed are neutral. */

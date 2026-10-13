@@ -21,6 +21,7 @@ import {
   onlyItems,
   preferredCount,
   prefOf,
+  savedGroups,
   setPrefs as setItemPrefs,
   type IngredientPrefs,
   type ItemGroup,
@@ -64,7 +65,10 @@ export function CauldronPage({
   const slots = mode === 'normal' ? 3 : 2
   const [prefs, setPrefs] = usePersistentState<IngredientPrefs>('ingredient-prefs', emptyPrefs, sanitizePrefs)
   const preferred = useMemo(() => new Set(prefs.prefer), [prefs.prefer])
-  const groups = useMemo(() => [...planGroups, ...builtinGroups], [planGroups])
+  const groups = useMemo(
+    () => [...savedGroups(saved.map((s) => s.output)), ...planGroups, ...builtinGroups],
+    [saved, planGroups],
+  )
   const changePrefs = (p: IngredientPrefs) => {
     setPrefs(p)
     setPage(0)
