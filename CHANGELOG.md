@@ -8,6 +8,19 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
+## 2026-10-13T23:52Z
+
+- The Cauldron page's ingredient preferences have a new "Saved recipe products" group: every item
+  you've saved a cauldron recipe for, so you can prefer them when building a chain of recipes.
+- Clicking an ingredient in the recipe results now offers "Find recipes for" it, when a cauldron
+  can make it. A trail above the search shows the targets you came down through; click one to go
+  back up to it.
+- Recipes you've already saved for the target are listed first in the results, even ones your
+  ingredient preferences or "Must include" would hide. If you've saved some for the other kind of
+  cauldron, a note says so with a button to show them.
+- Recipes in the results now glide to their new places when you save or unsave one, change the
+  sort, or change an ingredient preference, and the one you clicked stays where it is on screen.
+
 ## 2026-10-12T21:54Z
 
 - A by-product sent to Knowledge Altars now stays with its row when targets are reordered or
