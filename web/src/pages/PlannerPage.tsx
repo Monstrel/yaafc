@@ -6,6 +6,9 @@ import { Money } from '../components/Money'
 import { PlanOverview } from '../components/PlanOverview'
 import { ProducerSelect, TierTag } from '../components/ProducerSelect'
 import { ProductionTree } from '../components/ProductionTree'
+import { ShareDialog } from '../components/planner/ShareDialog'
+import { ToolbarMenu } from '../components/tree/menus'
+import { asShared, sameSetup } from '../lib/shareLink'
 import type { TargetSlot } from '../components/tree/types'
 import { Spinner } from '../components/Spinner'
 import { useNoticeable } from '../lib/useNoticeable'
@@ -85,6 +88,10 @@ interface Props {
   onUpdatePlan: (label: string | null, update: (p: Plan) => Plan) => void
   onNewPlan: () => void
   onDuplicatePlan: () => void
+  /** A plan added from a share link: back to as it was shared. */
+  onRevertShared: () => void
+  /** A plan added from a share link: an ordinary plan from now on. */
+  onForgetShared: () => void
   onDeletePlan: () => void
   /** Looks for a new cauldron recipe for a row's item on the Cauldron page. */
   onFindCauldron: (row: TreeNode) => void
@@ -117,6 +124,8 @@ export function PlannerPage({
   onUpdatePlan: updateStoredPlan,
   onNewPlan,
   onDuplicatePlan,
+  onRevertShared,
+  onForgetShared,
   onDeletePlan,
   onFindCauldron,
   reveal,
@@ -255,6 +264,22 @@ export function PlannerPage({
   const [overview, setOverview] = usePersistentState<boolean>('plan-overview', false, (v) => (typeof v === 'boolean' ? v : undefined), {
     perTab: true,
   })
+  // The open plan's share link is showing.
+  const [sharing, setSharing] = useState(false)
+  // A plan added from a share link: whether it's changed since (null until that's known).
+  const [sharedChanged, setSharedChanged] = useState<boolean | null>(null)
+  useEffect(() => {
+    if (!plan.shared) return
+    let live = true
+    let n = 0
+    asShared(plan, saved, () => `compare-${n++}`).then(
+      (s) => live && setSharedChanged(!sameSetup(plan, s.plan)),
+      () => live && setSharedChanged(null),
+    )
+    return () => {
+      live = false
+    }
+  }, [plan, saved])
   /** Back to the open plan, from its top: the card picked may have been far down the overview. */
   const closeOverview = () => {
     setOverview(false)
@@ -498,14 +523,37 @@ export function PlannerPage({
                   {/* A slow re-solve: what's below is from before the last change until it's back. */}
                   {slowSolve && model.result && <Spinner label="Solving the plan" />}
                 </span>
+                {plan.shared && (
+                  <ToolbarMenu
+                    label="Shared"
+                    items={[
+                      {
+                        label: 'Revert to as shared',
+                        hint: sharedChanged ? 'Undo every change made to it since it was added' : 'It hasn’t changed since it was added',
+                        onClick: sharedChanged ? onRevertShared : undefined,
+                      },
+                      {
+                        label: 'Forget it was shared',
+                        hint: 'Make it an ordinary plan: opening its link again adds another copy',
+                        onClick: onForgetShared,
+                      },
+                    ]}
+                  />
+                )}
                 <button onClick={onNewPlan}>New</button>
                 <button onClick={onDuplicatePlan}>Duplicate</button>
+                <button onClick={() => setSharing(true)} title="Get a link that adds a copy of this plan for whoever opens it">
+                  Share
+                </button>
                 <button className="danger" onClick={onDeletePlan} disabled={plans.length <= 1}>
                   Delete
                 </button>
               </>
             )}
           </div>
+          {sharing && (
+            <ShareDialog plan={plan} saved={saved} myDefaults={myDefaults} progress={progress} onClose={() => setSharing(false)} />
+          )}
 
           {overview ? (
             <PlanOverview

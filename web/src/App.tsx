@@ -24,6 +24,8 @@ import {
   type Backup,
 } from './lib/store'
 import { mergeBackup } from './lib/importPlans'
+import { asShared, openShared, sharedCode } from './lib/shareLink'
+import { ItemLabel } from './components/ItemIcon'
 import {
   oneOf,
   newCauldronSearch,
@@ -230,12 +232,40 @@ export default function App() {
     )
   }
 
-  // A file read for importing, waiting on the player to add it or replace everything with it.
-  const [pending, setPending] = useState<{ name: string; backup: Backup } | null>(null)
+  // A file read for importing, waiting on the player to add it or replace everything with it; or
+  // a plan shared by link, waiting on them to add it.
+  const [pending, setPending] = useState<{ name: string; backup: Backup; shared?: boolean } | null>(null)
   const importDialog = useRef<HTMLDialogElement>(null)
   useEffect(() => {
     if (pending) importDialog.current?.showModal()
   }, [pending])
+
+  // A shared plan's link (…/planner#plan=…): read once, so reloading or coming back doesn't offer it again.
+  const openLink = useEffectEvent(async () => {
+    const code = sharedCode(location.hash)
+    if (!code) return
+    window.history.replaceState(window.history.state, '', location.pathname + location.search)
+    // Added from this link before: open that plan rather than adding another.
+    const added = plans.find((p) => p.shared === code)
+    if (added) {
+      setActivePlanId(added.id)
+      setTab('planner')
+      setStatus(`Opened “${planTitle(added)}”: you added it from this link before.`)
+      return
+    }
+    try {
+      const backup = await openShared(code)
+      setPending({ name: planTitle(backup.plans[0]), backup, shared: true })
+    } catch {
+      setStatus('This share link couldn’t be read: it may have been cut short when it was copied.')
+    }
+  })
+  useEffect(() => {
+    const listener = () => void openLink()
+    listener()
+    addEventListener('hashchange', listener)
+    return () => removeEventListener('hashchange', listener)
+  }, [])
 
   const openFile = async (file: File) => {
     try {
@@ -249,12 +279,18 @@ export default function App() {
     importDialog.current?.close()
     if (!pending || how === 'cancel') return
     const { backup } = pending
-    history.name(`${how === 'add' ? 'Import' : 'Restore'} ${pending.name}`)
+    history.name(pending.shared ? `Add shared plan “${pending.name}”` : `${how === 'add' ? 'Import' : 'Restore'} ${pending.name}`)
     if (how === 'add') {
       const merged = mergeBackup({ saved, plans }, backup, newId)
       setSaved(merged.saved)
       setPlans(merged.plans)
       if (merged.added.length) setActivePlanId(merged.added[0].id)
+      if (pending.shared) {
+        const recipes = merged.addedRecipes
+        setStatus(`Added “${pending.name}”${recipes ? ` and ${recipes} new saved ${noun(recipes, 'recipe')}` : ''}.`)
+        setTab('planner')
+        return
+      }
       const plansAdded = merged.added.length
       setStatus(
         `Added ${plansAdded} ${noun(plansAdded, 'plan')} and ${merged.addedRecipes} new saved ${noun(merged.addedRecipes, 'recipe')}.`,
@@ -372,7 +408,12 @@ export default function App() {
       )}
 
       <dialog ref={importDialog} className="tree-dialog" onClose={() => setPending(null)}>
-        {pending && <ImportChoices name={pending.name} backup={pending.backup} onChoose={importFile} />}
+        {pending &&
+          (pending.shared ? (
+            <SharedChoices name={pending.name} backup={pending.backup} onChoose={importFile} />
+          ) : (
+            <ImportChoices name={pending.name} backup={pending.backup} onChoose={importFile} />
+          ))}
       </dialog>
 
       <dialog ref={outdatedDialog} className="tree-dialog" onCancel={(e) => e.preventDefault()}>
@@ -479,6 +520,8 @@ export default function App() {
             // A copy of a plan named after its targets is too, so it follows its own targets.
             const name = namedAfterTargets(plan) ? '' : `${plan.name} (copy)`
             const p = { ...structuredClone(plan), id: newId(), name }
+            // The copy is the player's own: the link opens the plan it was added as.
+            delete p.shared
             history.name(`Duplicate plan “${title}”`)
             setPlans((ps) => [...ps, p])
             setActivePlanId(p.id)
@@ -486,6 +529,19 @@ export default function App() {
           onFindCauldron={findCauldron}
           reveal={reveal}
           onRevealed={revealed}
+          onRevertShared={async () => {
+            const { plan: reverted, saved: recipes } = await asShared(plan, saved, newId)
+            history.name(`Revert “${title}” to as shared`)
+            setSaved(recipes)
+            setPlans((ps) => ps.map((p) => (p.id === reverted.id ? reverted : p)))
+          }}
+          onForgetShared={() =>
+            updatePlan(`Forget “${title}” was shared`, (p) => {
+              const own = { ...p }
+              delete own.shared
+              return own
+            })
+          }
           onDeletePlan={() => {
             const rest = plans.filter((p) => p.id !== plan.id)
             history.name(`Delete plan “${title}”`)
@@ -531,6 +587,39 @@ function isTextField(el: EventTarget | null) {
 }
 
 type ImportChoice = 'add' | 'replace' | 'cancel'
+
+/** A plan someone shared by link: what it makes, and whether to add it. */
+function SharedChoices({ name, backup, onChoose }: { name: string; backup: Backup; onChoose: (how: ImportChoice) => void }) {
+  const items = [...new Set(backup.plans[0].targets.map((t) => t.item).filter(Boolean))]
+  const recipes = backup.savedRecipes.length
+  return (
+    <>
+      <h3>Add “{name}” to your plans?</h3>
+      {items.length > 0 && (
+        <p className="note-line">
+          It makes{' '}
+          {items.map((item) => (
+            <ItemLabel key={item} item={item} />
+          ))}
+        </p>
+      )}
+      <p>
+        {recipes > 0 &&
+          `It uses ${recipes} Cauldron ${noun(recipes, 'recipe')}: any you haven’t saved are added to your saved recipes. `}
+        Every row is set up as it was shared, whatever your default recipes. It runs at your own upgrades and research
+        tier.
+      </p>
+      <div className="tree-dialog-actions">
+        <button type="button" className="primary" autoFocus onClick={() => onChoose('add')}>
+          Add to my plans
+        </button>
+        <button type="button" onClick={() => onChoose('cancel')}>
+          Cancel
+        </button>
+      </div>
+    </>
+  )
+}
 
 function ImportChoices({ name, backup, onChoose }: { name: string; backup: Backup; onChoose: (how: ImportChoice) => void }) {
   const plans = backup.plans.length

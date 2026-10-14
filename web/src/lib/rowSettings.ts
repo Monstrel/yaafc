@@ -32,6 +32,7 @@ const PLAN_FIELDS = {
   units: 'row',
   built: 'row',
   busSupply: 'plan',
+  shared: 'plan',
 } as const satisfies Record<keyof Plan, 'row' | 'separations' | 'plan'>
 
 /** The plan's settings kept per tree row. */

@@ -127,6 +127,7 @@ function plan(v: unknown, newId: () => string): Plan | undefined {
     units: record(v.units, unitizing),
     built: strings(v.built),
     busSupply: caps && Object.keys(caps).length ? caps : undefined,
+    shared: str(v.shared) || undefined,
     // Every field: one left out here would be lost from every plan on loading it.
   } satisfies { [K in keyof Required<Plan>]: Plan[K] | undefined })
 }

@@ -4467,3 +4467,10 @@ a.reference-icon {
 a.reference-icon:hover {
   text-decoration: none;
 }
+
+.share-dialog .share-link {
+  width: 100%;
+  margin: 0 0 14px;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+}

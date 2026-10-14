@@ -417,6 +417,11 @@ export function parseBackup(text: string): Backup {
   } catch {
     throw new Error('Not an Alchemy Calculator backup file')
   }
+  return sanitizeBackup(parsed)
+}
+
+/** A backup's fields, checked as an imported file's are (a shared plan's too). */
+export function sanitizeBackup(parsed: unknown): Backup {
   const fields = (parsed ?? {}) as Partial<Record<keyof Backup, unknown>>
   if (!Array.isArray(fields.savedRecipes) || !Array.isArray(fields.plans)) throw new Error('Not an Alchemy Calculator backup file')
   const plans = sanitizePlans(fields.plans, newId) ?? []

@@ -85,7 +85,7 @@ function remapPlan(plan: Plan, remap: (producer: string) => string): Plan {
 }
 
 /** The plan with the rows that followed `defaults` picking the same, so they don't need them. */
-function withDefaults(plan: Plan, defaults: MyDefaults, saved: SavedRecipe[], progress: Progress | undefined): Plan {
+export function withDefaults(plan: Plan, defaults: MyDefaults, saved: SavedRecipe[], progress: Progress | undefined): Plan {
   if (!Object.keys(defaults).length) return plan
   try {
     const catalog = buildCatalog({

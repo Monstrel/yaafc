@@ -132,6 +132,11 @@ export interface Plan {
    * the bus share that, and fall short past it. Absent = as much as they take.
    */
   busSupply?: Record<string, number>
+  /**
+   * The share code the plan was added from (see shareLink.ts): opening its link again opens this
+   * plan, and the plan can go back to how it was shared. Absent for the player's own plans.
+   */
+  shared?: string
 }
 
 /** A row built in units: `count` copies of a smaller line, each making its share. */
