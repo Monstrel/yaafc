@@ -8,6 +8,11 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
+## 2026-10-14T22:16Z
+
+- The Reference no longer lists portals and flasks the game doesn't let you build: its Portals
+  are now just the Bank, Purchasing and Dispatch Portals.
+
 ## 2026-10-14T21:55Z
 
 - Share a plan with a link: Share, next to Duplicate in the Planner, gives a short link to copy.
