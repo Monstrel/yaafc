@@ -163,7 +163,14 @@ function Entry({
   // An entry past the research tier the player chose to see anyway.
   const [revealed, setRevealed] = useState<string | null>(null)
   const group = item !== null ? groupByKey(entryOf(item)) : undefined
-  const found = group ?? (item !== null ? itemsByKey.get(item) : buildingsByKey.get(machine!))
+  // Machines the Reference leaves out (ones players can't build) have no page; mirrored copies do.
+  const found =
+    group ??
+    (item !== null
+      ? itemsByKey.get(item)
+      : isListedMachine(machine!) || mirrorOf(machine!)
+        ? buildingsByKey.get(machine!)
+        : undefined)
   const key = group?.key ?? item ?? machine!
   const shown = item !== null ? itemShown(links.scope, key) : machineShown(links.scope, key)
   const needs = item !== null ? entryReach(catalog, key) : buildingTier(key)
@@ -174,7 +181,12 @@ function Entry({
           ← All items and machines
         </PageLink>
       </nav>
-      {!found ? (
+      {!found && machine !== null && buildingsByKey.has(machine) ? (
+        <div className="panel empty-state">
+          <h2>Not a machine you can build</h2>
+          <p>{buildingsByKey.get(machine)!.name} is in the game&apos;s data, but the game doesn&apos;t let players build it.</p>
+        </div>
+      ) : !found ? (
         <div className="panel empty-state">
           <h2>Not in the game data</h2>
           <p>

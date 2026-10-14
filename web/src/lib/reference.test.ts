@@ -17,6 +17,7 @@ import {
   itemSections,
   referenceItems,
   itemRelations,
+  machineGroup,
   machineRelations,
   newReferenceView,
   referenceCatalog,
@@ -207,5 +208,21 @@ describe('grouped items', () => {
     const scope = { catalog, mods: BASE_MODS, tier: entryReach(catalog, 'Sand2'), hideLocked: true }
     expect(itemShown(scope, 'RefinedSand')).toBe(true)
     expect(itemShown({ ...scope, tier: scope.tier - 1 }, 'RefinedSand')).toBe(false)
+  })
+})
+
+describe('machines players can build', () => {
+  it('lists only the portals the game lets players build, and no flasks', () => {
+    const portals = referenceMachines.filter((b) => machineGroup(b) === 'Portals').map((b) => b.key)
+    expect(portals.sort()).toEqual(['Portal_AlchGuild', 'Portal_Bank', 'Portal_Wholesaling'])
+    expect(referenceMachines.some((b) => b.key.startsWith('Flask'))).toBe(false)
+  })
+
+  it('leaves unbuildable machines out of what an item builds', () => {
+    expect(itemRelations(catalog, 'PortalSigil').builds.map((b) => b.key).sort()).toEqual([
+      'Portal_AlchGuild',
+      'Portal_Bank',
+      'Portal_Wholesaling',
+    ])
   })
 })

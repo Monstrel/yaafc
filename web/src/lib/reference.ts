@@ -82,8 +82,18 @@ const listedItems = new Set(referenceItems.map((i) => i.key))
 export const isListedItem = (key: string) => listedItems.has(key)
 
 /** Machines the Reference lists: every building, its mirrored copies folded into the original. */
+/**
+ * Buildings in the data that players can't build: nothing in it sets them apart (like the Dispatch
+ * Portal, they have no research tier), but a game at research tier IX offers only the Bank,
+ * Purchasing and Dispatch Portals (Nik, 2026-10-14). LiquidSupplier is a second "Purchasing
+ * Portal", for liquids, that never shipped. The flasks here aren't the ones players build, which
+ * are logistics, like pipes and belts, and so not listed either: the Reference lists machines that
+ * take part in recipes.
+ */
+const NOT_BUILDABLE = new Set(['Portal_Input', 'Portal_Output', 'LiquidSupplier', 'Flask_Input', 'Flask_Output'])
+
 export const referenceMachines: Building[] = buildings
-  .filter((b) => !mirrorOf(b.key) && !(b.hidden && !b.description))
+  .filter((b) => !mirrorOf(b.key) && !NOT_BUILDABLE.has(b.key) && !(b.hidden && !b.description))
   .sort((a, b) => a.name.localeCompare(b.name))
 const listedMachines = new Set(referenceMachines.map((b) => b.key))
 export const isListedMachine = (key: string) => listedMachines.has(key)
@@ -228,7 +238,7 @@ export function itemRelations(catalog: ProcessCatalog, item: string): ItemRelati
     makers,
     paradoxMade: item === OBLIVION,
     uses,
-    builds: buildings.filter((b) => !mirrorOf(b.key) && (b.cost).some((s) => s.item === item)),
+    builds: referenceMachines.filter((b) => b.cost.some((s) => s.item === item)),
   }
 }
 
