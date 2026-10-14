@@ -11,6 +11,8 @@ export interface Item {
   key: string
   id: number
   name: string
+  /** In-game flavour text, which only a few items have. */
+  description: string | null
   icon: string | null
   tags: string[]
   hidden: boolean
@@ -29,6 +31,11 @@ export interface Item {
   buyCoin: string | null
   /** Copper per item the shop pays at base prices; null if the shop won't buy it (raw materials, intermediates, fuels). */
   sellPrice: number | null
+  /**
+   * What kind of goods the shop sells it as: Groceries, Jewelry, Remedies, Artcrafts or Liquid
+   * (Worthless for raw materials, intermediates and fuels; Vehicles is unused).
+   */
+  sellType: string | null
 }
 
 export interface GameRecipe {
@@ -53,6 +60,10 @@ export interface Building {
   id: number
   name: string
   icon: string | null
+  /** In-game description. */
+  description: string | null
+  /** What placing one takes from the player's inventory. */
+  cost: Stack[]
   hidden: boolean
   heatCost: number
   tags: string[]

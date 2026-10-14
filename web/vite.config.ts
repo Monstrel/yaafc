@@ -1,5 +1,6 @@
 /// <reference types="vitest/config" />
 import react from '@vitejs/plugin-react'
+import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
 
 // Identifies this build so open tabs can notice a newer deploy (see src/lib/updateCheck.ts).
@@ -24,6 +25,15 @@ export default defineConfig({
   plugins: [
     react(),
     {
+      // The Reference's notes (src/lib/notes.ts) live outside web/, which the dev server only
+      // watches for files already loaded: watch their folder, so a note added while it runs shows.
+      name: 'watch-reference-notes',
+      apply: 'serve',
+      configureServer(server) {
+        server.watcher.add(fileURLToPath(new URL('../reference', import.meta.url)))
+      },
+    },
+    {
       name: 'version-json',
       apply: 'build',
       generateBundle() {
@@ -38,7 +48,7 @@ export default defineConfig({
       generateBundle(_, bundle) {
         const index = bundle['index.html']
         if (index?.type !== 'asset') return
-        for (const page of ['cauldron', 'saved', 'planner', 'changelog'])
+        for (const page of ['cauldron', 'saved', 'planner', 'reference', 'changelog'])
           this.emitFile({ type: 'asset', fileName: `${page}.html`, source: index.source })
       },
     },

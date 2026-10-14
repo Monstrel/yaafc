@@ -54,6 +54,16 @@ export function HomePage({ onNavigate }: Props) {
             Open Planner
           </PageLink>
         </article>
+        <article className="panel mode-normal">
+          <h3>Reference</h3>
+          <p>
+            Every item and machine in the game: what makes each item, what uses it, what it builds, and what each
+            machine runs. Follow the links between them, and start a plan for any item from its page.
+          </p>
+          <PageLink page="reference" className="button" onNavigate={onNavigate}>
+            Open Reference
+          </PageLink>
+        </article>
       </section>
 
       <section className="panel">

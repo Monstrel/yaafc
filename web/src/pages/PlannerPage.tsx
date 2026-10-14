@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
 import { ItemIcon, ItemLabel } from '../components/ItemIcon'
 import { ItemPicker } from '../components/ItemPicker'
+import { ReferenceIconLink } from '../components/ReferenceLink'
 import { Money } from '../components/Money'
 import { PlanOverview } from '../components/PlanOverview'
 import { ProducerSelect, TierTag } from '../components/ProducerSelect'
@@ -12,18 +13,15 @@ import { ledgers, targetFedBack } from '../lib/ledger'
 import { releaseScrollAnchor, useFlip } from '../lib/flip'
 import {
   HEAT,
-  MAX_TIER,
   MONEY,
   NUTRIENTS,
   coinValue,
-  dispatch,
-  iconUrl,
   itemName,
   targetItems,
   tierName,
 } from '../lib/gameData'
 import { altarYield } from '../lib/altar'
-import { contractFor, dispatchTerms, licenseName } from '../lib/dispatch'
+import { contractFor, dispatchTerms } from '../lib/dispatch'
 import { fmt } from '../lib/format'
 import { checkLogistics, resourceUsers } from '../lib/logistics'
 import { fedOverflow, moneyLedger } from '../lib/money'
@@ -60,45 +58,14 @@ import type { TreeNode } from '../lib/tree'
 import { altarMods, planBuildings } from '../lib/planSummary'
 import { usePersistentState } from '../lib/store'
 import { blankTarget, type MyDefaults, type Plan, type PlanTarget, type Progress, type SavedRecipe } from '../lib/types'
-import {
-  DISPATCH_UPGRADES,
-  PLANNER_UPGRADES,
-  POTION_BELT,
-  SUPPLIER_LICENSES,
-  attributeBonus,
-  firstLevel,
-  maxLevel,
-  upgradeLevel,
-  type Modifiers,
-} from '../lib/upgrades'
 import { type Feeds, sourceUse, overflowRows, beyondTier } from '../lib/plannerView'
 import { TargetLink } from '../components/planner/TargetLink'
 import { BusPanel, PlanDefaults, ResourceUsers } from '../components/planner/BusPanel'
 import { TargetAmount, TargetNotes } from '../components/planner/TargetControls'
-import { LogisticsLine, ResearchTier, SidebarIcon, MyDefaultsPanel } from '../components/planner/PlanPanels'
+import { LogisticsLine, SidebarIcon, MyDefaultsPanel } from '../components/planner/PlanPanels'
 import { usePlanActions } from '../components/planner/usePlanActions'
+import { UpgradesPanel } from '../components/UpgradesPanel'
 import { useStable } from '../lib/useStable'
-
-/** What each planner upgrade series currently does, shown under its name. */
-const UPGRADE_EFFECTS: Record<string, (m: Modifiers) => string> = {
-  Conveyer: (m) => `${fmt(m.beltSpeed)} items/min per belt`,
-  FactorySpeed: (m) => `×${fmt(m.factorySpeed)} crafting speed`,
-  AlchemySkill: (m) => `×${fmt(m.extractor)} Extractor & Alembic output`,
-  FuelEfficiency: (m) => `×${fmt(m.fuel)} heat per fuel`,
-  FertilizeEfficiency: (m) => `×${fmt(m.fertilizer)} nutrients per fertilizer`,
-  AltarEfficiency: (m) => `×${fmt(m.altar)} EXP from relics`,
-  ContractProfit: (m) => {
-    if (!m.licenses) return 'base dispatch limits and pay'
-    const held = { [SUPPLIER_LICENSES.key]: m.licenses }
-    return `${licenseName(m.licenses)}: +${fmt(attributeBonus(held, 'ContractNum'))}% dispatch limits, +${fmt(attributeBonus(held, 'ContractProfit'))}% pay`
-  },
-  SleepTime: (m) => `${fmt(m.dayMinutes)}-minute days${m.dayMinutes < 24 ? ', never going to bed early' : ', no sleep'}`,
-}
-
-const UPGRADE_TITLES: Record<string, string> = {
-  [SUPPLIER_LICENSES.key]: `Supplier Licenses held, for Dispatch Portal targets: ${dispatch.licenses.join(', ')}`,
-  [POTION_BELT.key]: 'Potion Belt level, for Dispatch Portal targets: each level above 1 cuts sleep by 2 hours, so the day lasts longer',
-}
 
 interface Props {
   plans: Plan[]
@@ -348,16 +315,19 @@ export function PlannerPage({
       rootId: targetRoots[i],
       byMachines: t.unit === 'machines',
       item: (
-        <ItemPicker
-          value={t.item || null}
-          options={targetItems}
-          onChange={(k) => {
-            if (added?.index === i) setAdded(null)
-            updateTarget(i, { item: k ?? '' })
-          }}
-          defaultOpen={added?.plan === plan.id && added.index === i && !t.item}
-          compact
-        />
+        <span className="target-item">
+          <ItemPicker
+            value={t.item || null}
+            options={targetItems}
+            onChange={(k) => {
+              if (added?.index === i) setAdded(null)
+              updateTarget(i, { item: k ?? '' })
+            }}
+            defaultOpen={added?.plan === plan.id && added.index === i && !t.item}
+            compact
+          />
+          <ReferenceIconLink item={t.item} />
+        </span>
       ),
       amount: (
         <TargetAmount
@@ -483,47 +453,13 @@ export function PlannerPage({
           >
             <SidebarIcon open={sideOpen} />
           </button>
-          <section className="panel">
-            <h2>Upgrades</h2>
-            <p className="hint">Your game&apos;s progress: shared by every plan.</p>
-            <ResearchTier
-              tier={catalog.tier}
-              onChange={(tier) => onProgress('Change research tier', (p) => ({ ...p, tier: tier === MAX_TIER ? undefined : tier }))}
-            />
-            {[...PLANNER_UPGRADES, ...DISPATCH_UPGRADES].map((u) => (
-              <label
-                className="upgrade-row"
-                key={u.key}
-                title={
-                  u.unlimited
-                    ? `Level ${u.levels.length} is the ∞ node; each level above it is one more purchase of it` +
-                      (Number.isFinite(maxLevel(u)) ? ` (up to ${maxLevel(u)})` : '')
-                    : UPGRADE_TITLES[u.key]
-                }
-              >
-                {u.icon && <img className="upgrade-icon" src={iconUrl(u.icon)!} width={32} height={32} alt="" />}
-                <span className="upgrade-name">
-                  {u.name}
-                  <span className="upgrade-effect">{UPGRADE_EFFECTS[u.key]?.(mods)}</span>
-                </span>
-                <input
-                  type="number"
-                  min={firstLevel(u)}
-                  max={Number.isFinite(maxLevel(u)) ? maxLevel(u) + firstLevel(u) : undefined}
-                  value={upgradeLevel(progress.upgrades, u) + firstLevel(u)}
-                  onChange={(e) =>
-                    onProgress(`Change ${u.name} level`, (p) => ({
-                      ...p,
-                      upgrades: {
-                        ...p.upgrades,
-                        [u.key]: upgradeLevel({ [u.key]: (Number(e.target.value) || 0) - firstLevel(u) }, u),
-                      },
-                    }))
-                  }
-                />
-              </label>
-            ))}
-          </section>
+          <UpgradesPanel
+            progress={progress}
+            mods={mods}
+            tier={catalog.tier}
+            onProgress={onProgress}
+            hint="Your game’s progress: shared by every plan and the Reference."
+          />
           <MyDefaultsPanel defaults={myDefaults} catalog={catalog} onForget={actions.forget} />
         </aside>
 

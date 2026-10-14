@@ -24,6 +24,16 @@ cauldron recipes as steps in production chains, including self-feeding loops.
   beyond it are flagged, so you can plan ahead for a tier you haven't reached. Once you've found
   a way you like to make something, "use as my default" (the bookmark on a row) remembers the
   recipe, machine and catalysts for that row and everything below it, for every plan.
+- **Reference**: every item and machine, linked to each other. Items are filed as in the game's
+  Item Catalog: Materials and Goods, each in its sections and order (an item can be in both). What makes an item (as product,
+  by-product or failed craft), what uses it, what it builds, its prices, fuel/fertilizer/altar
+  values and in-game description; and for a machine, its build cost, connections, heat and the
+  recipes it runs. Recipes show amounts per craft and, for one machine, items per minute in and out. The Upgrades panel (shared with the Planner) sits beside every page, and every figure follows it, showing the base value and the upgrade behind it; an option hides items, machines and recipes past your research tier, with a count of what it hid. Your saved cauldron
+  recipes appear for their items, but undiscovered mixes don't: "Find cauldron mixes" opens the
+  finder instead. Any item can start a new plan, or be added to the open one. Entries have their
+  own addresses (`reference?item=IronIngot`, `reference?machine=Athanor`). A page can also carry a
+  written note, from a Markdown file in [reference/](reference/README.md) named after its item or
+  machine.
 
 Saved recipes and plans live in the browser (localStorage). Use Export/Import to back them up.
 

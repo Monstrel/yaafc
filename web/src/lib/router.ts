@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useState } from 'react'
 
-export type Page = 'home' | 'cauldron' | 'saved' | 'planner' | 'changelog'
+export type Page = 'home' | 'cauldron' | 'saved' | 'planner' | 'reference' | 'changelog'
 
-export const PAGES: readonly Page[] = ['home', 'cauldron', 'saved', 'planner', 'changelog']
+export const PAGES: readonly Page[] = ['home', 'cauldron', 'saved', 'planner', 'reference', 'changelog']
 
 // Where the app lives: the site serves it from a subfolder, and every page sits one level under it,
-// so the folder of whatever URL the app was opened at is its root.
+// so the folder of whatever URL the app was opened at is its root. What a page shows within itself
+// (the Reference's entry) goes in the query string, keeping every address one level deep.
 const root = new URL('./', location.href).pathname
 
-/** The URL of a page: the root for home, a path under it for the others. */
-export const pageHref = (page: Page) => (page === 'home' ? root : root + page)
+/** The URL of a page: the root for home, a path under it for the others; `search` starts with '?'. */
+export const pageHref = (page: Page, search = '') => (page === 'home' ? root : root + page) + search
 
 function pageAt(pathname: string): Page | undefined {
   if (pathname === root) return 'home'
@@ -35,23 +36,31 @@ function startPage(last: Page): Page {
   return last
 }
 
-/** The page the URL shows, and a way to move to another one that the browser's back button can undo. */
+/**
+ * The page the URL shows and its query string, and a way to move to another page (or another
+ * query on one) that the browser's back button can undo.
+ */
 export function usePage(last: Page) {
   const [page, setPage] = useState<Page>(() => startPage(last))
+  const [search, setSearch] = useState(() => location.search)
 
   useEffect(() => {
-    const onPop = () => setPage(pageAt(location.pathname) ?? 'home')
+    const onPop = () => {
+      setPage(pageAt(location.pathname) ?? 'home')
+      setSearch(location.search)
+    }
     addEventListener('popstate', onPop)
     return () => removeEventListener('popstate', onPop)
   }, [])
 
-  const navigate = useCallback((to: Page) => {
-    if (location.pathname !== pageHref(to)) {
-      history.pushState(null, '', pageHref(to))
+  const navigate = useCallback((to: Page, query = '') => {
+    if (location.pathname + location.search !== pageHref(to, query)) {
+      history.pushState(null, '', pageHref(to, query))
       scrollTo(0, 0)
     }
     setPage(to)
+    setSearch(query)
   }, [])
 
-  return [page, navigate] as const
+  return [page, navigate, search] as const
 }

@@ -11,6 +11,7 @@ import { type LoopSourceChoice, type ProducerPick } from '../../lib/choices'
 import { BUS, isTargetRow, parentId, rowItem } from '../../lib/unfold'
 import type { Modifiers } from '../../lib/upgrades'
 import { ItemLabel, SeedNote } from '../ItemIcon'
+import { ReferenceLink } from '../ReferenceLink'
 import { AltarDetail } from '../Exp'
 import { Money } from '../Money'
 import { OverflowTargetForm } from '../OverflowTargetForm'
@@ -327,7 +328,9 @@ export const TreeRow = memo(function TreeRow({
               {target.amount}
             </div>
           ) : (
-            <ItemLabel item={node.item} />
+            <ReferenceLink to={{ item: node.item }} row={whole.id} title={`${name} in the Reference`}>
+              <ItemLabel item={node.item} />
+            </ReferenceLink>
           )}
           {unit && (
             <button
@@ -608,7 +611,9 @@ export const TreeRow = memo(function TreeRow({
               </div>
             )}
             <div className="machine-meta">
-              {buildingNameFor(p.machine.key, wholeMachines(node.machines))}
+              <ReferenceLink to={{ machine: p.machine.key }} row={whole.id} title={`${p.machine.name} in the Reference`}>
+                {buildingNameFor(p.machine.key, wholeMachines(node.machines))}
+              </ReferenceLink>
               <SeedNote seed={p.seed} plant={p.product} />
               {copies > 1 && ' per copy'}
             </div>

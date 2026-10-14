@@ -35,7 +35,7 @@ import {
   sanitizeString,
   type CauldronSearch,
 } from './lib/sanitize'
-import type { MyDefaults, Plan, Progress, SavedRecipe } from './lib/types'
+import { blankTarget, type MyDefaults, type Plan, type Progress, type SavedRecipe } from './lib/types'
 import { UndoHistory, useUndo } from './lib/undo'
 import { buildInfo, useUpdateAvailable } from './lib/updateCheck'
 import { PAGES, usePage, type Page } from './lib/router'
@@ -44,12 +44,15 @@ import { CauldronPage } from './pages/CauldronPage'
 import { ChangelogPage } from './pages/ChangelogPage'
 import { HomePage } from './pages/HomePage'
 import { PlannerPage } from './pages/PlannerPage'
+import { ReferencePage } from './pages/ReferencePage'
+import { newReferenceView, referenceSearch, sanitizeReferenceView, type ReferenceView } from './lib/reference'
+import { ReferenceNav, type ReferenceEntry } from './lib/referenceNav'
 import { SavedPage } from './pages/SavedPage'
 
 export default function App() {
   // The page visited last, which the bare site address opens on.
   const [lastPage, setLastPage] = usePersistentState<Page>('tab', 'home', oneOf(...PAGES), { perTab: true })
-  const [tab, setTab] = usePage(lastPage)
+  const [tab, setTab, pageSearch] = usePage(lastPage)
   useEffect(() => setLastPage(tab), [tab, setLastPage])
   // This tab's undo history, which a change to the player's data in another tab clears.
   const [undos] = useState(() => new UndoHistory())
@@ -152,22 +155,29 @@ export default function App() {
   // The row to show when the planner opens again, after a recipe was put on it from the Cauldron page.
   const [reveal, setReveal] = useState<string | null>(null)
   const revealed = useCallback(() => setReveal(null), [])
+  /** Off to a Reference page; from a planner row, that row shows again when the planner opens next. */
+  const openReference = useCallback(
+    (entry: ReferenceEntry, row?: string) => {
+      if (row) setReveal(row)
+      setTab('reference', referenceSearch(entry))
+    },
+    [setTab],
+  )
 
+  /**
+   * Off to the Cauldron page to find mixes for an item: in `mode`, else the page's own mode, unless
+   * the plan can't build Advanced Cauldrons yet.
+   */
+  const findMixes = (item: string, mode?: CauldronMode) => {
+    const fallback = machineTier(ADVANCED_CAULDRON) > model.catalog.tier ? 'normal' : search.mode
+    setSearch((s) => ({ ...s, mode: mode ?? fallback, target: item, mustInclude: null, page: 0, trail: [] }))
+    setTab('cauldron')
+  }
   /** Off to the Cauldron page to find a new recipe for a planner row's item. */
   const findCauldron = (row: TreeNode) => {
     const current = row.run?.process
-    // A row already on a cauldron looks among that cauldron's mixes; else the page's own mode,
-    // unless the plan can't build Advanced Cauldrons yet.
-    const mode: CauldronMode =
-      current?.kind === 'cauldron'
-        ? current.machine?.key === ADVANCED_CAULDRON
-          ? 'advanced'
-          : 'normal'
-        : machineTier(ADVANCED_CAULDRON) > model.catalog.tier
-          ? 'normal'
-          : search.mode
-    setSearch((s) => ({ ...s, mode, target: row.item, mustInclude: null, page: 0, trail: [] }))
-    setTab('cauldron')
+    // A row already on a cauldron looks among that cauldron's mixes.
+    findMixes(row.item, current?.kind === 'cauldron' ? (current.machine?.key === ADVANCED_CAULDRON ? 'advanced' : 'normal') : undefined)
   }
   /**
    * Puts a recipe from the Cauldron page on a row of the open plan (null: every row of its item),
@@ -182,6 +192,30 @@ export default function App() {
     const pick = { item: output, producer: `cauldron:${recipe.id}`, row: row ?? undefined, everywhere: row === null }
     updatePlan(null, (p) => chooseProducer(p, model.catalog, pick))
     setReveal(row ?? (model.result ? (pickableRows(model.result.tree, output)[0]?.id ?? null) : null))
+    setTab('planner')
+  }
+
+  // The Reference's index search and filters, kept while the player looks at entries.
+  const [referenceView, setReferenceView] = usePersistentState<ReferenceView>('reference-view', newReferenceView, sanitizeReferenceView, {
+    perTab: true,
+  })
+  // Whether the Reference hides what's past the research tier, and shows its upgrades sidebar.
+  const [hideLocked, setHideLocked] = usePersistentState<boolean>('reference-hide-locked', false, sanitizeBoolean)
+  const [referenceSide, setReferenceSide] = usePersistentState<boolean>('reference-side', true, sanitizeBoolean)
+  /** Starts a plan for an item from the Reference, or adds it to the open plan (or just opens it, if there already). */
+  const planFor = (item: string, how: 'new' | 'add') => {
+    const target = { ...blankTarget(), item }
+    if (how === 'new') {
+      const p = { ...emptyPlan(), targets: [target] }
+      history.name(`New plan for ${itemName(item)}`)
+      setPlans((ps) => [...ps, p])
+      setActivePlanId(p.id)
+    } else if (!plan.targets.some((t) => t.item === item))
+      // A plan with only its blank target uses that one.
+      updatePlan(`Add ${itemName(item)} target`, (p) => ({
+        ...p,
+        targets: p.targets.length === 1 && !p.targets[0].item ? [target] : [...p.targets, target],
+      }))
     setTab('planner')
   }
 
@@ -240,6 +274,7 @@ export default function App() {
   }
 
   return (
+    <ReferenceNav value={openReference}>
     <div className={tab === 'planner' ? 'app app-wide' : 'app'}>
       <header className="app-header">
         <div className="brand">
@@ -260,6 +295,9 @@ export default function App() {
           </PageLink>
           <PageLink page="planner" current={tab === 'planner'} onNavigate={setTab}>
             Planner
+          </PageLink>
+          <PageLink page="reference" current={tab === 'reference'} onNavigate={setTab}>
+            Reference
           </PageLink>
         </nav>
         <div className="header-actions">
@@ -377,6 +415,29 @@ export default function App() {
           onUse={applyRecipe}
         />
       )}
+      {tab === 'reference' && (
+        <ReferencePage
+          search={pageSearch}
+          onNavigate={setTab}
+          view={referenceView}
+          onView={setReferenceView}
+          saved={saved}
+          progress={progress}
+          mods={model.mods}
+          onProgress={(label, update) => {
+            history.name(label)
+            setProgress(update)
+          }}
+          hideLocked={hideLocked}
+          onHideLocked={setHideLocked}
+          sideOpen={referenceSide}
+          onSideOpen={setReferenceSide}
+          planName={title}
+          planTargets={(item) => plan.targets.some((t) => t.item === item)}
+          onPlan={planFor}
+          onFindCauldron={(item) => findMixes(item)}
+        />
+      )}
       {tab === 'saved' && (
         <SavedPage
           saved={saved}
@@ -450,11 +511,14 @@ export default function App() {
         ({buildInfo.time})
       </footer>
     </div>
+    </ReferenceNav>
   )
 }
 
 /** The key held with Z to undo. */
 const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+'
+
+const sanitizeBoolean = (v: unknown) => (typeof v === 'boolean' ? v : undefined)
 
 const NOT_TEXT = new Set(['checkbox', 'radio', 'button', 'submit', 'reset', 'range', 'color', 'file', 'image'])
 
