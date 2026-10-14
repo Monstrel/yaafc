@@ -29,6 +29,10 @@ class Localization
     public IEnumerable<(string Namespace, string Key, string Text)> All() =>
         _entries.SelectMany(ns => ns.Value.Select(e => (ns.Key, e.Key, e.Value)));
 
+    /** The text a string table namespace holds for a key, if any. */
+    public string? Text(string ns, string key) =>
+        _entries.TryGetValue(ns, out var table) && table.TryGetValue(key, out var value) ? value : null;
+
     public string? Resolve(JToken? text)
     {
         if (text == null) return null;

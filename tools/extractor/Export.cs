@@ -41,6 +41,9 @@ static class Exporter
                 ["key"] = key,
                 ["id"] = row["ID"],
                 ["name"] = strings.Resolve(row["DisplayName"]) ?? key,
+                // Flavour text, which only a few items have (DescRowName keys ST_Localization_ItemDesc).
+                ["description"] = row["DescRowName"]?.ToString() is null or "None"
+                    ? null : strings.Text("ST_Localization_ItemDesc", row["DescRowName"]!.ToString()),
                 ["icon"] = icon,
                 ["tags"] = new JArray(row["IngredientTags"]!.Select(t => t.ToString().Replace("Ingredient.Type.", ""))),
                 ["hidden"] = row["bHideInGame"],
@@ -56,6 +59,9 @@ static class Exporter
                 ["buyPrice"] = PortalPrice(row),
                 ["buyCoin"] = PortalCoin(row),
                 ["sellPrice"] = ShopPrice(row),
+                // What kind of goods the shop sells it as (Groceries, Jewelry, Remedies, Artcrafts,
+                // Liquid), or Worthless: the in-game Catalog files goods by it.
+                ["sellType"] = Enum(row["SellType"]),
             });
         }
 
@@ -98,6 +104,9 @@ static class Exporter
                 ["id"] = row["ID"],
                 ["name"] = strings.Resolve(row["DisplayName"]) ?? key,
                 ["icon"] = ExportIcon(provider, row["DisplayIcon"], iconDir, "building_" + key),
+                ["description"] = strings.Resolve(row["DisplayDesc"]),
+                // What placing one takes from the player's inventory.
+                ["cost"] = new JArray(row["CostList"]!.Select(Stack)),
                 ["hidden"] = row["bHideInGame"],
                 ["heatCost"] = row["HeatCost"],
                 ["tags"] = new JArray(tags),

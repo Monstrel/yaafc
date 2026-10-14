@@ -3,12 +3,13 @@
     "steamBuildId": "25321648",
     "pakDate": "2026-09-15"
   },
-  "extractedAt": "2026-10-11 23:49:12Z",
+  "extractedAt": "2026-10-14 18:17:17Z",
   "items": [
     {
       "key": "PortalSigil",
       "id": 2001,
       "name": "Portal Sigil",
+      "description": null,
       "icon": "item_PortalSigil.png",
       "tags": [
         "Misc"
@@ -25,12 +26,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": 1500.0,
       "buyCoin": "CopperCoin",
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "AdPortalSigil",
       "id": 2002,
       "name": "Grand Portal Sigil",
+      "description": null,
       "icon": "item_AdPortalSigil.png",
       "tags": [
         "Misc"
@@ -47,12 +50,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": 16000.0,
       "buyCoin": "SilverCoin",
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "GelatinousGridlock",
       "id": 2003,
       "name": "Gelatinous Gridlock",
+      "description": "Gelatinous Gridlock cannot be transported via conveyor belts, so it can be used to block slots in storage boxes.",
       "icon": "item_GelatinousGridlock.png",
       "tags": [
         "Misc"
@@ -69,12 +74,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": 100.0,
       "buyCoin": "CopperCoin",
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "CashRegister",
       "id": 2004,
       "name": "Automatic Cashier",
+      "description": null,
       "icon": "item_CashRegister.png",
       "tags": [
         "Misc"
@@ -91,12 +98,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "Wood",
       "id": 1,
       "name": "Logs",
+      "description": null,
       "icon": "item_Wood.png",
       "tags": [
         "RawMaterial"
@@ -113,12 +122,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": 200.0,
       "buyCoin": "CopperCoin",
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "Limestone",
       "id": 2,
       "name": "Limestone",
+      "description": null,
       "icon": "item_Limestone.png",
       "tags": [
         "RawMaterial"
@@ -135,12 +146,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": 600.0,
       "buyCoin": "CopperCoin",
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "IronOre",
       "id": 3,
       "name": "Iron Ore",
+      "description": null,
       "icon": "item_IronOre.png",
       "tags": [
         "RawMaterial"
@@ -157,12 +170,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": 1200.0,
       "buyCoin": "CopperCoin",
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "FlaxSeed",
       "id": 4,
       "name": "Flax Seeds",
+      "description": null,
       "icon": "item_FlaxSeed.png",
       "tags": [
         "PlantSeed"
@@ -179,12 +194,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": 280.0,
       "buyCoin": "CopperCoin",
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "Flax",
       "id": 5,
       "name": "Flax",
+      "description": null,
       "icon": "item_Flax.png",
       "tags": [
         "Herb"
@@ -201,12 +218,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "Sage",
       "id": 6,
       "name": "Sage",
+      "description": null,
       "icon": "item_Sage.png",
       "tags": [
         "Herb"
@@ -223,12 +242,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "SageSeed",
       "id": 7,
       "name": "Sage Seeds",
+      "description": null,
       "icon": "item_SageSeed.png",
       "tags": [
         "PlantSeed"
@@ -245,12 +266,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": 360.0,
       "buyCoin": "CopperCoin",
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "Redcurrant",
       "id": 11,
       "name": "Redcurrant",
+      "description": null,
       "icon": "item_Redcurrant.png",
       "tags": [
         "Herb"
@@ -267,12 +290,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "RedcurrantSeed",
       "id": 12,
       "name": "Redcurrant Seeds",
+      "description": null,
       "icon": "item_RedcurrantSeed.png",
       "tags": [
         "PlantSeed"
@@ -289,12 +314,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": 1300.0,
       "buyCoin": "CopperCoin",
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "Lavender",
       "id": 13,
       "name": "Lavender",
+      "description": null,
       "icon": "item_Lavender.png",
       "tags": [
         "Herb"
@@ -311,12 +338,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "LavenderSeed",
       "id": 14,
       "name": "Lavender Seeds",
+      "description": null,
       "icon": "item_LavenderSeed.png",
       "tags": [
         "PlantSeed"
@@ -333,12 +362,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": 16000.0,
       "buyCoin": "SilverCoin",
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "Chamomile",
       "id": 15,
       "name": "Chamomile",
+      "description": null,
       "icon": "item_Chamomile.png",
       "tags": [
         "Herb"
@@ -355,12 +386,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "ChamomileSeed",
       "id": 16,
       "name": "Chamomile Seeds",
+      "description": null,
       "icon": "item_ChamomileSeed.png",
       "tags": [
         "PlantSeed"
@@ -377,12 +410,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": 6000.0,
       "buyCoin": "SilverCoin",
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "Gentian",
       "id": 17,
       "name": "Gentian",
+      "description": null,
       "icon": "item_Gentian.png",
       "tags": [
         "Herb"
@@ -399,12 +434,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "GentianNectar",
       "id": 802,
       "name": "Gentian Nectar",
+      "description": null,
       "icon": "item_GentianNectar.png",
       "tags": [
         "Herb"
@@ -421,12 +458,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "GentianSeed",
       "id": 19,
       "name": "Gentian Seeds",
+      "description": null,
       "icon": "item_GentianSeed.png",
       "tags": [
         "PlantSeed"
@@ -443,12 +482,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": 64000.0,
       "buyCoin": "SilverCoin",
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "Pyrite",
       "id": 23,
       "name": "Pyrite Ore",
+      "description": null,
       "icon": "item_Pyrite.png",
       "tags": [
         "RawMaterial"
@@ -465,12 +506,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": 11000.0,
       "buyCoin": "SilverCoin",
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "RockSalt",
       "id": 22,
       "name": "Rock Salt",
+      "description": null,
       "icon": "item_RockSalt.png",
       "tags": [
         "RawMaterial"
@@ -487,12 +530,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": 9000.0,
       "buyCoin": "SilverCoin",
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "CoalOre",
       "id": 21,
       "name": "Coal Ore",
+      "description": null,
       "icon": "item_CoalOre.png",
       "tags": [
         "RawMaterial"
@@ -509,12 +554,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": 4800.0,
       "buyCoin": "CopperCoin",
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "RottenLog",
       "id": 20,
       "name": "Rotten Log",
+      "description": null,
       "icon": "item_RottenLog.png",
       "tags": [
         "RawMaterial"
@@ -531,12 +578,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": 2000.0,
       "buyCoin": "CopperCoin",
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "QuartzOre",
       "id": 25,
       "name": "Quartz Ore",
+      "description": null,
       "icon": "item_QuartzOre.png",
       "tags": [
         "RawMaterial"
@@ -553,12 +602,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": 44000.0,
       "buyCoin": "SilverCoin",
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "Meteorite",
       "id": 26,
       "name": "Meteorite",
+      "description": "A mysterious meteorite shimmering with a strange glow. Outputs various rare Gemstones.",
       "icon": "item_Meteorite.png",
       "tags": [
         "RawMaterial"
@@ -575,12 +626,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": 2000000.0,
       "buyCoin": "GoldCoin",
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "WorldTreeLeaf",
       "id": 27,
       "name": "World Tree Leaf",
+      "description": null,
       "icon": "item_WorldTreeLeaf.png",
       "tags": [
         "Herb"
@@ -597,12 +650,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "WorldTreeCore",
       "id": 28,
       "name": "World Tree Core",
+      "description": null,
       "icon": "item_WorldTreeCore.png",
       "tags": [
         "Herb"
@@ -619,12 +674,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "WorldTreeSeed",
       "id": 29,
       "name": "World Tree Seed",
+      "description": null,
       "icon": "item_WorldTreeSeed.png",
       "tags": [
         "PlantSeed"
@@ -641,12 +698,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": 5000000.0,
       "buyCoin": "GoldCoin",
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "Ruby",
       "id": 32,
       "name": "Ruby",
+      "description": "It's said to be used for crafting the legendary Philosopher's Stone.",
       "icon": "item_Ruby.png",
       "tags": [],
       "hidden": false,
@@ -661,12 +720,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 250000.0
+      "sellPrice": 250000.0,
+      "sellType": "Jewelry"
     },
     {
       "key": "Sapphire",
       "id": 33,
       "name": "Sapphire",
+      "description": "It's said to be used for crafting the legendary Philosopher's Stone.",
       "icon": "item_Sapphire.png",
       "tags": [],
       "hidden": false,
@@ -681,12 +742,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 480000.0
+      "sellPrice": 480000.0,
+      "sellType": "Jewelry"
     },
     {
       "key": "Emerald",
       "id": 34,
       "name": "Emerald",
+      "description": "It's said to be used for crafting the legendary Philosopher's Stone.",
       "icon": "item_Emerald.png",
       "tags": [],
       "hidden": false,
@@ -701,12 +764,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 700000.0
+      "sellPrice": 700000.0,
+      "sellType": "Jewelry"
     },
     {
       "key": "PhilosopherStone",
       "id": 35,
       "name": "Philosopher's Stone",
+      "description": null,
       "icon": "item_PhilosopherStone.png",
       "tags": [
         "Magic"
@@ -723,12 +788,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "WoodBoard",
       "id": 101,
       "name": "Plank",
+      "description": null,
       "icon": "item_WoodBoard.png",
       "tags": [
         "Fuel"
@@ -745,12 +812,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "LargeWoodGear",
       "id": 102,
       "name": "Large Wooden Gear",
+      "description": null,
       "icon": "item_LargeWoodGear.png",
       "tags": [
         "Component"
@@ -767,12 +836,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 5.0
+      "sellPrice": 5.0,
+      "sellType": "Groceries"
     },
     {
       "key": "Stone",
       "id": 201,
       "name": "Stone",
+      "description": null,
       "icon": "item_Stone.png",
       "tags": [
         "Solid"
@@ -789,12 +860,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "Sand",
       "id": 202,
       "name": "Sand",
+      "description": null,
       "icon": "item_Sand.png",
       "tags": [
         "Mash"
@@ -811,12 +884,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "Mortar",
       "id": 203,
       "name": "Mortar",
+      "description": null,
       "icon": "item_Mortar.png",
       "tags": [],
       "hidden": false,
@@ -831,12 +906,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 48.0
+      "sellPrice": 48.0,
+      "sellType": "Groceries"
     },
     {
       "key": "FlaxFiber",
       "id": 204,
       "name": "Flax Fiber",
+      "description": null,
       "icon": "item_FlaxFiber.png",
       "tags": [
         "Mash"
@@ -853,12 +930,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "LinenThread",
       "id": 205,
       "name": "Linen Thread",
+      "description": null,
       "icon": "item_LinenThread.png",
       "tags": [
         "Component"
@@ -875,12 +954,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "LinenRope",
       "id": 206,
       "name": "Linen Rope",
+      "description": null,
       "icon": "item_LinenRope.png",
       "tags": [
         "Component"
@@ -897,12 +978,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 36.0
+      "sellPrice": 36.0,
+      "sellType": "Groceries"
     },
     {
       "key": "WoodGear",
       "id": 207,
       "name": "Small Wooden Gear",
+      "description": null,
       "icon": "item_WoodGear.png",
       "tags": [
         "Component"
@@ -919,12 +1002,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 8.0
+      "sellPrice": 8.0,
+      "sellType": "Groceries"
     },
     {
       "key": "IronIngot",
       "id": 301,
       "name": "Iron Ingot",
+      "description": null,
       "icon": "item_IronIngot.png",
       "tags": [
         "Solid"
@@ -941,12 +1026,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "Nails",
       "id": 302,
       "name": "Iron Nails",
+      "description": null,
       "icon": "item_Nails.png",
       "tags": [
         "Component"
@@ -963,12 +1050,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 16.0
+      "sellPrice": 16.0,
+      "sellType": "Groceries"
     },
     {
       "key": "IronSand",
       "id": 303,
       "name": "Iron Sand",
+      "description": null,
       "icon": "item_IronSand.png",
       "tags": [
         "Mash"
@@ -985,12 +1074,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "PlantAsh",
       "id": 304,
       "name": "Plant Ash",
+      "description": null,
       "icon": "item_PlantAsh.png",
       "tags": [
         "Mash"
@@ -1007,12 +1098,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "SagePowder",
       "id": 305,
       "name": "Sage Powder",
+      "description": null,
       "icon": "item_SagePowder.png",
       "tags": [
         "Mash"
@@ -1029,12 +1122,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "HealingPotion",
       "id": 306,
       "name": "Healing Potion",
+      "description": null,
       "icon": "item_HealingPotion.png",
       "tags": [],
       "hidden": false,
@@ -1049,12 +1144,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 85.0
+      "sellPrice": 85.0,
+      "sellType": "Remedies"
     },
     {
       "key": "Linen",
       "id": 307,
       "name": "Linen",
+      "description": null,
       "icon": "item_Linen.png",
       "tags": [],
       "hidden": false,
@@ -1069,12 +1166,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 165.0
+      "sellPrice": 165.0,
+      "sellType": "Groceries"
     },
     {
       "key": "Bandage",
       "id": 308,
       "name": "Bandage",
+      "description": null,
       "icon": "item_Bandage.png",
       "tags": [],
       "hidden": false,
@@ -1089,12 +1188,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 350.0
+      "sellPrice": 350.0,
+      "sellType": "Groceries"
     },
     {
       "key": "Quicklime",
       "id": 401,
       "name": "Quicklime",
+      "description": null,
       "icon": "item_Quicklime.png",
       "tags": [
         "Solid"
@@ -1111,12 +1212,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "QuicklimePowder",
       "id": 402,
       "name": "Quicklime Powder",
+      "description": null,
       "icon": "item_QuicklimePowder.png",
       "tags": [
         "Mash"
@@ -1133,12 +1236,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "Charcoal",
       "id": 403,
       "name": "Charcoal",
+      "description": null,
       "icon": "item_Charcoal.png",
       "tags": [
         "Fuel"
@@ -1155,12 +1260,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "CharcoalPowder",
       "id": 404,
       "name": "Charcoal Powder",
+      "description": null,
       "icon": "item_CharcoalPowder.png",
       "tags": [
         "Fuel"
@@ -1177,12 +1284,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "WoodPulley",
       "id": 405,
       "name": "Wooden Pulley",
+      "description": null,
       "icon": "item_WoodPulley.png",
       "tags": [
         "Component"
@@ -1199,12 +1308,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 44.0
+      "sellPrice": 44.0,
+      "sellType": "Groceries"
     },
     {
       "key": "Clay",
       "id": 406,
       "name": "Clay",
+      "description": null,
       "icon": "item_Clay.png",
       "tags": [
         "Solid"
@@ -1221,12 +1332,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "ClayPowder",
       "id": 407,
       "name": "Clay Powder",
+      "description": null,
       "icon": "item_ClayPowder.png",
       "tags": [
         "Mash"
@@ -1243,12 +1356,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "Brick",
       "id": 408,
       "name": "Brick",
+      "description": null,
       "icon": "item_Brick.png",
       "tags": [
         "Solid"
@@ -1265,12 +1380,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 70.0
+      "sellPrice": 70.0,
+      "sellType": "Groceries"
     },
     {
       "key": "LinseedOil",
       "id": 409,
       "name": "Linseed Oil",
+      "description": null,
       "icon": "item_LinseedOil.png",
       "tags": [
         "Liquid"
@@ -1287,12 +1404,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "FruitWine",
       "id": 410,
       "name": "Fruit Wine",
+      "description": null,
       "icon": "item_FruitWine.png",
       "tags": [
         "Liquid"
@@ -1309,12 +1428,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "Limewater",
       "id": 411,
       "name": "Limewater",
+      "description": null,
       "icon": "item_Limewater.png",
       "tags": [
         "Liquid"
@@ -1331,12 +1452,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "Glass",
       "id": 412,
       "name": "Glass",
+      "description": null,
       "icon": "item_Glass.png",
       "tags": [
         "Solid"
@@ -1353,12 +1476,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 75.0
+      "sellPrice": 75.0,
+      "sellType": "Groceries"
     },
     {
       "key": "Soap",
       "id": 413,
       "name": "Soap",
+      "description": null,
       "icon": "item_Soap.png",
       "tags": [],
       "hidden": false,
@@ -1373,12 +1498,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 60.0
+      "sellPrice": 60.0,
+      "sellType": "Groceries"
     },
     {
       "key": "SoapPowder",
       "id": 414,
       "name": "Soap Powder",
+      "description": null,
       "icon": "item_SoapPowder.png",
       "tags": [
         "Mash"
@@ -1395,12 +1522,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "VitalityPotion",
       "id": 415,
       "name": "Vitality Potion",
+      "description": null,
       "icon": "item_VitalityPotion.png",
       "tags": [],
       "hidden": false,
@@ -1415,12 +1544,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 330.0
+      "sellPrice": 330.0,
+      "sellType": "Remedies"
     },
     {
       "key": "BasicFertilizer",
       "id": 416,
       "name": "Basic Fertilizer",
+      "description": null,
       "icon": "item_BasicFertilizer.png",
       "tags": [
         "Fertilizer"
@@ -1437,12 +1568,14 @@
       "nutrientSpeed": 12.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "WhisperingFields",
       "id": 417,
       "name": "Whispering Fields",
+      "description": null,
       "icon": "item_WhisperingFields.png",
       "tags": [],
       "hidden": false,
@@ -1457,12 +1590,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 420.0
+      "sellPrice": 420.0,
+      "sellType": "Liquid"
     },
     {
       "key": "Turquoise",
       "id": 501,
       "name": "Turquoise",
+      "description": null,
       "icon": "item_Turquoise.png",
       "tags": [],
       "hidden": false,
@@ -1477,12 +1612,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 290.0
+      "sellPrice": 290.0,
+      "sellType": "Jewelry"
     },
     {
       "key": "Jupiter",
       "id": 502,
       "name": "Jupiter",
+      "description": null,
       "icon": "item_Jupiter.png",
       "tags": [],
       "hidden": false,
@@ -1497,12 +1634,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 30000.0
+      "sellPrice": 30000.0,
+      "sellType": "Artcrafts"
     },
     {
       "key": "Coke",
       "id": 503,
       "name": "Coke",
+      "description": null,
       "icon": "item_Coke.png",
       "tags": [
         "Fuel"
@@ -1519,12 +1658,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "CokePowder",
       "id": 504,
       "name": "Coke Powder",
+      "description": null,
       "icon": "item_CokePowder.png",
       "tags": [
         "Fuel"
@@ -1541,12 +1682,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "SteelIngot",
       "id": 505,
       "name": "Steel Ingot",
+      "description": null,
       "icon": "item_SteelIngot.png",
       "tags": [
         "Solid"
@@ -1563,12 +1706,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "SteelGear",
       "id": 506,
       "name": "Steel Gear",
+      "description": null,
       "icon": "item_SteelGear.png",
       "tags": [
         "Component"
@@ -1585,12 +1730,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 450.0
+      "sellPrice": 450.0,
+      "sellType": "Groceries"
     },
     {
       "key": "YeastPowder",
       "id": 507,
       "name": "Yeast Powder",
+      "description": null,
       "icon": "item_YeastPowder.png",
       "tags": [
         "Mash"
@@ -1607,12 +1754,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "ManaPotion",
       "id": 508,
       "name": "Transformation Potion",
+      "description": null,
       "icon": "item_ManaPotion.png",
       "tags": [],
       "hidden": false,
@@ -1627,12 +1776,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 620.0
+      "sellPrice": 620.0,
+      "sellType": "Remedies"
     },
     {
       "key": "GloomFungus",
       "id": 509,
       "name": "Gloom Fungus",
+      "description": null,
       "icon": "item_GloomFungus.png",
       "tags": [
         "Herb"
@@ -1649,12 +1800,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "GloomSpores",
       "id": 510,
       "name": "Gloom Spores",
+      "description": null,
       "icon": "item_GloomSpores.png",
       "tags": [
         "Mash"
@@ -1671,12 +1824,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "AdvancedFertilizer",
       "id": 511,
       "name": "Advanced Fertilizer",
+      "description": null,
       "icon": "item_AdvancedFertilizer.png",
       "tags": [
         "Fertilizer"
@@ -1693,12 +1848,14 @@
       "nutrientSpeed": 144.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "Cart",
       "id": 418,
       "name": "Wagon",
+      "description": null,
       "icon": "item_Cart.png",
       "tags": [
         "Component"
@@ -1715,12 +1872,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "ChamomilePowder",
       "id": 601,
       "name": "Chamomile Powder",
+      "description": null,
       "icon": "item_ChamomilePowder.png",
       "tags": [
         "Mash"
@@ -1737,12 +1896,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "Sulfur",
       "id": 602,
       "name": "Sulfur",
+      "description": null,
       "icon": "item_Sulfur.png",
       "tags": [
         "Solid"
@@ -1759,12 +1920,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "SulfurPowder",
       "id": 603,
       "name": "Sulfur Powder",
+      "description": null,
       "icon": "item_SulfurPowder.png",
       "tags": [
         "Mash"
@@ -1781,12 +1944,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "Coal",
       "id": 604,
       "name": "Coal",
+      "description": null,
       "icon": "item_Coal.png",
       "tags": [
         "Fuel"
@@ -1803,12 +1968,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "Salt",
       "id": 605,
       "name": "Salt",
+      "description": null,
       "icon": "item_Salt.png",
       "tags": [],
       "hidden": false,
@@ -1823,12 +1990,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 100.0
+      "sellPrice": 100.0,
+      "sellType": "Groceries"
     },
     {
       "key": "SaltWater",
       "id": 606,
       "name": "Brine",
+      "description": null,
       "icon": "item_SaltWater.png",
       "tags": [
         "Liquid"
@@ -1845,12 +2014,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "CopperPowder",
       "id": 607,
       "name": "Impure Copper Powder",
+      "description": null,
       "icon": "item_CopperPowder.png",
       "tags": [
         "Mash"
@@ -1867,12 +2038,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "CopperPowder2",
       "id": 608,
       "name": "Copper Powder",
+      "description": null,
       "icon": "item_CopperPowder2.png",
       "tags": [
         "Mash"
@@ -1889,12 +2062,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "BronzeIngot",
       "id": 609,
       "name": "Bronze Ingot",
+      "description": null,
       "icon": "item_BronzeIngot.png",
       "tags": [
         "Solid"
@@ -1911,12 +2086,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "CopperIngot",
       "id": 610,
       "name": "Copper Ingot",
+      "description": null,
       "icon": "item_CopperIngot.png",
       "tags": [
         "Solid"
@@ -1933,12 +2110,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "CopperCoin",
       "id": 611,
       "name": "Copper Coin",
+      "description": null,
       "icon": "item_CopperCoin.png",
       "tags": [
         "Currency"
@@ -1955,12 +2134,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "CopperBearing",
       "id": 612,
       "name": "Copper Bearing",
+      "description": null,
       "icon": "item_CopperBearing.png",
       "tags": [
         "Component"
@@ -1977,12 +2158,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 300.0
+      "sellPrice": 300.0,
+      "sellType": "Groceries"
     },
     {
       "key": "BronzeRivet",
       "id": 613,
       "name": "Bronze Rivet",
+      "description": null,
       "icon": "item_BronzeRivet.png",
       "tags": [
         "Component"
@@ -1999,12 +2182,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 120.0
+      "sellPrice": 120.0,
+      "sellType": "Groceries"
     },
     {
       "key": "BlackPowder",
       "id": 614,
       "name": "Black Powder",
+      "description": null,
       "icon": "item_BlackPowder.png",
       "tags": [
         "Fuel"
@@ -2021,12 +2206,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 660.0
+      "sellPrice": 660.0,
+      "sellType": "Groceries"
     },
     {
       "key": "GrowthPotion",
       "id": 615,
       "name": "Growth Potion",
+      "description": null,
       "icon": "item_GrowthPotion.png",
       "tags": [
         "Fertilizer"
@@ -2043,12 +2230,14 @@
       "nutrientSpeed": 2160.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 1224.0
+      "sellPrice": 1224.0,
+      "sellType": "Remedies"
     },
     {
       "key": "Catalyst1",
       "id": 616,
       "name": "Unstable Catalyst",
+      "description": null,
       "icon": "item_Catalyst1.png",
       "tags": [
         "Catalyst"
@@ -2065,12 +2254,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "PocketWatch",
       "id": 617,
       "name": "Pocket Watch",
+      "description": null,
       "icon": "item_PocketWatch.png",
       "tags": [],
       "hidden": false,
@@ -2085,12 +2276,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 2000.0
+      "sellPrice": 2000.0,
+      "sellType": "Jewelry"
     },
     {
       "key": "Malachite",
       "id": 618,
       "name": "Malachite",
+      "description": null,
       "icon": "item_Malachite.png",
       "tags": [],
       "hidden": false,
@@ -2105,12 +2298,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 1020.0
+      "sellPrice": 1020.0,
+      "sellType": "Jewelry"
     },
     {
       "key": "ClockworkBird",
       "id": 619,
       "name": "Clockwork Bird",
+      "description": "A mechanical bird driven by precision gears. Capable of brief flight.",
       "icon": "item_ClockworkBird.png",
       "tags": [
         "Component"
@@ -2127,12 +2322,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "Saturn",
       "id": 620,
       "name": "Saturn",
+      "description": null,
       "icon": "item_Saturn.png",
       "tags": [],
       "hidden": false,
@@ -2147,12 +2344,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 150000.0
+      "sellPrice": 150000.0,
+      "sellType": "Artcrafts"
     },
     {
       "key": "Mars",
       "id": 621,
       "name": "Mars",
+      "description": null,
       "icon": "item_Mars.png",
       "tags": [],
       "hidden": false,
@@ -2167,12 +2366,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 280000.0
+      "sellPrice": 280000.0,
+      "sellType": "Artcrafts"
     },
     {
       "key": "Sand2",
       "id": 622,
       "name": "Refined Sand",
+      "description": "Refined sand. Perhaps if you keep refining it, it might change?",
       "icon": "item_Sand2.png",
       "tags": [
         "Mash"
@@ -2189,12 +2390,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "Sand3",
       "id": 623,
       "name": "Refined Sand",
+      "description": "Refined sand. Perhaps if you keep refining it, it might change?",
       "icon": "item_Sand3.png",
       "tags": [
         "Mash"
@@ -2211,12 +2414,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "Sand4",
       "id": 624,
       "name": "Refined Sand",
+      "description": "Refined sand. Perhaps if you keep refining it, it might change?",
       "icon": "item_Sand4.png",
       "tags": [
         "Mash"
@@ -2233,12 +2438,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "Sand5",
       "id": 625,
       "name": "Refined Sand",
+      "description": "Refined sand. Perhaps if you keep refining it, it might change?",
       "icon": "item_Sand5.png",
       "tags": [
         "Mash"
@@ -2255,12 +2462,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "Sand6",
       "id": 626,
       "name": "Refined Sand",
+      "description": "Refined sand. Perhaps if you keep refining it, it might change?",
       "icon": "item_Sand6.png",
       "tags": [
         "Mash"
@@ -2277,12 +2486,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "Sand8",
       "id": 627,
       "name": "Fully Refined Sand",
+      "description": null,
       "icon": "item_Sand8.png",
       "tags": [
         "Mash"
@@ -2299,12 +2510,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "Shard1",
       "id": 628,
       "name": "Crude Shard",
+      "description": null,
       "icon": "item_Shard1.png",
       "tags": [
         "Solid"
@@ -2321,12 +2534,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "Shard2",
       "id": 629,
       "name": "Broken Shard",
+      "description": null,
       "icon": "item_Shard2.png",
       "tags": [
         "Solid"
@@ -2343,12 +2558,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "Shard3",
       "id": 630,
       "name": "Dull Shard",
+      "description": null,
       "icon": "item_Shard3.png",
       "tags": [
         "Solid"
@@ -2365,12 +2582,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "Crystal1",
       "id": 631,
       "name": "Shattered Crystal",
+      "description": null,
       "icon": "item_Crystal1.png",
       "tags": [
         "Solid"
@@ -2387,12 +2606,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "Crystal2",
       "id": 632,
       "name": "Crude Crystal",
+      "description": null,
       "icon": "item_Crystal2.png",
       "tags": [
         "Solid"
@@ -2409,12 +2630,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "Crystal3",
       "id": 633,
       "name": "Polished Crystal",
+      "description": null,
       "icon": "item_Crystal3.png",
       "tags": [
         "Solid"
@@ -2431,12 +2654,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "Diamond1",
       "id": 634,
       "name": "Adamant",
+      "description": null,
       "icon": "item_Diamond1.png",
       "tags": [
         "Solid"
@@ -2453,12 +2678,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "Diamond2",
       "id": 635,
       "name": "Diamond",
+      "description": null,
       "icon": "item_Diamond2.png",
       "tags": [
         "Solid"
@@ -2475,12 +2702,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 100000.0
+      "sellPrice": 100000.0,
+      "sellType": "Jewelry"
     },
     {
       "key": "Diamond3",
       "id": 636,
       "name": "Perfect Diamond",
+      "description": null,
       "icon": "item_Diamond3.png",
       "tags": [
         "Solid"
@@ -2497,12 +2726,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "StrangeTide",
       "id": 637,
       "name": "Strange Tide",
+      "description": null,
       "icon": "item_StrangeTide.png",
       "tags": [],
       "hidden": false,
@@ -2517,12 +2748,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 1806.0
+      "sellPrice": 1806.0,
+      "sellType": "Liquid"
     },
     {
       "key": "LavenderEssentialOil",
       "id": 701,
       "name": "Lavender Essential Oil",
+      "description": null,
       "icon": "item_LavenderEssentialOil.png",
       "tags": [
         "Liquid"
@@ -2539,12 +2772,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "Brandy",
       "id": 702,
       "name": "Brandy",
+      "description": null,
       "icon": "item_Brandy.png",
       "tags": [
         "Liquid"
@@ -2561,12 +2796,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "SulfuricAcid",
       "id": 703,
       "name": "Sulfuric Acid",
+      "description": null,
       "icon": "item_SulfuricAcid.png",
       "tags": [
         "Liquid"
@@ -2583,12 +2820,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "Topaz",
       "id": 704,
       "name": "Topaz",
+      "description": null,
       "icon": "item_Topaz.png",
       "tags": [],
       "hidden": false,
@@ -2603,12 +2842,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 2800.0
+      "sellPrice": 2800.0,
+      "sellType": "Jewelry"
     },
     {
       "key": "BlastPotion",
       "id": 705,
       "name": "Blast Potion",
+      "description": null,
       "icon": "item_BlastPotion.png",
       "tags": [
         "Fuel"
@@ -2625,12 +2866,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 2557.0
+      "sellPrice": 2557.0,
+      "sellType": "Remedies"
     },
     {
       "key": "Catalyst2",
       "id": 706,
       "name": "Fertile Catalyst",
+      "description": null,
       "icon": "item_Catalyst2.png",
       "tags": [
         "Catalyst",
@@ -2648,12 +2891,14 @@
       "nutrientSpeed": 6000.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "PerfumedSoap",
       "id": 707,
       "name": "Perfumed Soap",
+      "description": null,
       "icon": "item_PerfumedSoap.png",
       "tags": [],
       "hidden": false,
@@ -2668,12 +2913,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 2590.0
+      "sellPrice": 2590.0,
+      "sellType": "Groceries"
     },
     {
       "key": "PerfumedSoapPowder",
       "id": 708,
       "name": "Perfumed Soap Powder",
+      "description": null,
       "icon": "item_PerfumedSoapPowder.png",
       "tags": [
         "Mash"
@@ -2690,12 +2937,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "Mors",
       "id": 25,
       "name": "Oblivion Essence",
+      "description": null,
       "icon": "item_Mors.png",
       "tags": [
         "Magic"
@@ -2712,12 +2961,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "Vitae",
       "id": 709,
       "name": "Vitality Essence",
+      "description": null,
       "icon": "item_Vitae.png",
       "tags": [
         "Magic"
@@ -2734,12 +2985,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "Venus",
       "id": 710,
       "name": "Venus",
+      "description": null,
       "icon": "item_Venus.png",
       "tags": [],
       "hidden": false,
@@ -2754,12 +3007,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 1000000.0
+      "sellPrice": 1000000.0,
+      "sellType": "Artcrafts"
     },
     {
       "key": "Steam",
       "id": 31,
       "name": "Steam",
+      "description": null,
       "icon": "item_Steam.png",
       "tags": [
         "Gas"
@@ -2776,12 +3031,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "LavenderDream",
       "id": 711,
       "name": "Lavender Dream",
+      "description": null,
       "icon": "item_LavenderDream.png",
       "tags": [],
       "hidden": false,
@@ -2796,12 +3053,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 8000.0
+      "sellPrice": 8000.0,
+      "sellType": "Liquid"
     },
     {
       "key": "GentianPowder",
       "id": 801,
       "name": "Gentian Powder",
+      "description": null,
       "icon": "item_GentianPowder.png",
       "tags": [
         "Mash"
@@ -2818,12 +3077,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "SilverPowder",
       "id": 803,
       "name": "Crude Silver Powder",
+      "description": null,
       "icon": "item_SilverPowder.png",
       "tags": [
         "Mash"
@@ -2840,12 +3101,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "SilverPowder2",
       "id": 804,
       "name": "Impure Silver Powder",
+      "description": null,
       "icon": "item_SilverPowder2.png",
       "tags": [
         "Mash"
@@ -2862,12 +3125,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "SilverPowder3",
       "id": 805,
       "name": "Silver Powder",
+      "description": null,
       "icon": "item_SilverPowder3.png",
       "tags": [
         "Mash"
@@ -2884,12 +3149,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "Obsidian",
       "id": 806,
       "name": "Obsidian",
+      "description": null,
       "icon": "item_Obsidian.png",
       "tags": [],
       "hidden": false,
@@ -2904,12 +3171,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 11000.0
+      "sellPrice": 11000.0,
+      "sellType": "Jewelry"
     },
     {
       "key": "VolcanicAsh",
       "id": 807,
       "name": "Volcanic Ash",
+      "description": null,
       "icon": "item_VolcanicAsh.png",
       "tags": [
         "Mash"
@@ -2926,12 +3195,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "SilverIngot",
       "id": 808,
       "name": "Silver Ingot",
+      "description": null,
       "icon": "item_SilverIngot.png",
       "tags": [
         "Solid"
@@ -2948,12 +3219,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "SilverCoin",
       "id": 809,
       "name": "Silver Coin",
+      "description": null,
       "icon": "item_SilverCoin.png",
       "tags": [
         "Currency"
@@ -2970,12 +3243,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "SilverAmulet",
       "id": 810,
       "name": "Silver Amulet",
+      "description": null,
       "icon": "item_SilverAmulet.png",
       "tags": [],
       "hidden": false,
@@ -2990,12 +3265,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 51000.0
+      "sellPrice": 51000.0,
+      "sellType": "Jewelry"
     },
     {
       "key": "Mercury",
       "id": 811,
       "name": "Quicksilver",
+      "description": null,
       "icon": "item_Mercury.png",
       "tags": [
         "Liquid"
@@ -3012,12 +3289,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "AquaVitae",
       "id": 812,
       "name": "Aqua Vitae",
+      "description": null,
       "icon": "item_AquaVitae.png",
       "tags": [
         "Liquid"
@@ -3034,12 +3313,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "LapisLazuli",
       "id": 813,
       "name": "Lapis Lazuli",
+      "description": null,
       "icon": "item_LapisLazuli.png",
       "tags": [],
       "hidden": false,
@@ -3054,12 +3335,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 32000.0
+      "sellPrice": 32000.0,
+      "sellType": "Jewelry"
     },
     {
       "key": "MercuryP",
       "id": 814,
       "name": "Mercury",
+      "description": null,
       "icon": "item_MercuryP.png",
       "tags": [],
       "hidden": false,
@@ -3074,12 +3357,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 5200000.0
+      "sellPrice": 5200000.0,
+      "sellType": "Artcrafts"
     },
     {
       "key": "Catalyst3",
       "id": 815,
       "name": "Resonant Catalyst",
+      "description": null,
       "icon": "item_Catalyst3.png",
       "tags": [
         "Catalyst"
@@ -3096,12 +3381,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "PanaceaElixir",
       "id": 816,
       "name": "Panacea Potion",
+      "description": null,
       "icon": "item_PanaceaElixir.png",
       "tags": [
         "Fertilizer",
@@ -3119,12 +3406,14 @@
       "nutrientSpeed": 20000.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 30000.0
+      "sellPrice": 30000.0,
+      "sellType": "Remedies"
     },
     {
       "key": "WorldTreeVintage",
       "id": 817,
       "name": "World Tree Vintage",
+      "description": null,
       "icon": "item_WorldTreeVintage.png",
       "tags": [],
       "hidden": false,
@@ -3139,12 +3428,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 36000.0
+      "sellPrice": 36000.0,
+      "sellType": "Liquid"
     },
     {
       "key": "GoldDust",
       "id": 901,
       "name": "Crude Gold Dust",
+      "description": null,
       "icon": "item_GoldDust.png",
       "tags": [
         "Mash"
@@ -3161,12 +3452,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "GoldDust2",
       "id": 902,
       "name": "Impure Gold Dust",
+      "description": null,
       "icon": "item_GoldDust2.png",
       "tags": [
         "Mash"
@@ -3183,12 +3476,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "GoldDust3",
       "id": 903,
       "name": "Gold Dust",
+      "description": null,
       "icon": "item_GoldDust3.png",
       "tags": [
         "Mash"
@@ -3205,12 +3500,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "GoldDust5",
       "id": 904,
       "name": "Pure Gold Dust",
+      "description": null,
       "icon": "item_GoldDust5.png",
       "tags": [
         "Mash"
@@ -3227,12 +3524,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "GoldIngot",
       "id": 905,
       "name": "Gold Ingot",
+      "description": null,
       "icon": "item_GoldIngot.png",
       "tags": [
         "Solid"
@@ -3249,12 +3548,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "GoldCoin",
       "id": 906,
       "name": "Gold Coin",
+      "description": null,
       "icon": "item_GoldCoin.png",
       "tags": [
         "Currency"
@@ -3271,12 +3572,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "Crown",
       "id": 907,
       "name": "Crown",
+      "description": null,
       "icon": "item_Crown.png",
       "tags": [],
       "hidden": false,
@@ -3291,12 +3594,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 1700000.0
+      "sellPrice": 1700000.0,
+      "sellType": "Jewelry"
     },
     {
       "key": "Catalyst4",
       "id": 908,
       "name": "Eternal Catalyst",
+      "description": null,
       "icon": "item_Catalyst4.png",
       "tags": [
         "Catalyst"
@@ -3313,12 +3618,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "StarDust",
       "id": 909,
       "name": "Star Dust",
+      "description": null,
       "icon": "item_StarDust.png",
       "tags": [
         "Magic"
@@ -3335,12 +3642,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "FairyDust",
       "id": 910,
       "name": "Fairy Dust",
+      "description": null,
       "icon": "item_FairyDust.png",
       "tags": [
         "Magic"
@@ -3357,12 +3666,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "FairyTear",
       "id": 911,
       "name": "Fairy Tear",
+      "description": null,
       "icon": "item_FairyTear.png",
       "tags": [
         "Liquid"
@@ -3379,12 +3690,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "MoonTear",
       "id": 912,
       "name": "Moon Tear",
+      "description": null,
       "icon": "item_MoonTear.png",
       "tags": [
         "Liquid"
@@ -3401,12 +3714,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "MoonlitSoap",
       "id": 913,
       "name": "Moonlit Soap",
+      "description": null,
       "icon": "item_MoonlitSoap.png",
       "tags": [],
       "hidden": false,
@@ -3421,12 +3736,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 900000.0
+      "sellPrice": 900000.0,
+      "sellType": "Groceries"
     },
     {
       "key": "Luna",
       "id": 914,
       "name": "Luna",
+      "description": null,
       "icon": "item_Luna.png",
       "tags": [],
       "hidden": false,
@@ -3441,12 +3758,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 20600000.0
+      "sellPrice": 20600000.0,
+      "sellType": "Artcrafts"
     },
     {
       "key": "AlchemistSigh",
       "id": 915,
       "name": "Alchemist's Sigh",
+      "description": null,
       "icon": "item_AlchemistSigh.png",
       "tags": [],
       "hidden": false,
@@ -3461,12 +3780,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 400000.0
+      "sellPrice": 400000.0,
+      "sellType": "Liquid"
     },
     {
       "key": "Sol",
       "id": 1001,
       "name": "Sol",
+      "description": null,
       "icon": "item_Sol.png",
       "tags": [],
       "hidden": false,
@@ -3481,12 +3802,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 44500000.0
+      "sellPrice": 44500000.0,
+      "sellType": "Artcrafts"
     },
     {
       "key": "Aloe",
       "id": 9999,
       "name": "Aloe",
+      "description": null,
       "icon": "item_Aloe.png",
       "tags": [
         "Herb"
@@ -3503,12 +3826,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "AloeSeed",
       "id": 9999,
       "name": "Aloe Seeds",
+      "description": null,
       "icon": "item_AloeSeed.png",
       "tags": [
         "PlantSeed"
@@ -3525,12 +3850,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "IronAmulet",
       "id": 9004,
       "name": "Iron Amulet",
+      "description": null,
       "icon": "item_IronAmulet.png",
       "tags": [],
       "hidden": true,
@@ -3545,12 +3872,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 63.0
+      "sellPrice": 63.0,
+      "sellType": "Jewelry"
     },
     {
       "key": "FineBandage",
       "id": 9005,
       "name": "Advanced Bandage",
+      "description": null,
       "icon": "item_FineBandage.png",
       "tags": [],
       "hidden": true,
@@ -3565,12 +3894,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 168.0
+      "sellPrice": 168.0,
+      "sellType": "Groceries"
     },
     {
       "key": "AloePaste",
       "id": 9999,
       "name": "Aloe Paste",
+      "description": null,
       "icon": "item_AloePaste.png",
       "tags": [
         "Mash"
@@ -3587,12 +3918,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "CopperAmulet",
       "id": 9007,
       "name": "Copper Amulet",
+      "description": null,
       "icon": "item_CopperAmulet.png",
       "tags": [],
       "hidden": true,
@@ -3607,12 +3940,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 928.0
+      "sellPrice": 928.0,
+      "sellType": "Jewelry"
     },
     {
       "key": "Amethyst",
       "id": 9010,
       "name": "Amethyst",
+      "description": null,
       "icon": "item_Amethyst.png",
       "tags": [],
       "hidden": true,
@@ -3627,12 +3962,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 4112.0
+      "sellPrice": 4112.0,
+      "sellType": "Jewelry"
     },
     {
       "key": "CharismaPotion",
       "id": 9013,
       "name": "Charisma Potion",
+      "description": null,
       "icon": "item_CharismaPotion.png",
       "tags": [],
       "hidden": true,
@@ -3647,12 +3984,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 8000.0
+      "sellPrice": 8000.0,
+      "sellType": "Remedies"
     },
     {
       "key": "Sand7",
       "id": 9015,
       "name": "Refined Sand",
+      "description": "Refined sand. Perhaps if you keep refining it, it might change?",
       "icon": "item_Sand7.png",
       "tags": [
         "Mash"
@@ -3669,12 +4008,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "InvisbilityPotion",
       "id": 9016,
       "name": "Floating Potion",
+      "description": null,
       "icon": "item_InvisbilityPotion.png",
       "tags": [],
       "hidden": true,
@@ -3689,12 +4030,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": 22000.0
+      "sellPrice": 22000.0,
+      "sellType": "Remedies"
     },
     {
       "key": "GoldDust4",
       "id": 9017,
       "name": "Refined Gold Dust",
+      "description": null,
       "icon": "item_GoldDust4.png",
       "tags": [
         "Mash"
@@ -3711,12 +4054,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "Salve",
       "id": 9999,
       "name": "Styptic Salve",
+      "description": null,
       "icon": "item_Salve.png",
       "tags": [],
       "hidden": true,
@@ -3731,12 +4076,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Remedies"
     },
     {
       "key": "WoodAcid",
       "id": 9999,
       "name": "Wood Acid",
+      "description": null,
       "icon": "item_WoodAcid.png",
       "tags": [],
       "hidden": true,
@@ -3751,12 +4098,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "Pottery",
       "id": 9999,
       "name": "Pottery",
+      "description": null,
       "icon": "item_Pottery.png",
       "tags": [],
       "hidden": true,
@@ -3771,12 +4120,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "Ceramics",
       "id": 9999,
       "name": "Ceramics",
+      "description": null,
       "icon": "item_Ceramics.png",
       "tags": [],
       "hidden": true,
@@ -3791,12 +4142,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "FireBrick",
       "id": 9999,
       "name": "Fire Brick",
+      "description": null,
       "icon": "item_FireBrick.png",
       "tags": [],
       "hidden": true,
@@ -3811,12 +4164,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "Granite",
       "id": 9999,
       "name": "Granite",
+      "description": null,
       "icon": "item_Granite.png",
       "tags": [],
       "hidden": true,
@@ -3831,12 +4186,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "Marble",
       "id": 808,
       "name": "Marble",
+      "description": null,
       "icon": "item_Marble.png",
       "tags": [
         "Solid"
@@ -3853,12 +4210,14 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     },
     {
       "key": "DriedClay",
       "id": 9999,
       "name": "Dry Clay",
+      "description": null,
       "icon": "item_DriedClay.png",
       "tags": [],
       "hidden": true,
@@ -3873,7 +4232,8 @@
       "nutrientSpeed": 0.0,
       "buyPrice": null,
       "buyCoin": null,
-      "sellPrice": null
+      "sellPrice": null,
+      "sellType": "Worthless"
     }
   ],
   "recipes": [
@@ -8392,6 +8752,13 @@
       "id": 101,
       "name": "Grinder",
       "icon": "building_Grinder.png",
+      "description": "Automated grinding device with one conveyor belt input and one conveyor belt output.",
+      "cost": [
+        {
+          "item": "WoodBoard",
+          "count": 6
+        }
+      ],
       "hidden": false,
       "heatCost": 0.0,
       "tags": [
@@ -8421,6 +8788,17 @@
       "id": 102,
       "name": "Enhanced Grinder",
       "icon": "building_EnhancedGrinder.png",
+      "description": "A more efficient grinder, working at twice the speed of a regular one.",
+      "cost": [
+        {
+          "item": "WoodBoard",
+          "count": 12
+        },
+        {
+          "item": "SteelGear",
+          "count": 3
+        }
+      ],
       "hidden": false,
       "heatCost": 0.0,
       "tags": [
@@ -8458,6 +8836,13 @@
       "id": 103,
       "name": "Crucible",
       "icon": "building_Crucible.png",
+      "description": "Automated heating device that can only be built on a furnace, with one conveyor belt input and one conveyor belt output.",
+      "cost": [
+        {
+          "item": "Stone",
+          "count": 4
+        }
+      ],
       "hidden": false,
       "heatCost": 4.0,
       "tags": [
@@ -8488,6 +8873,21 @@
       "id": 104,
       "name": "Stackable Crucible",
       "icon": "building_StackableCrucible.png",
+      "description": "An automated heater that transfers heat to the device above it.",
+      "cost": [
+        {
+          "item": "Stone",
+          "count": 6
+        },
+        {
+          "item": "SteelIngot",
+          "count": 2
+        },
+        {
+          "item": "BronzeRivet",
+          "count": 2
+        }
+      ],
       "hidden": false,
       "heatCost": 6.0,
       "tags": [
@@ -8515,6 +8915,17 @@
       "id": 105,
       "name": "Extractor",
       "icon": "building_Extractor.png",
+      "description": "Automated extraction device with one conveyor belt input and one pipeline output.",
+      "cost": [
+        {
+          "item": "IronIngot",
+          "count": 5
+        },
+        {
+          "item": "Glass",
+          "count": 5
+        }
+      ],
       "hidden": false,
       "heatCost": 0.0,
       "tags": [
@@ -8534,6 +8945,17 @@
       "id": 106,
       "name": "Thermal Extractor",
       "icon": "building_ThermalExtractor.png",
+      "description": "An advanced Extractor with an added heating module. The higher up it's built, the greater its output.",
+      "cost": [
+        {
+          "item": "SteelIngot",
+          "count": 5
+        },
+        {
+          "item": "Glass",
+          "count": 5
+        }
+      ],
       "hidden": false,
       "heatCost": 80.0,
       "tags": [
@@ -8563,6 +8985,17 @@
       "id": 107,
       "name": "Refiner",
       "icon": "building_Refiner.png",
+      "description": "An automated refining device with two conveyor belt inputs and one conveyor belt output.",
+      "cost": [
+        {
+          "item": "WoodBoard",
+          "count": 8
+        },
+        {
+          "item": "SteelGear",
+          "count": 4
+        }
+      ],
       "hidden": false,
       "heatCost": 0.0,
       "tags": [
@@ -8592,6 +9025,17 @@
       "id": 108,
       "name": "Refiner",
       "icon": "building_Refiner_Sym.png",
+      "description": "An automated refining device with two conveyor belt inputs and one conveyor belt output.",
+      "cost": [
+        {
+          "item": "WoodBoard",
+          "count": 8
+        },
+        {
+          "item": "SteelGear",
+          "count": 4
+        }
+      ],
       "hidden": true,
       "heatCost": 0.0,
       "tags": [
@@ -8621,6 +9065,21 @@
       "id": 109,
       "name": "Paradox Crucible",
       "icon": "building_ParadoxCrucible.png",
+      "description": "A passive heating device that can refine any material into oblivion essence. Different materials will take different amounts of time to refine.",
+      "cost": [
+        {
+          "item": "SteelIngot",
+          "count": 8
+        },
+        {
+          "item": "CopperIngot",
+          "count": 8
+        },
+        {
+          "item": "BronzeRivet",
+          "count": 16
+        }
+      ],
       "hidden": false,
       "heatCost": 1200.0,
       "tags": [
@@ -8641,6 +9100,17 @@
       "id": 110,
       "name": "Steam Boiler",
       "icon": "building_SteamBoiler.png",
+      "description": "Converts heat into high-pressure steam. Output rate is adjustable.",
+      "cost": [
+        {
+          "item": "IronIngot",
+          "count": 20
+        },
+        {
+          "item": "SteelIngot",
+          "count": 5
+        }
+      ],
       "hidden": false,
       "heatCost": 0.0,
       "tags": [
@@ -8666,6 +9136,13 @@
       "id": 111,
       "name": "Knowledge Altar",
       "icon": "building_KnowledgeAltar.png",
+      "description": "Breaks down items to extract alchemical knowledge and increase the Knowledge Level. Breaking down relics grants a large amount of experience.",
+      "cost": [
+        {
+          "item": "Stone",
+          "count": 24
+        }
+      ],
       "hidden": false,
       "heatCost": 0.0,
       "tags": [
@@ -8685,6 +9162,13 @@
       "id": 112,
       "name": "Cauldron",
       "icon": "building_Cauldron.png",
+      "description": "A traditional alchemy device that takes any three materials and refines them into one unknown material. Some old alchemists still insist on using it.",
+      "cost": [
+        {
+          "item": "BronzeIngot",
+          "count": 20
+        }
+      ],
       "hidden": false,
       "heatCost": 0.0,
       "tags": [
@@ -8710,6 +9194,13 @@
       "id": 113,
       "name": "Advanced Cauldron",
       "icon": "building_AdvancedCauldron.png",
+      "description": "A cauldron forged from pure silver. Less a tool than a mark of true mastery in the alchemical arts.",
+      "cost": [
+        {
+          "item": "SilverIngot",
+          "count": 20
+        }
+      ],
       "hidden": false,
       "heatCost": 0.0,
       "tags": [
@@ -8739,6 +9230,17 @@
       "id": 201,
       "name": "Processor",
       "icon": "building_Processor.png",
+      "description": "An advanced processing device that requires a recipe. It has one conveyor belt input and one conveyor belt output.",
+      "cost": [
+        {
+          "item": "WoodBoard",
+          "count": 12
+        },
+        {
+          "item": "LargeWoodGear",
+          "count": 3
+        }
+      ],
       "hidden": false,
       "heatCost": 0.0,
       "tags": [
@@ -8763,6 +9265,17 @@
       "id": 202,
       "name": "Processor",
       "icon": "building_Processor_Sym.png",
+      "description": "An advanced processing device that requires a recipe. It has one conveyor belt input and one conveyor belt output.",
+      "cost": [
+        {
+          "item": "WoodBoard",
+          "count": 12
+        },
+        {
+          "item": "LargeWoodGear",
+          "count": 3
+        }
+      ],
       "hidden": true,
       "heatCost": 0.0,
       "tags": [
@@ -8787,6 +9300,17 @@
       "id": 203,
       "name": "Kiln",
       "icon": "building_Kiln.png",
+      "description": "An advanced heating device that requires a recipe. It can only be built on a furnace, with one conveyor belt input and one conveyor belt output.",
+      "cost": [
+        {
+          "item": "Stone",
+          "count": 20
+        },
+        {
+          "item": "Clay",
+          "count": 10
+        }
+      ],
       "hidden": false,
       "heatCost": 15.0,
       "tags": [
@@ -8816,6 +9340,17 @@
       "id": 204,
       "name": "Blender",
       "icon": "building_Blender.png",
+      "description": "An advanced Blender that requires a recipe. It has one conveyor belt input, one pipeline input and one conveyor belt output.",
+      "cost": [
+        {
+          "item": "IronIngot",
+          "count": 8
+        },
+        {
+          "item": "Glass",
+          "count": 8
+        }
+      ],
       "hidden": false,
       "heatCost": 0.0,
       "tags": [
@@ -8840,6 +9375,21 @@
       "id": 205,
       "name": "Assembler",
       "icon": "building_Assembler.png",
+      "description": "An advanced processing device that requires a recipe. It has two conveyor belt inputs and one conveyor belt output.",
+      "cost": [
+        {
+          "item": "WoodBoard",
+          "count": 10
+        },
+        {
+          "item": "LargeWoodGear",
+          "count": 5
+        },
+        {
+          "item": "WoodGear",
+          "count": 15
+        }
+      ],
       "hidden": false,
       "heatCost": 0.0,
       "tags": [
@@ -8864,6 +9414,21 @@
       "id": 206,
       "name": "Assembler",
       "icon": "building_Assembler_Sym.png",
+      "description": "An advanced processing device that requires a recipe. It has two conveyor belt inputs and one conveyor belt output.",
+      "cost": [
+        {
+          "item": "WoodBoard",
+          "count": 10
+        },
+        {
+          "item": "LargeWoodGear",
+          "count": 5
+        },
+        {
+          "item": "WoodGear",
+          "count": 15
+        }
+      ],
       "hidden": true,
       "heatCost": 0.0,
       "tags": [
@@ -8888,6 +9453,21 @@
       "id": 207,
       "name": "Alembic",
       "icon": "building_Alembic.png",
+      "description": "An alembic that requires a recipe. It can only be built on a furnace, with one conveyor belt input, one pipeline input and one pipeline output.",
+      "cost": [
+        {
+          "item": "SteelIngot",
+          "count": 4
+        },
+        {
+          "item": "CopperIngot",
+          "count": 4
+        },
+        {
+          "item": "Glass",
+          "count": 8
+        }
+      ],
       "hidden": false,
       "heatCost": 108.0,
       "tags": [
@@ -8913,6 +9493,17 @@
       "id": 208,
       "name": "Athanor",
       "icon": "building_Athanor.png",
+      "description": "An advanced athanor with a chance of failure. It has two conveyor outputs, and failed products go through the second output.",
+      "cost": [
+        {
+          "item": "IronIngot",
+          "count": 10
+        },
+        {
+          "item": "Nails",
+          "count": 15
+        }
+      ],
       "hidden": false,
       "heatCost": 32.0,
       "tags": [
@@ -8942,6 +9533,17 @@
       "id": 209,
       "name": "Athanor",
       "icon": "building_Athanor_Sym.png",
+      "description": "An advanced athanor with a chance of failure. It has two conveyor outputs, and failed products go through the second output.",
+      "cost": [
+        {
+          "item": "IronIngot",
+          "count": 10
+        },
+        {
+          "item": "Nails",
+          "count": 15
+        }
+      ],
       "hidden": true,
       "heatCost": 32.0,
       "tags": [
@@ -8971,6 +9573,21 @@
       "id": 210,
       "name": "Advanced Blender",
       "icon": "building_AdvancedBlender.png",
+      "description": "An advanced blender that requires a recipe. It has two conveyor belt inputs, one pipeline input and one conveyor belt output.",
+      "cost": [
+        {
+          "item": "SteelIngot",
+          "count": 8
+        },
+        {
+          "item": "Glass",
+          "count": 16
+        },
+        {
+          "item": "CopperBearing",
+          "count": 4
+        }
+      ],
       "hidden": false,
       "heatCost": 0.0,
       "tags": [
@@ -9003,6 +9620,21 @@
       "id": 211,
       "name": "Advanced Blender",
       "icon": "building_AdvancedBlender_Sym.png",
+      "description": "An advanced blender that requires a recipe. It has two conveyor belt inputs, one pipeline input and one conveyor belt output.",
+      "cost": [
+        {
+          "item": "SteelIngot",
+          "count": 8
+        },
+        {
+          "item": "Glass",
+          "count": 16
+        },
+        {
+          "item": "CopperBearing",
+          "count": 4
+        }
+      ],
       "hidden": true,
       "heatCost": 0.0,
       "tags": [
@@ -9027,6 +9659,21 @@
       "id": 212,
       "name": "Advanced Alembic",
       "icon": "building_AdvancedAlembic.png",
+      "description": "An advanced alembic that requires a recipe. It can only be built on a furnace, with two conveyor belt inputs, one pipeline input and one pipeline output.",
+      "cost": [
+        {
+          "item": "SteelIngot",
+          "count": 8
+        },
+        {
+          "item": "Glass",
+          "count": 16
+        },
+        {
+          "item": "CopperBearing",
+          "count": 4
+        }
+      ],
       "hidden": false,
       "heatCost": 270.0,
       "tags": [
@@ -9052,6 +9699,21 @@
       "id": 213,
       "name": "Advanced Alembic",
       "icon": "building_AdvancedAlembic_Sym.png",
+      "description": "An advanced alembic that requires a recipe. It can only be built on a furnace, with two conveyor belt inputs, one pipeline input and one pipeline output.",
+      "cost": [
+        {
+          "item": "SteelIngot",
+          "count": 8
+        },
+        {
+          "item": "Glass",
+          "count": 16
+        },
+        {
+          "item": "CopperBearing",
+          "count": 4
+        }
+      ],
       "hidden": true,
       "heatCost": 270.0,
       "tags": [
@@ -9077,6 +9739,21 @@
       "id": 214,
       "name": "Advanced Assembler",
       "icon": "building_Omni-Machine.png",
+      "description": "An advanced processing device that requires a recipe. It has three conveyor belt inputs, one pipeline input and one conveyor belt output.",
+      "cost": [
+        {
+          "item": "SteelIngot",
+          "count": 12
+        },
+        {
+          "item": "SteelGear",
+          "count": 16
+        },
+        {
+          "item": "CopperBearing",
+          "count": 8
+        }
+      ],
       "hidden": false,
       "heatCost": 0.0,
       "tags": [
@@ -9101,6 +9778,17 @@
       "id": 215,
       "name": "Advanced Athanor",
       "icon": "building_AdvancedAthanor.png",
+      "description": "An upgraded Athanor. Add catalysts to adjust recipe outcomes. It is compatible with standard Athanor recipes; when using them, heat consumption remains the same as a standard Athanor.",
+      "cost": [
+        {
+          "item": "SteelIngot",
+          "count": 12
+        },
+        {
+          "item": "CopperIngot",
+          "count": 12
+        }
+      ],
       "hidden": false,
       "heatCost": 360.0,
       "tags": [
@@ -9130,6 +9818,17 @@
       "id": 216,
       "name": "Shaper",
       "icon": "building_Shaper.png",
+      "description": "An advanced shaper that requires a recipe. It has six conveyor belt inputs and one conveyor belt output, and the product is crafted gradually as materials are fed in.",
+      "cost": [
+        {
+          "item": "IronIngot",
+          "count": 8
+        },
+        {
+          "item": "Nails",
+          "count": 16
+        }
+      ],
       "hidden": false,
       "heatCost": 0.0,
       "tags": [
@@ -9154,6 +9853,17 @@
       "id": 217,
       "name": "Advanced Shaper",
       "icon": "building_AdvancedShaper.png",
+      "description": "An advanced shaper that requires a recipe. It has five conveyor belt inputs, two pipeline inputs and one conveyor belt output, and the product is crafted gradually as materials are fed in.",
+      "cost": [
+        {
+          "item": "SteelIngot",
+          "count": 8
+        },
+        {
+          "item": "SteelGear",
+          "count": 16
+        }
+      ],
       "hidden": false,
       "heatCost": 0.0,
       "tags": [
@@ -9178,6 +9888,21 @@
       "id": 218,
       "name": "Arcane Shaper",
       "icon": "building_AetherShaper.png",
+      "description": "An advanced shaper that requires a recipe. It has nine conveyor belt inputs and one conveyor belt output, and the product is crafted gradually as materials are fed in.",
+      "cost": [
+        {
+          "item": "GoldIngot",
+          "count": 12
+        },
+        {
+          "item": "SteelGear",
+          "count": 24
+        },
+        {
+          "item": "CopperBearing",
+          "count": 18
+        }
+      ],
       "hidden": false,
       "heatCost": 0.0,
       "tags": [
@@ -9202,6 +9927,21 @@
       "id": 219,
       "name": "Arcane Processor",
       "icon": "building_ArcaneProcessor.png",
+      "description": "An advanced processing device that requires a recipe. It has one conveyor belt input and one conveyor belt output.",
+      "cost": [
+        {
+          "item": "SteelIngot",
+          "count": 6
+        },
+        {
+          "item": "SteelGear",
+          "count": 12
+        },
+        {
+          "item": "LapisLazuli",
+          "count": 2
+        }
+      ],
       "hidden": false,
       "heatCost": 0.0,
       "tags": [
@@ -9226,6 +9966,13 @@
       "id": 301,
       "name": "Stone Furnace",
       "icon": "building_StoneStove.png",
+      "description": "A simple heating device. After adding fuel, the devices above the stone furnace can be heated. Fuel can be automatically refilled through a conveyor belt.",
+      "cost": [
+        {
+          "item": "Stone",
+          "count": 20
+        }
+      ],
       "hidden": false,
       "heatCost": 0.0,
       "tags": [
@@ -9256,6 +10003,13 @@
       "id": 302,
       "name": "Blast Furnace",
       "icon": "building_StoneFurnace.png",
+      "description": "An advanced heating device with a larger heating area. It can automatically refill fuel through a conveyor belt.",
+      "cost": [
+        {
+          "item": "Brick",
+          "count": 30
+        }
+      ],
       "hidden": false,
       "heatCost": 0.0,
       "tags": [
@@ -9287,6 +10041,17 @@
       "id": 303,
       "name": "Steam Heating Pad",
       "icon": "building_SteamHeater.png",
+      "description": "A fuel-free heating station. Feed it steam to heat the equipment above.",
+      "cost": [
+        {
+          "item": "SteelIngot",
+          "count": 3
+        },
+        {
+          "item": "CopperIngot",
+          "count": 3
+        }
+      ],
       "hidden": false,
       "heatCost": 0.0,
       "tags": [
@@ -9312,6 +10077,13 @@
       "id": 701,
       "name": "Table Saw",
       "icon": "building_TableSaw.png",
+      "description": "It consumes Logs to produce planks, with one conveyor belt input and one conveyor belt output.",
+      "cost": [
+        {
+          "item": "WoodBoard",
+          "count": 5
+        }
+      ],
       "hidden": false,
       "heatCost": 0.0,
       "tags": [
@@ -9336,6 +10108,17 @@
       "id": 702,
       "name": "Stone Crusher",
       "icon": "building_StoneCrusher.png",
+      "description": "It consumes limestone to produce rubbles, and has one conveyor belt input and one conveyor belt output.",
+      "cost": [
+        {
+          "item": "WoodBoard",
+          "count": 6
+        },
+        {
+          "item": "LargeWoodGear",
+          "count": 6
+        }
+      ],
       "hidden": false,
       "heatCost": 0.0,
       "tags": [
@@ -9364,6 +10147,13 @@
       "id": 703,
       "name": "Seed Plot",
       "icon": "building_SeedPlot.png",
+      "description": "A planting plot. After using plant seeds, you can wait to harvest.",
+      "cost": [
+        {
+          "item": "Stone",
+          "count": 8
+        }
+      ],
       "hidden": false,
       "heatCost": 0.0,
       "tags": [
@@ -9383,6 +10173,13 @@
       "id": 704,
       "name": "Iron Smelter",
       "icon": "building_IronSmelter.png",
+      "description": "It consumes iron ore to smelt iron ingots and can only be built on a furnace and has a conveyor belt output.",
+      "cost": [
+        {
+          "item": "Stone",
+          "count": 15
+        }
+      ],
       "hidden": false,
       "heatCost": 9.0,
       "tags": [
@@ -9420,6 +10217,17 @@
       "id": 705,
       "name": "Nursery",
       "icon": "building_AutoNursery.png",
+      "description": "An automatic herbal production device. Spread seeds and add fertilizer to grow the corresponding herbs.",
+      "cost": [
+        {
+          "item": "IronIngot",
+          "count": 8
+        },
+        {
+          "item": "Clay",
+          "count": 4
+        }
+      ],
       "hidden": false,
       "heatCost": 0.0,
       "tags": [
@@ -9448,6 +10256,21 @@
       "id": 706,
       "name": "World Tree Nursery",
       "icon": "building_WorldTreeNursery.png",
+      "description": "A Nursery used specially to grow a World Tree. It consumes Fertilizer at a set rate and has nine conveyor belt inputs and one conveyor belt output.",
+      "cost": [
+        {
+          "item": "WorldTreeSeed",
+          "count": 1
+        },
+        {
+          "item": "Clay",
+          "count": 100
+        },
+        {
+          "item": "IronIngot",
+          "count": 100
+        }
+      ],
       "hidden": false,
       "heatCost": 0.0,
       "tags": [
@@ -9472,6 +10295,17 @@
       "id": 707,
       "name": "Purchasing Portal",
       "icon": "building_Portal_AlchGuild.png",
+      "description": "A purchasing portal available only to senior members of the Alchemy Association. Input the required money to acquire the corresponding items.",
+      "cost": [
+        {
+          "item": "PortalSigil",
+          "count": 1
+        },
+        {
+          "item": "WoodBoard",
+          "count": 5
+        }
+      ],
       "hidden": false,
       "heatCost": 0.0,
       "tags": [
@@ -9516,6 +10350,17 @@
       "id": 708,
       "name": "Bank Portal",
       "icon": "building_Portal_Bank.png",
+      "description": "A device used to convert back and forth between two different coins, with the ability to set the amount of coins output each time.",
+      "cost": [
+        {
+          "item": "PortalSigil",
+          "count": 1
+        },
+        {
+          "item": "IronIngot",
+          "count": 5
+        }
+      ],
       "hidden": false,
       "heatCost": 0.0,
       "tags": [
@@ -9535,6 +10380,17 @@
       "id": 709,
       "name": "Dispatch Portal",
       "icon": "building_Portal_Wholesaling.png",
+      "description": "A portal that can send goods to the purchaser and receive payment. The corresponding purchase contract must first be unlocked.",
+      "cost": [
+        {
+          "item": "PortalSigil",
+          "count": 1
+        },
+        {
+          "item": "WoodBoard",
+          "count": 5
+        }
+      ],
       "hidden": false,
       "heatCost": 0.0,
       "tags": [
@@ -9579,6 +10435,8 @@
       "id": 710,
       "name": "Purchasing Portal",
       "icon": "building_LiquidSupplier.png",
+      "description": null,
+      "cost": [],
       "hidden": false,
       "heatCost": 0.0,
       "tags": [
@@ -9604,6 +10462,17 @@
       "id": 711,
       "name": "Portal (Output)",
       "icon": "building_Portal_Output.png",
+      "description": "A portal capable of outputting any items.",
+      "cost": [
+        {
+          "item": "PortalSigil",
+          "count": 1
+        },
+        {
+          "item": "WoodBoard",
+          "count": 5
+        }
+      ],
       "hidden": false,
       "heatCost": 0.0,
       "tags": [
@@ -9652,6 +10521,17 @@
       "id": 712,
       "name": "Portal (Input)",
       "icon": "building_Portal_Input.png",
+      "description": "A portal capable of receiving any item input.",
+      "cost": [
+        {
+          "item": "PortalSigil",
+          "count": 1
+        },
+        {
+          "item": "WoodBoard",
+          "count": 5
+        }
+      ],
       "hidden": false,
       "heatCost": 0.0,
       "tags": [
@@ -9696,6 +10576,17 @@
       "id": 713,
       "name": "Flask (Output)",
       "icon": "building_Flask_Output.png",
+      "description": "A flask capable of outputting any liquid.",
+      "cost": [
+        {
+          "item": "IronIngot",
+          "count": 6
+        },
+        {
+          "item": "Glass",
+          "count": 2
+        }
+      ],
       "hidden": false,
       "heatCost": 0.0,
       "tags": [
@@ -9720,6 +10611,17 @@
       "id": 714,
       "name": "Flask (Input)",
       "icon": "building_Flask_Input.png",
+      "description": "A flask capable of receiving any liquid input.",
+      "cost": [
+        {
+          "item": "IronIngot",
+          "count": 6
+        },
+        {
+          "item": "Glass",
+          "count": 2
+        }
+      ],
       "hidden": false,
       "heatCost": 0.0,
       "tags": [
@@ -9739,6 +10641,21 @@
       "id": 1211,
       "name": "Miniature World Tree",
       "icon": "building_MiniWorldTree.png",
+      "description": null,
+      "cost": [
+        {
+          "item": "WorldTreeSeed",
+          "count": 1
+        },
+        {
+          "item": "IronIngot",
+          "count": 8
+        },
+        {
+          "item": "Clay",
+          "count": 4
+        }
+      ],
       "hidden": false,
       "heatCost": 0.0,
       "tags": [
