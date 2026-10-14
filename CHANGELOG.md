@@ -8,6 +8,34 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
+## 2026-10-14T19:30Z
+
+- A new Reference tab lists every item and machine in the game. Items are filed as in the game's
+  Item Catalog, under Materials and Goods in the game's own sections and order; machines are
+  grouped by what they do. Search, or narrow the list to one section.
+- An item's page shows what makes it (as its product, a by-product or from failed crafts), what
+  uses it and what it builds, with its prices, its worth as fuel or fertilizer, at a Paradox
+  Crucible and a Knowledge Altar, any Dispatch Portal contract, and the game's own description. A
+  machine's page shows its build cost, connections, heat and speed, and every recipe it runs.
+  Every name links to its own page.
+- Recipes in the Reference show amounts per craft and, for one machine, items per minute in and
+  out.
+- The Upgrades panel sits beside every Reference page, shared with the Planner: every figure
+  follows your upgrades, and shows the base value and the upgrade that changed it.
+- An option hides the items, machines and recipes past your research tier, saying how many it
+  hid, for anyone avoiding spoilers.
+- Machines with unusual mechanics have written notes: how fertilizer works in a Nursery, how a
+  World Tree grows, how Athanors fail and what each catalyst does, and how the Paradox Crucible,
+  the Purchasing, Bank and Dispatch Portals, the Steam Boiler and Heating Pad, the Knowledge Altar
+  and the Thermal Extractor work.
+- The tiers of refined sand, which the game hides and calls by the same name, are explained
+  together on one Refined Sand page.
+- From an item's page you can start a new plan for it, add it to the open plan, or find cauldron
+  mixes for it. Your saved cauldron recipes are listed with the items they make.
+- In the Planner, item and machine names in the production tree link to their Reference pages (a
+  target's has a book icon beside it). Going back returns you to the row you came from.
+- Counts of refined sand no longer read "Sands".
+
 ## 2026-10-13T23:52Z
 
 - The Cauldron page's ingredient preferences have a new "Saved recipe products" group: every item
