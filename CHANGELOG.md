@@ -8,6 +8,18 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
+## 2026-10-14T21:55Z
+
+- Share a plan with a link: Share, next to Duplicate in the Planner, gives a short link to copy.
+  Whoever opens it can add a copy of the plan to their own, with the saved Cauldron recipes it
+  uses. No file to send.
+- A shared plan opens set up exactly as you see it: every row keeps your recipe and machine,
+  whatever default recipes the other player has saved. It runs at their own upgrades and research
+  tier, and your build checklist stays with you.
+- Opening a link you've already added goes straight to that plan instead of adding it again.
+- A plan you added from a link has a Shared menu: revert it to how it was shared after changing
+  it, or forget it was shared to make it an ordinary plan of yours.
+
 ## 2026-10-14T19:30Z
 
 - A new Reference tab lists every item and machine in the game. Items are filed as in the game's
