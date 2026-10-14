@@ -16,6 +16,7 @@ const SAME_NAME = new Set([
   // Herbs, minerals and ores.
   'Flax', 'Sage', 'Lavender', 'Chamomile', 'Gentian', 'GloomFungus',
   'Limestone', 'IronOre', 'Pyrite', 'RockSalt', 'CoalOre', 'QuartzOre', 'Stone', 'Sand', 'Clay',
+  'Sand2', 'Sand3', 'Sand4', 'Sand5', 'Sand6', 'Sand7', 'Sand8',
   'Quicklime', 'Charcoal', 'Coke', 'Coal', 'Sulfur', 'Salt', 'Malachite', 'Turquoise', 'Obsidian',
   'LapisLazuli', 'Marble', 'Diamond1',
   // Materials, liquids and gases.
