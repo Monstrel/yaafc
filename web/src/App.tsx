@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
 import { recipeSignature, type CauldronMode } from './lib/cauldron'
 import { planGroups } from './lib/itemGroups'
 import { usePlanModel } from './lib/planModel'
@@ -42,14 +42,10 @@ import { UndoHistory, useUndo } from './lib/undo'
 import { buildInfo, useUpdateAvailable } from './lib/updateCheck'
 import { PAGES, usePage, type Page } from './lib/router'
 import { PageLink } from './components/PageLink'
-import { CauldronPage } from './pages/CauldronPage'
-import { ChangelogPage } from './pages/ChangelogPage'
-import { HomePage } from './pages/HomePage'
-import { PlannerPage } from './pages/PlannerPage'
-import { ReferencePage } from './pages/ReferencePage'
+import { CauldronPage, ChangelogPage, HomePage, PlannerPage, ReferencePage, SavedPage } from './pages/lazyPages'
+import { PageLoading } from './components/PageLoading'
 import { newReferenceView, referenceSearch, sanitizeReferenceView, type ReferenceView } from './lib/reference'
 import { ReferenceNav, type ReferenceEntry } from './lib/referenceNav'
-import { SavedPage } from './pages/SavedPage'
 
 export default function App() {
   // The page visited last, which the bare site address opens on.
@@ -442,6 +438,7 @@ export default function App() {
         </div>
       )}
 
+      <Suspense fallback={<PageLoading />}>
       {tab === 'home' && <HomePage onNavigate={setTab} />}
       {tab === 'changelog' && <ChangelogPage />}
       {tab === 'cauldron' && (
@@ -550,6 +547,7 @@ export default function App() {
           }}
         />
       )}
+      </Suspense>
 
       <footer className="app-footer">
         Game data extracted from Alchemy Factory Steam build {gameVersion.steamBuildId ?? '?'} ({gameVersion.pakDate ?? '?'}).{' '}

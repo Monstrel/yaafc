@@ -17,6 +17,7 @@ import { Money } from '../Money'
 import { OverflowTargetForm } from '../OverflowTargetForm'
 import { BusDraw, FoldedPick } from '../FuelPick'
 import { CheckIcon } from '../CheckIcon'
+import { FlowChartView } from '../lazyFlowChart'
 import { ProducerSelect } from '../ProducerSelect'
 import { choosable, reuseInfo } from '../rowPicks'
 import {
@@ -670,6 +671,8 @@ export const TreeRow = memo(function TreeRow({
               aria-label={`Show the flow chart of ${name}`}
               aria-haspopup="dialog"
               onClick={() => onFlowChart(whole.id)}
+              onPointerEnter={FlowChartView.preload}
+              onFocus={FlowChartView.preload}
             >
               <FlowIcon />
             </button>

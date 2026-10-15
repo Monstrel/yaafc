@@ -1181,6 +1181,14 @@ td.under {
   }
 }
 
+/* Where a page goes while its code downloads: tall enough that the footer doesn't jump up and back. */
+.page-loading {
+  min-height: 60vh;
+  padding: 24px;
+  text-align: center;
+  font-size: 1.5rem;
+}
+
 .plans-toggle {
   display: inline-flex;
   align-items: center;

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { itemsByKey } from '../lib/gameData'
 import { fmt } from '../lib/format'
 import { noun } from '../lib/plural'
@@ -17,7 +17,7 @@ import type { Separation, Unitizing } from '../lib/types'
 import { unitChoices, wholePerCopy, type UnitScales } from '../lib/units'
 import type { Modifiers } from '../lib/upgrades'
 import { ItemLabel } from './ItemIcon'
-import { FlowChartView } from './FlowChartView'
+import { FlowChartView } from './lazyFlowChart'
 import { HeatView } from './HeatView'
 import { RowSearch } from './RowSearch'
 import {
@@ -747,13 +747,15 @@ export function ProductionTree({
       </div>
 
       {flowRoot && (
-        <FlowChartView
-          tree={tree}
-          rootId={flowRoot}
-          built={builtRows}
-          onClose={() => setFlowRoot(null)}
-          onShow={show}
-        />
+        <Suspense>
+          <FlowChartView
+            tree={tree}
+            rootId={flowRoot}
+            built={builtRows}
+            onClose={() => setFlowRoot(null)}
+            onShow={show}
+          />
+        </Suspense>
       )}
 
       <dialog ref={clearRef} className="tree-dialog">
