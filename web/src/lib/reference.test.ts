@@ -95,6 +95,14 @@ describe('item relationships', () => {
     expect(fromSteel?.role).toBe('failed')
   })
 
+  it('crushes Meteorites into gems, though the game hides the recipe', () => {
+    const crush = itemRelations(catalog, 'Meteorite').uses.find((p) => p.machine?.key === 'StoneCrusher')
+    expect(Object.fromEntries(crush?.outputs.map((o) => [o.item, o.count]) ?? [])).toEqual({
+      Ruby: 1, Sapphire: 1, Emerald: 1, Diamond1: 7, Obsidian: 30, Crystal1: 60, IronSand: 300, Coal: 300, Stone: 300,
+    })
+    expect(itemRelations(catalog, 'Ruby').makers.find((m) => m.process === crush)?.role).toBe('by-product')
+  })
+
   it('lists a seed as used by the Nursery planting it', () => {
     expect(itemRelations(catalog, 'FlaxSeed').uses.some((p) => p.kind === 'nursery' && p.seed === 'FlaxSeed')).toBe(true)
   })

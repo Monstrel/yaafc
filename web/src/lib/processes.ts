@@ -150,6 +150,29 @@ function perCraft(s: Stack, batch: number): number {
   return (s.count * batch) / (stack < 0 ? -stack : 1)
 }
 
+/**
+ * What a Meteorite's 1,000 units turn into, one item each (native, build 25321648, output lambda
+ * 0x1449D06A0): on a recipe whose first ingredient is a Meteorite (the Stone Crusher's, hidden from
+ * the recipe list), unit n of the bundle gives Ruby at 400, Sapphire at 700, Emerald at 1,000, Adamant
+ * at the other hundreds, Obsidian at tens whose tens digit is 3/6/9, Shattered Crystal at the other
+ * tens, then by n mod 10: Iron Sand at 3/6/9, Coal at 2/5/8, Stone at 1/4/7.
+ */
+const METEORITE = 'Meteorite'
+const METEORITE_YIELD: Stack[] = [
+  { item: 'Ruby', count: 1 },
+  { item: 'Sapphire', count: 1 },
+  { item: 'Emerald', count: 1 },
+  { item: 'Diamond1', count: 7 },
+  { item: 'Obsidian', count: 30 },
+  { item: 'Crystal1', count: 60 },
+  { item: 'IronSand', count: 300 },
+  { item: 'Coal', count: 300 },
+  { item: 'Stone', count: 300 },
+]
+const meteoriteUnits = -(itemsByKey.get(METEORITE)?.maxStack ?? -1000)
+/** Recipes the game runs though it hides them from the recipe list. */
+const crushesMeteorite = (r: GameRecipe) => r.inputs[0]?.item === METEORITE && !r.side
+
 function recipeProcess(r: GameRecipe, ctx: ProcessContext): Process {
   const id = `recipe:${r.key}`
   const isCauldron = r.craftType === 'Cauldron'
@@ -185,6 +208,12 @@ function recipeProcess(r: GameRecipe, ctx: ProcessContext): Process {
   })
   if (r.side) outputs.push({ item: r.side.item, count: perCraft(r.side, r.batch) * outputMultiplier })
   if (products.length > 1) notes.push(describeOutcomes(r, chances, catalysts.length > 0))
+  const meteorite = crushesMeteorite(r)
+  if (meteorite) {
+    const units = r.inputs[0].count * r.batch
+    outputs.splice(0, outputs.length, ...METEORITE_YIELD.map((y) => ({ item: y.item, count: (y.count * units) / meteoriteUnits })))
+    notes.push(`Each Meteorite gives ${METEORITE_YIELD.map((y) => `${y.count} ${itemName(y.item)}`).join(' · ')}, in a fixed order`)
+  }
 
   const inputs: Stack[] = has('eternal') ? [] : r.inputs.map((s) => ({ item: s.item, count: perCraft(s, r.batch) }))
   for (const c of catalysts) inputs.push({ item: c.key, count: r.catalystCost / c.charges })
@@ -206,9 +235,11 @@ function recipeProcess(r: GameRecipe, ctx: ProcessContext): Process {
   return {
     id,
     kind: 'recipe',
-    label: `${itemName(r.output.item)}${r.alternate ? ' (alt)' : ''}`,
+    label: meteorite ? `Gems ← ${itemName(METEORITE)}` : `${itemName(r.output.item)}${r.alternate ? ' (alt)' : ''}`,
     product: r.output.item,
-    secondary: r.side ? [r.side.item] : [],
+    secondary: meteorite
+      ? METEORITE_YIELD.map((y) => y.item).filter((item) => item !== r.output.item)
+      : r.side ? [r.side.item] : [],
     machine,
     machineOptions: options,
     seconds,
@@ -745,7 +776,9 @@ export function buildCatalog(ctx: ProcessContext): ProcessCatalog {
     return stacks || run.inputStacks ? fedStacks(run, stacks ?? {}) : run
   }
   const all: Process[] = [
-    ...gameRecipes.filter((r) => !r.hidden && !manualCraftTypes.has(r.craftType)).map((r) => recipeProcess(r, ctx)),
+    ...gameRecipes
+      .filter((r) => (!r.hidden || crushesMeteorite(r)) && !manualCraftTypes.has(r.craftType))
+      .map((r) => recipeProcess(r, ctx)),
     ...seeds.filter(grows).map((s) => nurseryProcess(s, ctx.fertilizer)),
     ...ctx.saved.map(savedRecipeProcess).filter((p): p is Process => !!p),
     ...paradoxInputs.map((i) => paradoxProcess(i)),
