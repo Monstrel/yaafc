@@ -1,7 +1,7 @@
 import { Suspense, useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
 import { recipeSignature, type CauldronMode } from './lib/cauldron'
 import { planGroups } from './lib/itemGroups'
-import { usePlanModel } from './lib/planModel'
+import { showsSolve, usePlanModel } from './lib/planModel'
 import { namedAfterTargets, planTitle } from './lib/planName'
 import { ADVANCED_CAULDRON, gameVersion, itemName, itemsByKey, machineTier } from './lib/gameData'
 import { chooseProducer } from './lib/choices'
@@ -125,8 +125,9 @@ export default function App() {
   const plan = plans.find((p) => p.id === activePlanId) ?? plans[0]
   const title = planTitle(plan)
   // What the active plan makes and overflows, offered as ingredient groups in the recipe finder.
-  // Also solved for the planner page, from here so each change is solved once.
-  const model = usePlanModel(plan, progress, saved, myDefaults)
+  // Also solved for the planner page, from here so each change is solved once. Only those pages
+  // solve it: elsewhere the solver isn't downloaded, and the last solve waits for their return.
+  const model = usePlanModel(plan, progress, saved, myDefaults, showsSolve(tab))
   const activePlanGroups = useMemo(
     () =>
       planGroups(

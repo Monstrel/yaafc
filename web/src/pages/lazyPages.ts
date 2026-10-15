@@ -1,5 +1,6 @@
 import { PageFailed } from '../components/ChunkFailed'
 import { lazyChunk } from '../lib/lazyChunk'
+import { showsSolve, solveAhead } from '../lib/planModel'
 import type { Page } from '../lib/router'
 
 // Each page downloads when it's first opened, so a visit to one part doesn't fetch the rest.
@@ -19,5 +20,8 @@ const pages: Record<Page, { preload: () => unknown }> = {
   reference: ReferencePage,
 }
 
-/** Starts downloading a page, so it's likely there by the time it's opened. */
-export const preloadPage = (page: Page) => void pages[page].preload()
+/** Starts downloading a page, and solving the plan for one that shows it, so it's likely there by the time it's opened. */
+export function preloadPage(page: Page) {
+  void pages[page].preload()
+  if (showsSolve(page)) solveAhead()
+}

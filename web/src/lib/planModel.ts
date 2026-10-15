@@ -1,7 +1,8 @@
-import { startTransition, useEffect, useMemo, useState } from 'react'
+import { startTransition, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { MAX_TIER, NUTRIENTS } from './gameData'
 import { summarizePlan, type PlanSummary } from './planSummary'
 import { buildCatalog, type ProcessCatalog, type ProcessContext } from './processes'
+import type { Page } from './router'
 import type { SolveRequest } from './solve.worker'
 import type { PlanResult } from './solver'
 import type { MyDefaults, Plan, Progress, SavedRecipe } from './types'
@@ -45,6 +46,23 @@ function next() {
   worker.postMessage(request)
 }
 
+/** Whether a page shows the open plan's solve: the planner, and the Cauldron page's plan groups and rows. */
+export const showsSolve = (page: Page) => page === 'planner' || page === 'cauldron'
+
+// Asks for the open plan solved ahead of a page that shows it, say once the pointer reaches a link to one.
+let asks = 0
+const askers = new Set<() => void>()
+const onAsk = (listener: () => void) => {
+  askers.add(listener)
+  return () => askers.delete(listener)
+}
+
+/** Solves the open plan as it is now, if it isn't yet: a page showing it is likely about to open. */
+export function solveAhead() {
+  asks++
+  for (const listener of askers) listener()
+}
+
 /** The fertilizer feeding a plan's nurseries. */
 export function planFertilizer(plan: Plan): string {
   const choice = plan.producers[NUTRIENTS]
@@ -70,8 +88,10 @@ export interface PlanModel {
 /**
  * Upgrades and process catalog for a plan, recomputed only when inputs change, and its solved
  * result: the newest one back from the solver, or null until the first one for this plan is.
+ * Only solved while `active` (a page showing it is open) or when asked ahead (`solveAhead`): the
+ * solver is a large download, and pages that don't show the solve shouldn't wait on it or fetch it.
  */
-export function usePlanModel(plan: Plan, progress: Progress, saved: SavedRecipe[], mine: MyDefaults): PlanModel {
+export function usePlanModel(plan: Plan, progress: Progress, saved: SavedRecipe[], mine: MyDefaults, active: boolean): PlanModel {
   const mods = useMemo(() => modifiers(progress.upgrades), [progress.upgrades])
   const fertilizer = planFertilizer(plan)
   const context = useMemo<ProcessContext>(
@@ -86,12 +106,21 @@ export function usePlanModel(plan: Plan, progress: Progress, saved: SavedRecipe[
   if (!sameFields(toSolve, solving)) setToSolve(solving)
 
   const [solved, setSolved] = useState<{ plan: Plan; context: ProcessContext; result: PlanResult } | null>(null)
+  const ask = useSyncExternalStore(onAsk, () => asks)
+  const handled = useRef(ask)
+  // What was last sent to the solver: coming back to a page, or asked again, solves only what changed.
+  const sent = useRef<SolveRequest | null>(null)
   useEffect(() => {
+    const asked = handled.current !== ask
+    handled.current = ask
+    if (!active && !asked) return
+    if (sent.current?.plan === toSolve && sent.current.context === context) return
+    sent.current = { plan: toSolve, context }
     void solveInWorker({ plan: toSolve, context }).then((result) => {
       // Re-rendering a big tree takes a while: as a transition, React can interrupt it for input.
       if (result) startTransition(() => setSolved({ plan: toSolve, context, result }))
     })
-  }, [toSolve, context])
+  }, [toSolve, context, active, ask])
   const current = solved?.plan.id === plan.id ? solved : null
   const pending = solved?.plan !== toSolve || solved.context !== context
   return { mods, catalog, result: current?.result ?? null, solvedTargets: current?.plan.targets ?? null, solving: pending }
