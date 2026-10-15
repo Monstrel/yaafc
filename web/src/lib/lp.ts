@@ -1,6 +1,7 @@
-import highsLoader from 'highs'
-// The package doesn't export its .wasm, so import it by path; Vite bundles and fingerprints it.
-import wasmUrl from '../../node_modules/highs/build/highs.wasm?url'
+// Our own build of HiGHS, with only the LP solvers these plans use: under half the package's download
+// (see tools/highs). Vite bundles and fingerprints the .wasm.
+import highsLoader from '../vendor/highs/highs.mjs'
+import wasmUrl from '../vendor/highs/highs.wasm?url'
 
 /**
  * Linear programs are solved with HiGHS (University of Edinburgh; the solver behind SciPy's

@@ -1,1 +1,4 @@
 .githooks/* text eol=lf
+tools/highs/*.patch text eol=lf
+# Built by tools/highs: minified glue and a binary, not meant to be read in diffs.
+web/src/vendor/highs/highs.mjs -diff linguist-generated

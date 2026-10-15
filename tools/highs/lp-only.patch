@@ -1,0 +1,77 @@
+--- a/highs/lp_data/Highs.cpp
++++ b/highs/lp_data/Highs.cpp
+@@ -1366,7 +1366,7 @@
+     }
+     if (!solverValidForQp(options_.solver)) warnSolverInvalid(options_, "QP");
+ 
+-    call_status = callSolveQp();
++    call_status = HighsStatus::kError;  // LP-only build
+     return_status = interpretCallStatus(options_.log_options, call_status,
+                                         return_status, "callSolveQp");
+     return returnFromOptimizeModel(return_status, undo_mods);
+@@ -1383,7 +1383,7 @@
+       // Solve model as a MIP
+       if (!solverValidForMip(options_.solver))
+         warnSolverInvalid(options_, "MIP");
+-      call_status = callSolveMip();
++      call_status = HighsStatus::kError;  // LP-only build
+       return_status = interpretCallStatus(options_.log_options, call_status,
+                                           return_status, "callSolveMip");
+       return returnFromOptimizeModel(return_status, undo_mods);
+@@ -3790,7 +3790,7 @@
+   // Presolve.
+   HighsPresolveStatus presolve_return_status =
+       HighsPresolveStatus::kNotPresolved;
+-  if (model_.isMip() && !force_lp_presolve) {
++  if (false) {  // LP-only build
+     // Use presolve for MIP
+     //
+     // Presolved model is extracted now since it's part of solver,
+--- a/highs/lp_data/HighsSolve.cpp
++++ b/highs/lp_data/HighsSolve.cpp
+@@ -72,7 +72,7 @@
+       if (use_hipo) {
+         // Use HIPO to solve the LP
+         try {
+-          call_status = solveLpHipo(solver_object);
++          call_status = HighsStatus::kError;  // LP-only build
+         } catch (const std::exception& exception) {
+           highsLogDev(options.log_options, HighsLogType::kError,
+                       "Exception %s in solveLpHipo\n", exception.what());
+@@ -82,7 +82,7 @@
+                                             return_status, "solveLpHipo");
+       } else if (use_ipx) {
+         try {
+-          call_status = solveLpIpx(solver_object);
++          call_status = HighsStatus::kError;  // LP-only build
+         } catch (const std::exception& exception) {
+           highsLogDev(options.log_options, HighsLogType::kError,
+                       "Exception %s in solveLpIpx\n", exception.what());
+@@ -96,7 +96,7 @@
+       profiling->start(kSubSolverPdlp);
+       if (options.solver == kPdlpString) {
+         try {
+-          call_status = solveLpCupdlp(solver_object);
++          call_status = HighsStatus::kError;  // LP-only build
+         } catch (const std::exception& exception) {
+           highsLogDev(options.log_options, HighsLogType::kError,
+                       "Exception %s in solveLpCupdlp\n", exception.what());
+@@ -104,7 +104,7 @@
+         }
+       } else {
+         try {
+-          call_status = solveLpHiPdlp(solver_object);
++          call_status = HighsStatus::kError;  // LP-only build
+         } catch (const std::exception& exception) {
+           highsLogDev(options.log_options, HighsLogType::kError,
+                       "Exception %s in solveHiPdlp\n", exception.what());
+--- a/highs/presolve/ICrashX.cpp
++++ b/highs/presolve/ICrashX.cpp
+@@ -19,6 +19,7 @@
+                           HighsSolution& highs_solution,
+                           HighsModelStatus& model_status, HighsInfo& highs_info,
+                           HighsCallback& highs_callback) {
++  return HighsStatus::kError;  // LP-only build: no IPX crossover
+   ipx::Int num_col, num_row;
+   double offset;
+   std::vector<ipx::Int> Ap, Ai;
