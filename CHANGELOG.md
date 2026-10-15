@@ -8,6 +8,12 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
+## 2026-10-15T15:25Z
+
+- Cauldron craft times and heat now match the game exactly. The game rounds both to one decimal
+  and runs at the rounded values: Charcoal takes 3.0 s at 1.2 P/s, not 3.03 s at 1.19 P/s. Times
+  and heat were off by up to 2% before, so some machine counts and heat totals shift slightly.
+
 ## 2026-10-15T00:02Z
 
 - Meteorites now have their recipe: a Stone Crusher fed Meteorites turns each one into 1 Ruby,
