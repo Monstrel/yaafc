@@ -8,6 +8,17 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
+## 2026-10-15T20:07Z
+
+- The calculator loads faster. Each page now downloads the first time you open it instead of all
+  at once, and starts as soon as you point at its link, so switching pages stays instant. The
+  Planner's flow chart downloads the same way, when you first open one.
+- The solver that works out plans now downloads only for the Planner and the Cauldron page, and
+  it's less than half its old size: about 0.5 MB instead of 1.2 MB. Home, the Reference and the
+  other pages no longer download it at all. Plans solve to the same results as before.
+- If a new version goes live while the calculator is open, a page it hasn't downloaded yet offers
+  a reload instead of failing. Your plans and recipes are kept.
+
 ## 2026-10-15T17:37Z
 
 - A machine's heat now shows to the tenth, as its panel in the game does: Fairy Dust in a
