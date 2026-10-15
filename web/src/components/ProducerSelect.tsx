@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
-import { fmt, fmtSeconds } from '../lib/format'
+import { fmt, fmtSeconds, fmtTenth } from '../lib/format'
 import { HEAT, coinValue, iconUrl, itemName, itemsByKey, machinesByKey, tierIcon, tierName, type Item, type Stack } from '../lib/gameData'
 import { itemNameFor } from '../lib/plural'
 import { placePopover } from '../lib/popover'
@@ -552,7 +552,7 @@ function ChoiceMeta({ choice }: { choice: Choice }) {
   return (
     <span className="recipe-meta">
       {fmtSeconds(p.seconds)}
-      {heat > 0 && ` · ${fmt(heat / p.seconds)} P/s`}
+      {heat > 0 && ` · ${fmtTenth(heat / p.seconds)} P/s`}
     </span>
   )
 }

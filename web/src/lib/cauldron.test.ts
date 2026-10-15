@@ -4,6 +4,7 @@ import { cauldronIngredients, gameRecipes, itemsByKey } from './gameData'
 import { allowedIngredients, builtinGroups, emptyPrefs, onlyGroup, preferredCount, setPrefs } from './itemGroups'
 import { countRecipes, diagnoseNoResults, type FinderQuery } from './diagnose'
 import { round1 } from './engineTestUtils'
+import { fmt, fmtTenth } from './format'
 
 describe('cauldron craft time/heat curve', () => {
   it('reproduces every fixed cauldron recipe time from the game data', () => {
@@ -32,6 +33,14 @@ describe('cauldron craft time/heat curve', () => {
     expect(cauldronStats(0.1)).toEqual(cauldronStats(1))
     expect(cauldronStats(5e6).seconds).toBeCloseTo(60, 12)
     expect(cauldronStats(5e6).heatPerSecond).toBeCloseTo(1e4, 9)
+  })
+
+  it('shows heat to the tenth, as the game panel does', () => {
+    // Fairy Dust (3760): 200 + 2760 × 1300/9000 = 598.67 → the game shows 598.7 P/s.
+    expect(fmtTenth(cauldronStats(itemsByKey.get('FairyDust')!.cauldronTarget).heatPerSecond)).toBe('598.7')
+    expect(fmtTenth(cauldronStats(2).heatPerSecond)).toBe('1.2')
+    expect(fmtTenth(cauldronStats(1e4).heatPerSecond)).toBe(fmt(1500))
+    expect(fmtTenth(cauldronStats(5e6).heatPerSecond)).toBe(fmt(10000))
   })
 })
 

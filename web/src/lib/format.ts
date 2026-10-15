@@ -13,6 +13,17 @@ export function fmt(n: number): string {
   return n.toPrecision(2)
 }
 
+/**
+ * One machine's heat or time, to the tenth the game shows (598.7 P/s, not fmt's 599), so it can be
+ * checked against the machine's panel. Totals over many machines stay with fmt.
+ */
+export function fmtTenth(n: number): string {
+  if (!Number.isFinite(n) || Math.abs(n) < 1) return fmt(n)
+  const [whole, tenth] = n.toFixed(1).split('.')
+  const int = Math.abs(n) >= 1000 ? grouped.format(Number(whole)) : whole
+  return tenth === '0' ? int : `${int}.${tenth}`
+}
+
 /** Machines to build: never a fraction of one. */
 export const wholeMachines = (n: number) => Math.ceil(n - 1e-9)
 

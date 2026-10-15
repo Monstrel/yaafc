@@ -14,7 +14,7 @@ import {
 import { HEAT, MONEY, NUTRIENTS, cauldronIngredients, cauldronTargets, itemName, itemsByKey } from '../lib/gameData'
 import { diagnoseNoResults, type FinderQuery } from '../lib/diagnose'
 import { releaseScrollAnchor, useFlip } from '../lib/flip'
-import { fmt, fmtSeconds } from '../lib/format'
+import { fmt, fmtSeconds, fmtTenth } from '../lib/format'
 import { noun } from '../lib/plural'
 import {
   allowedIngredients,
@@ -313,7 +313,7 @@ export function CauldronPage({
           {targetItem && stats && (
             <p className="hint">
               {targetItem.name}: target value {fmt(targetItem.cauldronTarget)} · {fmtSeconds(stats.seconds)} per craft ·{' '}
-              {fmt(stats.heatPerSecond)} P/s · {found.length.toLocaleString()} {noun(found.length, 'recipe')}
+              {fmtTenth(stats.heatPerSecond)} P/s · {found.length.toLocaleString()} {noun(found.length, 'recipe')}
             </p>
           )}
           {targetItem && using && (
@@ -497,7 +497,7 @@ function ResultCard({
         <strong>{result.output.name}</strong>
         <div className="meta">
           value {fmt(result.value)} vs target {fmt(result.output.cauldronTarget)} · {fmtSeconds(stats.seconds)} ·{' '}
-          {fmt(stats.heatPerSecond)} P/s
+          {fmtTenth(stats.heatPerSecond)} P/s
         </div>
       </div>
       <StarButton saved={saved} onClick={onSave} />

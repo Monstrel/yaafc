@@ -1,7 +1,7 @@
 import { Fragment, useState } from 'react'
 import { ItemIcon, ItemLabel } from '../components/ItemIcon'
 import { cauldronStats, evaluate } from '../lib/cauldron'
-import { fmt, fmtSeconds } from '../lib/format'
+import { fmt, fmtSeconds, fmtTenth } from '../lib/format'
 import type { SavedRecipe } from '../lib/types'
 
 interface Props {
@@ -86,7 +86,7 @@ export function SavedPage({ saved, onUpdate, onRemove }: Props) {
                       </td>
                       <td className="num">{stats && fmtSeconds(stats.seconds)}</td>
                       <td className="num">{stats && `${fmt(60 / stats.seconds)}/min`}</td>
-                      <td className="num">{stats && `${fmt(stats.heatPerSecond)} P/s`}</td>
+                      <td className="num">{stats && `${fmtTenth(stats.heatPerSecond)} P/s`}</td>
                       <td className="saved-actions">
                         <button
                           type="button"

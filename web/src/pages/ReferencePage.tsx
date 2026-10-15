@@ -6,7 +6,7 @@ import { SidebarIcon } from '../components/planner/PlanPanels'
 import { UpgradesPanel } from '../components/UpgradesPanel'
 import { altarYield } from '../lib/altar'
 import { contractFor, dispatchTerms, licenseName } from '../lib/dispatch'
-import { fmt, fmtSeconds } from '../lib/format'
+import { fmt, fmtSeconds, fmtTenth } from '../lib/format'
 import {
   buildingsByKey,
   buyTier,
@@ -825,8 +825,8 @@ function MachineEntry({ building, catalog, links, onNavigate }: EntryProps & { b
     facts.push([
       'Heat',
       <>
-        {fmt(building.heatCost * speed)} P/s while working, from the furnace or heating pad under it
-        <Upgraded base={`${fmt(building.heatCost)} P/s`} factor={speed} upgrade="Factory Efficiency" />
+        {fmtTenth(building.heatCost * speed)} P/s while working, from the furnace or heating pad under it
+        <Upgraded base={`${fmtTenth(building.heatCost)} P/s`} factor={speed} upgrade="Factory Efficiency" />
       </>,
     ])
   if (machine && (machine.speed !== 1 || speed !== 1))
@@ -1309,7 +1309,7 @@ function RecipeRow({
           </span>
         )}
         {p.kind === 'nursery' && p.seed && <span className="ref-muted">speed set by its fertilizer</span>}
-        {heat > 0 && <span title="Heat it burns while working">🔥 {fmt(heat)} P/s</span>}
+        {heat > 0 && <span title="Heat it burns while working">🔥 {fmtTenth(heat)} P/s</span>}
         {role && ROLE_TEXT[role] && <span className="tag">{ROLE_TEXT[role]}</span>}
         {p.alternate && <span className="tag">alternate</span>}
         {p.license && (
