@@ -20,6 +20,19 @@ describe('cauldron craft time/heat curve', () => {
     expect(round1(cauldronStats(20).heatPerSecond)).toBe(4.6)
     expect(round1(cauldronStats(200000).heatPerSecond)).toBe(3131.3)
   })
+
+  it('stores the rounded values, as the game does', () => {
+    // Charcoal: the curve gives 3.0303… s and 1.1919… P/s; the game keeps 3.0 and 1.2.
+    expect(cauldronStats(2).seconds).toBeCloseTo(3, 12)
+    expect(cauldronStats(2).heatPerSecond).toBeCloseTo(1.2, 12)
+    // Quicklime (6): 3.1515… → 3.2 and 1.9596… → 2.0.
+    expect(cauldronStats(6).seconds).toBeCloseTo(3.2, 12)
+    expect(cauldronStats(6).heatPerSecond).toBeCloseTo(2, 12)
+    // Clamped at both ends.
+    expect(cauldronStats(0.1)).toEqual(cauldronStats(1))
+    expect(cauldronStats(5e6).seconds).toBeCloseTo(60, 12)
+    expect(cauldronStats(5e6).heatPerSecond).toBeCloseTo(1e4, 9)
+  })
 })
 
 describe('cauldron evaluation', () => {

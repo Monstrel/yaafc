@@ -77,11 +77,17 @@ export function evaluate(mode: CauldronMode, keys: string[]): CauldronResult | n
 }
 
 // ---- Craft time and heat ----
-// Not stored in the data tables (computed in C++). This piecewise-linear curve over the output's
-// target value reproduces every fixed cauldron recipe time in DT_EnemyCrafting exactly.
+// Not stored in the data tables. ABeltTDGameStateBase::GetCauldronProduct (VA 0x144A4BA10, build
+// 25321648) runs the output's CauldronTarget through this piecewise-linear curve (segments split at
+// 100 / 1000 / 10000, the first and last extrapolated), clamps time to 3–60 s and heat to 1–10000 P/s,
+// then rounds both half-up to 0.1 and stores the rounded values: Charcoal (target 2) is exactly
+// 3.0 s and 1.2 P/s, not 3.0303… and 1.1919….
 const CURVE_VALUE = [1, 100, 1e3, 1e4, 1e6]
 const CURVE_TIME = [3, 6, 12, 24, 60]
 const CURVE_HEAT = [1, 20, 200, 1500, 1e4]
+
+/** The game's rounding: floor(x × 10 + 0.5) × 0.1. */
+const roundTenth = (x: number) => Math.floor(x * 10 + 0.5) * 0.1
 
 export interface CauldronStats {
   /** Seconds per craft at Factory Efficiency level 0. */
@@ -92,19 +98,15 @@ export interface CauldronStats {
 
 export function cauldronStats(targetValue: number): CauldronStats {
   const v = targetValue
-  if (v >= CURVE_VALUE.at(-1)!) return { seconds: CURVE_TIME.at(-1)!, heatPerSecond: CURVE_HEAT.at(-1)! }
-  if (v <= CURVE_VALUE[0]) return { seconds: CURVE_TIME[0], heatPerSecond: CURVE_HEAT[0] }
-  for (let i = 0; i < CURVE_VALUE.length - 1; i++) {
-    const lo = CURVE_VALUE[i]
-    const hi = CURVE_VALUE[i + 1]
-    if (v > hi) continue
-    const f = (v - lo) / (hi - lo)
-    return {
-      seconds: CURVE_TIME[i] + f * (CURVE_TIME[i + 1] - CURVE_TIME[i]),
-      heatPerSecond: CURVE_HEAT[i] + f * (CURVE_HEAT[i + 1] - CURVE_HEAT[i]),
-    }
+  let i = 0
+  while (i < CURVE_VALUE.length - 2 && v >= CURVE_VALUE[i + 1]) i++
+  const f = (v - CURVE_VALUE[i]) / (CURVE_VALUE[i + 1] - CURVE_VALUE[i])
+  const seconds = CURVE_TIME[i] + f * (CURVE_TIME[i + 1] - CURVE_TIME[i])
+  const heat = CURVE_HEAT[i] + f * (CURVE_HEAT[i + 1] - CURVE_HEAT[i])
+  return {
+    seconds: roundTenth(Math.max(Math.min(seconds, CURVE_TIME.at(-1)!), CURVE_TIME[0])),
+    heatPerSecond: roundTenth(Math.max(Math.min(heat, CURVE_HEAT.at(-1)!), CURVE_HEAT[0])),
   }
-  return { seconds: CURVE_TIME.at(-1)!, heatPerSecond: CURVE_HEAT.at(-1)! }
 }
 
 // ---- Reverse search ----
