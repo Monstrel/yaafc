@@ -8,6 +8,13 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
+## 2026-10-15T00:02Z
+
+- Meteorites now have their recipe: a Stone Crusher fed Meteorites turns each one into 1 Ruby,
+  1 Sapphire, 1 Emerald, 7 Adamant, 30 Obsidian, 60 Shattered Crystal and 300 each of Iron Sand,
+  Coal and Stone. The game leaves it out of its recipe list, but the crusher runs it. Pick it in the
+  Planner for any of those items, or find it in the Reference.
+
 ## 2026-10-14T22:16Z
 
 - The Reference no longer lists portals and flasks the game doesn't let you build: its Portals
