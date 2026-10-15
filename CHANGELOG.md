@@ -8,6 +8,12 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
+## 2026-10-15T17:37Z
+
+- A machine's heat now shows to the tenth, as its panel in the game does: Fairy Dust in a
+  Cauldron reads 598.7 P/s, not 599. This applies on the Cauldron page, in saved mixes, in the
+  Reference and in the recipe picker. Plan totals stay rounded.
+
 ## 2026-10-15T15:25Z
 
 - Cauldron craft times and heat now match the game exactly. The game rounds both to one decimal
