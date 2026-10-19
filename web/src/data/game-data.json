@@ -1,9 +1,9 @@
 {
   "gameVersion": {
-    "steamBuildId": "25321648",
-    "pakDate": "2026-09-15"
+    "steamBuildId": "25991404",
+    "pakDate": "2026-10-18"
   },
-  "extractedAt": "2026-10-14 18:17:17Z",
+  "extractedAt": "2026-10-19 15:50:21Z",
   "items": [
     {
       "key": "PortalSigil",
@@ -12689,6 +12689,7 @@
       "Catapult": 2,
       "Cauldron": 6,
       "Chandelier": 3,
+      "CharcoalBlock": 4,
       "CheckoutTable": 1,
       "ConicalFlask": 4,
       "ConveyerLift_Body": 3,
@@ -12711,6 +12712,7 @@
       "FlowerPot1": 7,
       "FlowerVase1": 7,
       "FrameSingle": 3,
+      "FreightElevatorFrame_Bottom": 5,
       "GoldBlock": 9,
       "GrandPortal": 5,
       "Grinder": 1,
@@ -12724,6 +12726,10 @@
       "Kiln": 4,
       "KnowledgeAltar": 5,
       "LargeStand": 1,
+      "LeafBlock": 8,
+      "LicenseShowcase": 8,
+      "LiftDownloader": 5,
+      "LiftUploader": 5,
       "LunaD": 9,
       "MarbleBlock": 8,
       "MarsD": 6,

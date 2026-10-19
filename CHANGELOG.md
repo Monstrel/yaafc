@@ -8,6 +8,12 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
+## 2026-10-19T16:06Z
+
+- Game data is now from Alchemy Factory v1.1.5023. The update changed no recipes, items, machines
+  or heat values, so plans work out exactly as before. Its new Charcoal Block carries heat up to
+  the machine above it without losing any, so a heater under a stack of them needs the same fuel.
+
 ## 2026-10-15T20:07Z
 
 - The calculator loads faster. Each page now downloads the first time you open it instead of all

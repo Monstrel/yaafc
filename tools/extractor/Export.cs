@@ -94,8 +94,10 @@ static class Exporter
         {
             var tags = row["BuildingTags"]!.Select(t => t.ToString()).ToList();
             // The Miniature World Tree is tagged as a decoration but runs a real World Tree nursery
-            // (IsMininature: pinned to stage 2, leaves only).
-            if (!tags.Any(t => t.StartsWith("Building.Crafting") || t == "Building.Heating") && key != "MiniWorldTree") continue;
+            // (IsMininature: pinned to stage 2, leaves only). Other decorations take no part in
+            // recipes, even heat-carrying ones (the Charcoal Block is tagged Building.Heating).
+            if (key != "MiniWorldTree" && (tags.Any(t => t.StartsWith("Building.Decoration"))
+                || !tags.Any(t => t.StartsWith("Building.Crafting") || t == "Building.Heating"))) continue;
 
             var components = BlueprintComponents(provider, row["ScriptClass"]);
             buildings.Add(new JObject
