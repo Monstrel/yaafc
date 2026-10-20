@@ -15,14 +15,16 @@ const KEEP = 80
 const EASE = 0.2
 /** Pointer travel before a press becomes a drag (a shorter one stays a click). */
 const DRAG_START = 4
+/** The smallest wheel step that's a mouse wheel's notch (about 100 px), not a trackpad's flow. */
+const WHEEL_NOTCH = 50
 
 const clampZoom = (z: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z))
 
 /**
  * Pans and zooms a stage inside a viewport with a CSS transform: dragging anywhere pans (a press
  * that doesn't move stays a click), the wheel pans, Ctrl + wheel or a pinch zooms about the
- * pointer, and every change of zoom eases into place. Runs outside React: it moves the stage every
- * frame, and reports only where the zoom is going.
+ * pointer, and every change of zoom (and each notch of a mouse wheel) eases into place. Runs
+ * outside React: it moves the stage every frame, and reports only where the zoom is going.
  */
 export class PanZoom {
   private viewport: HTMLElement | null = null
@@ -169,11 +171,21 @@ export class PanZoom {
       this.zoomBy(Math.exp((-e.deltaY * unit) / 240), e.clientX - r.left, e.clientY - r.top)
       return
     }
-    this.stop()
     // Shift + wheel pans sideways, for a mouse with one wheel.
     const sideways = e.shiftKey && !e.deltaX
     const dx = (sideways ? e.deltaY : e.deltaX) * unit
     const dy = (sideways ? 0 : e.deltaY) * unit
+    // A pan cuts short a zoom easing about a point.
+    if (this.pin) this.stop()
+    // A mouse wheel's notches come as big steps: each eases into place from where the last was
+    // going. A trackpad's stream of small ones is smooth already, so it moves at once, but for
+    // joining a pan still easing, so the two don't pull against each other.
+    const notch = e.deltaMode !== 0 || Math.max(Math.abs(dx), Math.abs(dy)) >= WHEEL_NOTCH
+    if (notch || this.goal) {
+      const from = this.goal ?? this.cam
+      this.moveTo({ ...from, x: from.x - dx, y: from.y - dy })
+      return
+    }
     this.cam = this.bounded({ ...this.cam, x: this.cam.x - dx, y: this.cam.y - dy })
     this.apply()
   }
