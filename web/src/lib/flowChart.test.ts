@@ -172,6 +172,34 @@ describe('flow chart across separate builds', () => {
     expect(chart.depth).toBeGreaterThan(1)
   })
 
+  it('puts an item built separately left of its deepest use, so it feeds every use forward', () => {
+    // Jupiter takes Wood Boards itself, and in its Wood Gears and Pulleys a level or two down.
+    const { tree } = solvePlan(plan({ targets: [{ item: 'Jupiter', rate: 10 }], separate: [{ item: 'WoodBoard' }] }), catalog, mods)
+    const chart = buildFlowChart(tree, tree[0].id)!
+    const uses = chart.edges.filter((e) => e.kind === 'separate')
+    const depths = uses.map((e) => chart.boxes.get(e.to)!.depth)
+    expect(new Set(depths).size).toBeGreaterThan(1)
+    const boards = chart.boxes.get(uses[0].from)!
+    expect(boards.depth).toBe(Math.max(...depths) + 1)
+    for (const e of uses) expect(boards.x + BOX_W).toBeLessThan(chart.boxes.get(e.to)!.x)
+    expect(chart.depth).toBeGreaterThanOrEqual(boards.depth)
+  })
+
+  it('keeps an item built separately next to a use at every level limit', () => {
+    // Star Dust takes Logs in Wood Boards at many levels; a limit hides the deeper ones.
+    const { tree } = solvePlan(plan({ targets: [{ item: 'StarDust', rate: 10 }], separate: [{ item: 'Wood' }] }), catalog, mods)
+    const full = buildFlowChart(tree, tree[0].id)!
+    for (let levels = 1; levels <= full.depth; levels++) {
+      const chart = buildFlowChart(tree, tree[0].id, levels)!
+      for (const g of chart.boxes.values()) {
+        const uses = chart.edges.filter((e) => e.kind === 'separate' && e.from === g.id)
+        if (!uses.length) continue
+        const steps = uses.map((e) => g.depth - chart.boxes.get(e.to)!.depth)
+        expect(Math.min(...steps)).toBe(1)
+      }
+    }
+  })
+
   it('opened from a separate build, counts every use as elsewhere', () => {
     const chart = buildFlowChart(tree, group.id)!
     expect(chart.root.group).toBe(true)

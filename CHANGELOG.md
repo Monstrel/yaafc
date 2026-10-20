@@ -8,6 +8,12 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
+## 2026-10-20T11:28Z
+
+- In the Planner's flow chart, an item built separately now sits just left of the deepest row
+  using it, so its lines run left to right into every use instead of doubling back. It stays
+  beside a row using it when you show fewer levels, too.
+
 ## 2026-10-19T16:06Z
 
 - Game data is now from Alchemy Factory v1.1.5023. The update changed no recipes, items, machines

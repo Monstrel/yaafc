@@ -168,6 +168,29 @@ export function buildFlowChart(tree: TreeNode[], rootId: string, levels?: number
   const start = rows.get(rootId)
   if (!start) return null
 
+  // Each item built separately goes left of its deepest use in the chart, so it feeds every use
+  // left to right. Placing one moves the uses in its own branch (and with a level limit, which of
+  // them it hides), so place them again until none moves.
+  let placeAt = new Map<string, number>()
+  for (let round = 0; ; round++) {
+    const built = assemble(rows, start, levels, placeAt)
+    if (round < 8 && [...built.wanted].some(([id, depth]) => depth !== built.placed.get(id))) {
+      placeAt = built.wanted
+      continue
+    }
+    const { root, boxes, links, own } = built
+    const loops = findLoops(boxes, links, own)
+    const laid = layout(root, boxes, links)
+    return { root, boxes, edges: laid.edges, loops, depth: levelsBelow(rows, start), ...laid.size }
+  }
+}
+
+/**
+ * The boxes and lines of the chart under `start`, to `levels` levels below it, each item built
+ * separately in it at the depth `placeAt` gives (else at its first use). With them, where each was
+ * placed and where its deepest use in the chart would have it.
+ */
+function assemble(rows: Map<string, TreeNode>, start: TreeNode, levels: number | undefined, placeAt: Map<string, number>) {
   const boxes = new Map<string, FlowBox>()
   const links: Link[] = []
   /** Per tree row in the chart: the box its item goes into. */
@@ -242,21 +265,6 @@ export function buildFlowChart(tree: TreeNode[], rootId: string, levels?: number
       if (c.consolidated || (n.item === HEAT && fromBusOnly(c))) return t
       return t + (isTransparent(c) ? countRows(c) : 1 + countRows(c))
     }, 0)
-  /** Levels below a row, following its uses of items built separately into where they're built. */
-  const followed = new Set([start.id])
-  const deepest = (n: TreeNode, d: number): number =>
-    n.children.reduce((m, c) => {
-      if (c.consolidated || (n.item === HEAT && fromBusOnly(c))) return m
-      // A recovery row sits beside the row it recovers into.
-      if (isTransparent(c) || c.recovery) return Math.max(m, deepest(c, d))
-      const group = c.kind === 'separate' && c.groupId ? rows.get(c.groupId) : undefined
-      if (group && !followed.has(group.id)) {
-        followed.add(group.id)
-        // What it delivers beside its recovery takes a level of its own.
-        return Math.max(m, deepest(group, d + (group.children.some((r) => r.recovery) ? 2 : 1)))
-      }
-      return Math.max(m, deepest(c, d + 1))
-    }, d)
   /** Uses of each item built separately, anywhere in the plan. */
   const usesOf = new Map<string, number>()
   for (const n of rows.values())
@@ -265,8 +273,8 @@ export function buildFlowChart(tree: TreeNode[], rootId: string, levels?: number
   /** Adds the boxes of the rows under `n`, feeding `parent`. */
   const addChildren = (n: TreeNode, parent: FlowBox, depth: number) => {
     for (const c of n.children) {
-      // Items built separately here feed their uses, not this row: they come in with the first of
-      // them. Rows recovering into this one's supply join its output: they come in beside it.
+      // Items built separately here feed their uses, not this row: they come in left of the
+      // deepest of them. Rows recovering into this one's supply join its output: they come in beside it.
       if (c.consolidated || c.recovery) continue
       if (c.item === HEAT && isTransparent(c)) {
         for (const f of fuelFeeds(c)) {
@@ -429,12 +437,27 @@ export function buildFlowChart(tree: TreeNode[], rootId: string, levels?: number
 
   // Loops and separate builds: from the box making it, else from outside the chart. An item built
   // separately elsewhere in the plan comes into the chart, by its first use here.
+  /** Per item built separately here: its box, the box it hangs from, the depth it went in at. */
+  const placed = new Map<string, { box: FlowBox; under: string; depth: number }>()
+  /**
+   * Per item built separately: the depth left of the deepest box taking it (for a use below the
+   * level limit, the box it comes into), and that box.
+   */
+  const deepestUse = new Map<string, { depth: number; to: string }>()
   for (let i = 0; i < pending.length; i++) {
     const p = pending[i]
-    if (p.hidden) continue
     const to = consumerOf.get(p.row.id)!
+    const at = boxes.get(to)!.depth + 1
+    if (p.kind === 'separate' && p.from && at > (deepestUse.get(p.from)?.depth ?? -Infinity))
+      deepestUse.set(p.from, { depth: at, to })
+    if (p.hidden) continue
     const group = p.kind === 'separate' && p.from ? rows.get(p.from) : undefined
-    if (group && !boxes.has(group.id)) boxes.get(to)!.children.push(hub(group, p.depth))
+    if (group && !boxes.has(group.id)) {
+      const depth = Math.max(p.depth, placeAt.get(group.id) ?? -Infinity)
+      const b = hub(group, depth)
+      boxes.get(to)!.children.push(b)
+      placed.set(group.id, { box: b, under: to, depth })
+    }
     if (p.from && boxes.has(p.from))
       link({ id: `${p.kind}:${p.row.id}`, from: p.kind === 'separate' ? supplier(p.from) : p.from, to, item: p.row.item, rate: p.row.rate, kind: p.kind }, p.row.id)
     else attach(to, outsideBox(p.row.item, p.row.rate, p.note, p.depth, p.from), fuelRows.has(p.row.id))
@@ -502,9 +525,50 @@ export function buildFlowChart(tree: TreeNode[], rootId: string, levels?: number
   }
   for (const e of links) e.port = portOf(madeBy(e.from), e.item)
 
-  const loops = findLoops(boxes, links, own)
-  const laid = layout(root, boxes, links)
-  return { root, boxes, edges: laid.edges, loops, depth: deepest(start, 0), ...laid.size }
+  // Each item built separately hangs from its deepest use, beside it (unless that's in its own branch).
+  const within = (b: FlowBox, id: string): boolean => b.id === id || b.children.some((c) => within(c, id))
+  for (const [id, { box: b, under }] of placed) {
+    const use = deepestUse.get(id)!
+    if (use.to === under || within(b, use.to)) continue
+    const from = boxes.get(under)!
+    from.children = from.children.filter((c) => c !== b)
+    boxes.get(use.to)!.children.push(b)
+  }
+
+  const wanted = new Map([...placed.keys()].map((id) => [id, deepestUse.get(id)!.depth]))
+  return { root, boxes, links, own, placed: new Map([...placed].map(([id, p]) => [id, p.depth])), wanted }
+}
+
+/**
+ * Levels below `start` in its whole branch (the most the level limit can show), following its uses
+ * of items built separately into where they're built: left of their deepest use.
+ */
+function levelsBelow(rows: Map<string, TreeNode>, start: TreeNode): number {
+  /** Per item built separately: the depth of its deepest use found so far. */
+  const groupAt = new Map<string, number>()
+  const walk = (n: TreeNode, d: number): number =>
+    n.children.reduce((m, c) => {
+      if (c.consolidated || (n.item === HEAT && fromBusOnly(c))) return m
+      // A recovery row sits beside the row it recovers into.
+      if (isTransparent(c) || c.recovery) return Math.max(m, walk(c, d))
+      if (c.kind === 'separate' && c.groupId && rows.has(c.groupId)) {
+        if (c.groupId !== start.id) groupAt.set(c.groupId, Math.max(groupAt.get(c.groupId) ?? -Infinity, d + 1))
+        return m
+      }
+      return Math.max(m, walk(c, d + 1))
+    }, d)
+  let depth = walk(start, 0)
+  // Each build's own uses of others can move those deeper: walk them until none moves.
+  for (let round = 0; round < 8; round++) {
+    const before = [...groupAt.values()].join()
+    for (const [id, at] of [...groupAt]) {
+      const group = rows.get(id)!
+      // What it delivers beside its recovery takes a level of its own.
+      depth = Math.max(depth, walk(group, at + (group.children.some((r) => r.recovery) ? 1 : 0)))
+    }
+    if ([...groupAt.values()].join() === before) break
+  }
+  return depth
 }
 
 /** The most levels a chart opens with. */
