@@ -35,6 +35,13 @@ describe('cauldron craft time/heat curve', () => {
     expect(cauldronStats(5e6).heatPerSecond).toBeCloseTo(1e4, 9)
   })
 
+  it('evaluates the curve in the game’s order, so .x5 ties round as it does', () => {
+    // (v − lo) × precomputed slope + start: 647.5 → 9.65 lands just above the tie in the game.
+    expect(cauldronStats(647.5).seconds).toBeCloseTo(9.7, 12)
+    expect(cauldronStats(872.5).seconds).toBeCloseTo(11.2, 12)
+    expect(cauldronStats(1751.5).heatPerSecond).toBeCloseTo(308.5, 12)
+  })
+
   it('shows heat to the tenth, as the game panel does', () => {
     // Fairy Dust (3760): 200 + 2760 × 1300/9000 = 598.67 → the game shows 598.7 P/s.
     expect(fmtTenth(cauldronStats(itemsByKey.get('FairyDust')!.cauldronTarget).heatPerSecond)).toBe('598.7')

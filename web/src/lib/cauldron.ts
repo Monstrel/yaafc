@@ -77,11 +77,14 @@ export function evaluate(mode: CauldronMode, keys: string[]): CauldronResult | n
 }
 
 // ---- Craft time and heat ----
-// Not stored in the data tables. ABeltTDGameStateBase::GetCauldronProduct (VA 0x144A4BA10, build
-// 25321648) runs the output's CauldronTarget through this piecewise-linear curve (segments split at
+// Not stored in the data tables. ABeltTDGameStateBase::GetCauldronProduct (VA 0x144A624C0, build
+// 25991404) runs the output's CauldronTarget through this piecewise-linear curve (segments split at
 // 100 / 1000 / 10000, the first and last extrapolated), clamps time to 3–60 s and heat to 1–10000 P/s,
 // then rounds both half-up to 0.1 and stores the rounded values: Charcoal (target 2) is exactly
 // 3.0 s and 1.2 P/s, not 3.0303… and 1.1919….
+// Each segment is start + (v − segment start) × slope, the slope a precomputed constant (3/99, 6/900,
+// …). Evaluated in any other order, a value landing on a .x5 tie can round the other way (647.5 gives
+// 9.7 s in the game, 9.6 s via (v − lo) / (hi − lo)).
 const CURVE_VALUE = [1, 100, 1e3, 1e4, 1e6]
 const CURVE_TIME = [3, 6, 12, 24, 60]
 const CURVE_HEAT = [1, 20, 200, 1500, 1e4]
@@ -100,9 +103,10 @@ export function cauldronStats(targetValue: number): CauldronStats {
   const v = targetValue
   let i = 0
   while (i < CURVE_VALUE.length - 2 && v >= CURVE_VALUE[i + 1]) i++
-  const f = (v - CURVE_VALUE[i]) / (CURVE_VALUE[i + 1] - CURVE_VALUE[i])
-  const seconds = CURVE_TIME[i] + f * (CURVE_TIME[i + 1] - CURVE_TIME[i])
-  const heat = CURVE_HEAT[i] + f * (CURVE_HEAT[i + 1] - CURVE_HEAT[i])
+  const span = CURVE_VALUE[i + 1] - CURVE_VALUE[i]
+  const dv = v - CURVE_VALUE[i]
+  const seconds = dv * ((CURVE_TIME[i + 1] - CURVE_TIME[i]) / span) + CURVE_TIME[i]
+  const heat = dv * ((CURVE_HEAT[i + 1] - CURVE_HEAT[i]) / span) + CURVE_HEAT[i]
   return {
     seconds: roundTenth(Math.max(Math.min(seconds, CURVE_TIME.at(-1)!), CURVE_TIME[0])),
     heatPerSecond: roundTenth(Math.max(Math.min(heat, CURVE_HEAT.at(-1)!), CURVE_HEAT[0])),
