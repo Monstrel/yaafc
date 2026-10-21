@@ -22,8 +22,8 @@ using SkiaSharp;
 /// - meshes/*.mesh: one per mesh, in Unreal's own space and units, as the game places them; the
 ///   page turns the whole scene into three.js's space once. They're written plainly (MeshFile,
 ///   below) and compressed by web/scripts/compressMeshes.mjs, which needs Node and web/'s packages.
-/// - textures/*.webp: base colour, normals and occlusion/roughness/metal (ORM), scaled down from
-///   the game's 2048² (see TextureSizes).
+/// - textures/*.webp: base colour, normals and roughness (the green of the game's ORM textures,
+///   as grayscale), scaled down from the game's 2048² (see TextureSizes).
 ///
 /// A building's meshes are its row's InstanceMesh, or the static meshes of the Blueprint its
 /// ScriptClass names, placed by its construction script's component tree.
@@ -39,9 +39,11 @@ static class ModelExporter
         ["Pipeline"] = "AlchemyFactory/Content/DataTables/DT_PipeMeshConfig2.uasset",
     };
 
-    // Longest side of each kind of texture: colour carries the look, the rest only shading.
-    static readonly Dictionary<string, int> TextureSizes = new() { ["color"] = 512, ["normal"] = 256, ["orm"] = 256 };
-    const int WebpQuality = 82;
+    // Longest side of each kind of texture: colour carries the look, the rest only shading. Against
+    // 512/256/256 at quality 82, these are 58% smaller, and look the same short of a close-up of one
+    // machine, where the normal maps' finest dents soften.
+    static readonly Dictionary<string, int> TextureSizes = new() { ["color"] = 384, ["normal"] = 192, ["orm"] = 128 };
+    const int WebpQuality = 75;
 
     public static void Run(DefaultFileProvider provider, Localization strings, string webDir)
     {
@@ -112,7 +114,9 @@ static class ModelExporter
             try
             {
                 var size = TextureSizes[kind];
-                using var decoded = TextureDecoder.Decode(texture, size, ETexturePlatform.DesktopMobile)?.ToSkBitmap();
+                // Mips halve: start from the smallest at least `size` (512 for 384), and scale that down.
+                var mip = 1 << (int)Math.Ceiling(Math.Log2(size));
+                using var decoded = TextureDecoder.Decode(texture, mip, ETexturePlatform.DesktopMobile)?.ToSkBitmap();
                 if (decoded != null)
                 {
                     var scale = Math.Min(1.0, size / (double)Math.Max(decoded.Width, decoded.Height));
@@ -120,6 +124,8 @@ static class ModelExporter
                         ? decoded.Resize(new SKImageInfo((int)(decoded.Width * scale), (int)(decoded.Height * scale)), SKFilterQuality.High)
                         : decoded.Copy();
                     if (kind == "normal") RebuildNormalZ(resized);
+                    // The page reads only roughness (green) from these: as grayscale, they're half the size.
+                    if (kind == "orm") GreenToGray(resized);
                     using var webp = SKImage.FromBitmap(resized).Encode(SKEncodedImageFormat.Webp, WebpQuality);
                     file = texture.Name + ".webp";
                     File.WriteAllBytes(Path.Combine(textureDir, file), webp.ToArray());
@@ -361,6 +367,16 @@ static class ModelExporter
     /// An object reference's path, or null for an empty one (which the JSON writes as null).
     static string? ObjectPath(JToken? reference) =>
         reference is JObject o && o["ObjectPath"]?.ToString() is { Length: > 0 } path ? path : null;
+
+    static void GreenToGray(SKBitmap bitmap)
+    {
+        for (var y = 0; y < bitmap.Height; y++)
+            for (var x = 0; x < bitmap.Width; x++)
+            {
+                var g = bitmap.GetPixel(x, y).Green;
+                bitmap.SetPixel(x, y, new SKColor(g, g, g, 255));
+            }
+    }
 
     static UMaterialInterface? LoadMaterial(DefaultFileProvider provider, string objectPath)
     {

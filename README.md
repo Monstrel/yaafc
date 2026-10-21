@@ -62,8 +62,8 @@ building's meshes (its `InstanceMesh`, or the static meshes its Blueprint's cons
 adds, with their transforms and material overrides), each belt and pipe shape, and each material's
 textures; the meshes compressed with [meshoptimizer](https://github.com/zeux/meshoptimizer) and
 gzip (`web/scripts/compressMeshes.mjs`, which the extractor runs: it needs Node and `npm install`
-in `web/`), about a third of their plain size; and the textures as WebP, colour at 512 px and
-normals and roughness at 256. The page downloads what a blueprint uses.
+in `web/`), about a third of their plain size; and the textures as WebP, colour at 384 px,
+normals at 192 and roughness at 128. The page downloads what a blueprint uses.
 The game packs its `_ORM` textures' channels differently from model to model, so only roughness
 (green) is used from them.
 
@@ -92,7 +92,7 @@ Game data is read straight from your install by `tools/extractor` (C#, CUE4Parse
 ```sh
 cd tools/extractor
 dotnet run -- export     # writes web/src/data/game-data.json and web/public/icons/
-dotnet run -- models     # writes web/public/models/ (the Blueprint X-ray's models, ~11 MB)
+dotnet run -- models     # writes web/public/models/ (the Blueprint X-ray's models, ~7.5 MB)
 ```
 
 - The game is UE 5.7 with unversioned properties, so parsing needs `mappings/Mappings.usmap`.
