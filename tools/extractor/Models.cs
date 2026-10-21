@@ -18,13 +18,14 @@ using SkiaSharp;
 /// - manifest.json: each building (DT_Buildings row) as the meshes it's made of, each with its
 ///   transform from the building's origin and its materials, and its height in layers; the shapes a belt or pipe takes as
 ///   it joins its neighbours (DT_BeltMeshBuildings, DT_PipeMeshConfig2); each material's textures;
-///   each mesh's file.
+///   each mesh's file; for a notice board, where it shows its words (see TextFaces).
 /// - meshes/*.mesh: one per mesh, in Unreal's own space and units, as the game places them; the
 ///   page turns the whole scene into three.js's space once. They're written plainly (MeshFile,
 ///   below) and compressed by web/scripts/compressMeshes.mjs, which needs Node and web/'s packages.
 /// - textures/*.webp: base colour, normals and roughness (the green of the game's ORM textures,
 ///   as grayscale), and where a tintable building takes its tint (its Mask), scaled down from the
 ///   game's 2048² (see TextureSizes).
+/// - WinkySans-Regular.ttf: the font notice boards write in.
 ///
 /// A building's meshes are its row's InstanceMesh, or the static meshes of the Blueprint its
 /// ScriptClass names, placed by its construction script's component tree.
@@ -45,6 +46,7 @@ static class ModelExporter
     // machine, where the normal maps' finest dents soften.
     static readonly Dictionary<string, int> TextureSizes = new() { ["color"] = 384, ["normal"] = 192, ["orm"] = 128, ["mask"] = 256 };
     const int WebpQuality = 75;
+    const string SignFont = "AlchemyFactory/Content/UI/Fonts/WinkySans/WinkySans-Regular.ufont";
 
     public static void Run(DefaultFileProvider provider, Localization strings, string webDir)
     {
@@ -154,6 +156,7 @@ static class ModelExporter
         foreach (var (key, row) in Rows(provider, BuildingsTable))
         {
             var parts = new JArray();
+            JArray? text = null;
             if (ObjectPath(row["InstanceMesh"]) is { } instanceMesh)
             {
                 // A building drawn as one instanced mesh, as it stands. (A ramp's BeltRotation is its
@@ -166,6 +169,7 @@ static class ModelExporter
                 foreach (var (meshPath, transform, overrides) in BlueprintMeshes(provider, scriptClass))
                     if (Mesh(meshPath) is { } mesh)
                         parts.Add(Part(mesh, transform, overrides.Select(o => o is null ? null : Material(LoadMaterial(provider, o))).ToList()));
+                text = TextFaces(provider, scriptClass);
             }
             if (parts.Count == 0) Console.WriteLine($"building {key}: no meshes");
             var entry = new JObject
@@ -175,6 +179,7 @@ static class ModelExporter
             };
             var secondary = row["SecondaryType"]?.ToString().Split("::").Last();
             if (secondary != null && ShapeTables.ContainsKey(secondary)) entry["shapes"] = secondary;
+            if (text is { Count: > 0 }) entry["text"] = text;
             // Its height in whole layers, as the game builds with it: its top, to the nearest layer
             // (a cauldron's rim pokes 1 unit over its two; an athanor stands 2.84 high).
             var top = Top(parts, meshBounds);
@@ -216,6 +221,11 @@ static class ModelExporter
             ["materials"] = materials,
         };
         File.WriteAllText(Path.Combine(outDir, "manifest.json"), manifest.ToString(Formatting.None));
+
+        // The face of the font notice boards write in: the game's "NotoSans" font, whose Regular is
+        // Winky Sans. A .ufont is the font file (a TrueType) as an array: its length (int32), then it.
+        if (!provider.TrySaveAsset(SignFont, out var font)) throw new InvalidOperationException($"Couldn't read {SignFont}");
+        File.WriteAllBytes(Path.Combine(outDir, "WinkySans-Regular.ttf"), font[4..(4 + BitConverter.ToInt32(font, 0))]);
 
         CompressMeshes(webDir, plainDir, meshDir);
         Directory.Delete(plainDir, true);
@@ -278,59 +288,118 @@ static class ModelExporter
     static JObject Part(string mesh, Matrix4x4 m, List<string?>? materials)
     {
         var part = new JObject { ["mesh"] = mesh };
-        if (!m.IsIdentity)
-            // Row-major, for Unreal's row vectors: read column-major, it's three.js's matrix for column vectors.
-            part["matrix"] = new JArray(new[] { m.M11, m.M12, m.M13, m.M14, m.M21, m.M22, m.M23, m.M24, m.M31, m.M32, m.M33, m.M34, m.M41, m.M42, m.M43, m.M44 }
-                .Select(v => Math.Round(v, 4)));
+        if (!m.IsIdentity) part["matrix"] = MatrixJson(m);
         if (materials?.Any(x => x != null) == true) part["materials"] = new JArray(materials);
         return part;
     }
 
+    /// Row-major, for Unreal's row vectors: read column-major, it's three.js's matrix for column vectors.
+    static JArray MatrixJson(Matrix4x4 m) =>
+        new(new[] { m.M11, m.M12, m.M13, m.M14, m.M21, m.M22, m.M23, m.M24, m.M31, m.M32, m.M33, m.M34, m.M41, m.M42, m.M43, m.M44 }
+            .Select(v => Math.Round(v, 4)));
+
     /// <summary>
     /// The static meshes a building Blueprint's construction script adds, with their transforms from
-    /// the actor and their override materials (null: the mesh's own). A node's transform is relative
-    /// to its parent node; a root node can hang off a component named by ParentComponentOrVariableName.
+    /// the actor and their override materials (null: the mesh's own).
     /// </summary>
     static List<(string Mesh, Matrix4x4 Transform, List<string?> Materials)> BlueprintMeshes(DefaultFileProvider provider, string classPath)
     {
         var result = new List<(string, Matrix4x4, List<string?>)>();
-        if (!provider.TryLoadPackage(PackagePath(classPath) + ".uasset", out var pkg)) return result;
-        var exports = JArray.FromObject(pkg.GetExports(), JsonSerializer.Create());
-        var byName = exports.Where(e => e["Name"] != null).GroupBy(e => e["Name"]!.ToString()).ToDictionary(g => g.Key, g => (JObject)g.First());
-        static string RefName(JToken? r) => r?["ObjectName"]?.ToString().Split(':', '.').Last().TrimEnd('\'') ?? "";
-
-        var nodes = exports.Where(e => e["Type"]?.ToString() == "SCS_Node").Cast<JObject>().ToList();
-        var parentOf = new Dictionary<string, string>();
-        foreach (var node in nodes)
-            foreach (var child in node["Properties"]?["ChildNodes"] ?? new JArray())
-                parentOf[RefName(child)] = node["Name"]!.ToString();
-        var byVariable = nodes.Where(n => n["Properties"]?["InternalVariableName"] != null)
-            .ToDictionary(n => n["Properties"]!["InternalVariableName"]!.ToString(), n => n["Name"]!.ToString());
-
-        Matrix4x4 World(string nodeName, int depth = 0)
+        foreach (var (props, transform) in BlueprintComponents(provider, classPath))
         {
-            if (depth > 32 || !byName.TryGetValue(nodeName, out var node)) return Matrix4x4.Identity;
-            var props = node["Properties"]!;
-            var local = byName.TryGetValue(RefName(props["ComponentTemplate"]), out var template)
-                ? Relative(template["Properties"]) : Matrix4x4.Identity;
-            if (parentOf.TryGetValue(nodeName, out var parent)) return local * World(parent, depth + 1);
-            if (props["ParentComponentOrVariableName"]?.ToString() is { } attached && byVariable.TryGetValue(attached, out var attachedNode))
-                return local * World(attachedNode, depth + 1);
-            return local;
-        }
-
-        foreach (var node in nodes)
-        {
-            if (!byName.TryGetValue(RefName(node["Properties"]?["ComponentTemplate"]), out var template)) continue;
-            var props = template["Properties"];
-            if (ObjectPath(props?["StaticMesh"]) is not { } meshPath) continue;
-                    if (props["bVisible"]?.Value<bool>() == false || props["bHiddenInGame"]?.Value<bool>() == true) continue;
+            if (ObjectPath(props["StaticMesh"]) is not { } meshPath) continue;
+            if (props["bVisible"]?.Value<bool>() == false || props["bHiddenInGame"]?.Value<bool>() == true) continue;
             // A catapult's landing area, which the game shows only while placing one.
             if (ObjectName(meshPath).Contains("AreaIndicator")) continue;
             var overrides = (props["OverrideMaterials"] ?? new JArray()).Select(ObjectPath).ToList();
-            result.Add((meshPath, World(node["Name"]!.ToString()), overrides));
+            result.Add((meshPath, transform, overrides));
         }
         return result;
+    }
+
+    /// <summary>
+    /// Where a notice board shows the words written on it: a face for each of its widgets of
+    /// WBP_NoticeBoardText, with its transform from the actor and its size in the widget's pixels.
+    /// The widget faces its +x, its width running along −y and its height down z, round its middle.
+    /// </summary>
+    static JArray TextFaces(DefaultFileProvider provider, string classPath)
+    {
+        var faces = new JArray();
+        foreach (var (props, transform) in BlueprintComponents(provider, classPath))
+        {
+            if (props["WidgetClass"]?["ObjectName"]?.ToString().Contains("WBP_NoticeBoardText") != true) continue;
+            var size = props["DrawSize"];
+            faces.Add(new JObject
+            {
+                ["matrix"] = MatrixJson(transform),
+                ["size"] = new JArray(size?["X"]?.Value<float>() ?? 500, size?["Y"]?.Value<float>() ?? 500),
+            });
+        }
+        return faces;
+    }
+
+    /// <summary>
+    /// The components a building Blueprint's construction script adds: each one's properties, and its
+    /// transform from the actor. A node's transform is relative to its parent node; a root node can
+    /// hang off a component named by ParentComponentOrVariableName.
+    ///
+    /// A child Blueprint (a Blueprint whose Super is one) has its parent's components, with the
+    /// properties it changes on them (its InheritableComponentHandler's templates, which hold only
+    /// those), and any of its own.
+    /// </summary>
+    static List<(JObject Props, Matrix4x4 Transform)> BlueprintComponents(DefaultFileProvider provider, string classPath)
+    {
+        var nodes = ConstructionNodes(provider, classPath, 0);
+        var byVariable = nodes.ToDictionary(n => n.Variable);
+        Matrix4x4 World(Node node, int depth = 0) =>
+            depth <= 32 && node.Parent is { } parent && byVariable.TryGetValue(parent, out var up)
+                ? Relative(node.Props) * World(up, depth + 1)
+                : Relative(node.Props);
+        return nodes.Select(n => (n.Props, World(n))).ToList();
+    }
+
+    record Node(string Variable, string? Parent, JObject Props);
+
+    static List<Node> ConstructionNodes(DefaultFileProvider provider, string classPath, int depth)
+    {
+        var nodes = new List<Node>();
+        if (depth > 8 || !provider.TryLoadPackage(PackagePath(classPath) + ".uasset", out var pkg)) return nodes;
+        var exports = JArray.FromObject(pkg.GetExports(), JsonSerializer.Create());
+        var byName = exports.Where(e => e["Name"] != null).GroupBy(e => e["Name"]!.ToString()).ToDictionary(g => g.Key, g => (JObject)g.First());
+        static string RefName(JToken? r) => r?["ObjectName"]?.ToString().Split(':', '.').Last().TrimEnd('\'') ?? "";
+        JObject Template(JToken? reference) =>
+            byName.TryGetValue(RefName(reference), out var template) && template["Properties"] is JObject props ? props : new JObject();
+
+        var generated = exports.FirstOrDefault(e => e["Type"]?.ToString() == "BlueprintGeneratedClass");
+        if (ObjectPath(generated?["Super"]) is { } super && super.StartsWith("/Game/"))
+        {
+            nodes = ConstructionNodes(provider, super, depth + 1);
+            foreach (var record in exports.Where(e => e["Type"]?.ToString() == "InheritableComponentHandler").SelectMany(e => e["Properties"]?["Records"] ?? new JArray()))
+            {
+                var at = nodes.FindIndex(n => n.Variable == record["ComponentKey"]?["SCSVariableName"]?.ToString());
+                if (at < 0) continue;
+                var merged = (JObject)nodes[at].Props.DeepClone();
+                merged.Merge(Template(record["ComponentTemplate"]), new JsonMergeSettings { MergeArrayHandling = MergeArrayHandling.Replace });
+                nodes[at] = nodes[at] with { Props = merged };
+            }
+        }
+
+        var scsNodes = exports.Where(e => e["Type"]?.ToString() == "SCS_Node").Cast<JObject>().ToList();
+        string Variable(JObject node) => node["Properties"]?["InternalVariableName"]?.ToString() ?? node["Name"]!.ToString();
+        var parentOf = new Dictionary<string, string>();
+        foreach (var node in scsNodes)
+            foreach (var child in node["Properties"]?["ChildNodes"] ?? new JArray())
+                if (byName.TryGetValue(RefName(child), out var childNode))
+                    parentOf[Variable(childNode)] = Variable(node);
+        foreach (var node in scsNodes)
+        {
+            var variable = Variable(node);
+            // A child's own root, where its parent has one already.
+            if (nodes.Any(n => n.Variable == variable)) continue;
+            var parent = parentOf.GetValueOrDefault(variable) ?? node["Properties"]?["ParentComponentOrVariableName"]?.ToString();
+            nodes.Add(new Node(variable, parent, Template(node["Properties"]?["ComponentTemplate"])));
+        }
+        return nodes;
     }
 
     /// A component's transform from its parent: scale, then rotation, then translation (row vectors).

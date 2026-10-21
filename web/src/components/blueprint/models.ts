@@ -22,8 +22,11 @@ import {
 
 interface Manifest {
   /** `shapes`: the table of shapes it takes as it joins its neighbours, for a belt or a pipe. */
-  /** `layers`: its height, in whole layers; `ports` and `top`, for a ramp, drawbridge, tunnel or lift. */
-  buildings: Record<string, { name: string; parts: ManifestPart[]; layers: number; shapes?: string; ports?: Port[]; top?: number }>
+  /** `layers`: its height, in whole layers; `ports` and `top`, for a ramp, drawbridge, tunnel or lift; `text`, for a notice board. */
+  buildings: Record<
+    string,
+    { name: string; parts: ManifestPart[]; layers: number; shapes?: string; ports?: Port[]; top?: number; text?: ManifestTextFace[] }
+  >
   /** By SecondaryType (Belt, Pipeline), then by a placed one's BaseActiveIndex. */
   shapes: Record<string, Record<string, ManifestPart & { sides?: string }>>
   meshes: Record<string, { materials: (string | null)[] }>
@@ -55,6 +58,21 @@ interface ManifestMaterial {
   mask?: string
   masked?: boolean
   translucent?: boolean
+}
+
+/** Where a notice board shows its words: see Models.cs's TextFaces. */
+interface ManifestTextFace {
+  matrix: number[]
+  size: [number, number]
+}
+
+/**
+ * Where a notice board shows its words, from its origin: the widget's face, `size` pixels across and
+ * down, round its middle, facing its +x, its width along −y and its height down z.
+ */
+export interface TextFace {
+  matrix: Matrix4
+  size: [number, number]
 }
 
 /** A mesh placed in a building: its geometry, the material for each of its sections, and where it goes. */
@@ -102,12 +120,17 @@ export async function buildingInfo(): Promise<Map<string, { name: string; layers
 export async function buildingModel(
   name: string,
   variant: number | undefined,
-): Promise<{ parts: Part[] | null; layers: number; flow?: Flow }> {
+): Promise<{ parts: Part[] | null; layers: number; flow?: Flow; text?: TextFace[] }> {
   const m = await loadManifest()
   // Rows are matched without case: the game saves its Catapult row's buildings as "catapult".
   const building = m.buildings[name] ?? Object.entries(m.buildings).find(([key]) => key.toLowerCase() === name.toLowerCase())?.[1]
   if (!building) return { parts: null, layers: 1 }
-  return { parts: await buildingParts(m, building, variant), layers: building.layers, flow: flowOf(m, name, variant) }
+  return {
+    parts: await buildingParts(m, building, variant),
+    layers: building.layers,
+    flow: flowOf(m, name, variant),
+    text: building.text?.map((f) => ({ matrix: new Matrix4().fromArray(f.matrix), size: f.size })),
+  }
 }
 
 /** The sides of a building's cell, before its turn: right (+x), bottom (+y), left (−x), up (−y). */

@@ -36,7 +36,8 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { CELL, layersOf, type Blueprint, type PlacedBuilding } from '../../lib/blueprint/blueprintFile'
 import { buildingColor, buildingKind, isBuildingBlock, type BuildingKind } from './buildingKinds'
-import { buildingModel, onTextureLoad, type Flow, type Part, type Side } from './models'
+import { buildingModel, onTextureLoad, type Flow, type Part, type Side, type TextFace } from './models'
+import { loadSignFont, signTexture } from './signText'
 
 /**
  * The game's look: its colour grade and Unreal's filmic tone curve, with the settings of its
@@ -129,6 +130,11 @@ export class BlueprintScene {
   private arrowBatches = new Set<Batch>()
   private arrowMaterial = new MeshBasicMaterial({ color: 0xffc845, side: DoubleSide })
   private arrowGeometries = new Map<string, BufferGeometry>()
+  /** Notice boards' words: a material (and texture) for each board's, made for the blueprint shown. */
+  private textMaterials: MeshBasicMaterial[] = []
+  private textGeometries = new Map<string, BufferGeometry>()
+  /** What words cut away leave: nothing, not a ghost of their face. */
+  private noText = new MeshBasicMaterial({ visible: false })
   private placed: PlacedBuilding[] = []
   /** Each building's layers, from its own: how high it stands. */
   private heights: number[] = []
@@ -255,6 +261,7 @@ export class BlueprintScene {
         pieces.forEach((p, at) => (this.heights[p.building] = Math.max(this.heights[p.building], p.layer + models[at].layers)))
         this.addModels(pieces, models)
         this.addArrows(pieces, models)
+        this.addText(pieces, models, shown)
         // A building without models of its own is a box.
         const missing = pieces.flatMap((p, at) => (p.layer === 0 && !models[at].parts ? [p.building] : []))
         if (missing.length) this.addBoxes(missing)
@@ -328,8 +335,9 @@ export class BlueprintScene {
     this.renderer.setAnimationLoop(null)
     this.select(null)
     this.clear()
-    for (const m of [this.ghostWhole, this.ghostSliced, this.inside, this.boxMaterial, this.arrowMaterial, ...this.slicedMaterials.values()]) m.dispose()
-    for (const g of [this.unitBox, ...this.arrowGeometries.values()]) g.dispose()
+    for (const m of [this.ghostWhole, this.ghostSliced, this.inside, this.boxMaterial, this.arrowMaterial, this.noText, ...this.slicedMaterials.values()])
+      m.dispose()
+    for (const g of [this.unitBox, ...this.arrowGeometries.values(), ...this.textGeometries.values()]) g.dispose()
     this.scene.environment?.dispose()
     this.controls.dispose()
     this.renderer.dispose()
@@ -346,10 +354,7 @@ export class BlueprintScene {
       if (!parts) return
       const piece = pieces[at]
       const b = this.placed[piece.building]
-      const [x, y, z] = b.position
-      const origin = new Matrix4()
-        .makeTranslation(x, y, z + piece.layer * CELL)
-        .multiply(new Matrix4().makeRotationZ((piece.rotation * Math.PI) / 2))
+      const origin = this.origin(piece)
       const from = b.cell[2] + piece.layer
       const tint = b.color && new Color().setRGB(...(b.color.map((c) => c / 255) as [number, number, number]), SRGBColorSpace)
       for (const part of parts) {
@@ -382,10 +387,7 @@ export class BlueprintScene {
     models.forEach(({ flow, layers }, at) => {
       if (!flow) return
       const piece = pieces[at]
-      const [x, y, z] = this.placed[piece.building].position
-      const origin = new Matrix4()
-        .makeTranslation(x, y, z + piece.layer * CELL)
-        .multiply(new Matrix4().makeRotationZ((piece.rotation * Math.PI) / 2))
+      const origin = this.origin(piece)
       // Flat at a height, turned to a side.
       const toSide = (s: Side, height: number) =>
         origin.clone().multiply(new Matrix4().makeTranslation(0, 0, height)).multiply(new Matrix4().makeRotationZ(SIDE_TURNS[s]))
@@ -433,6 +435,63 @@ export class BlueprintScene {
       batch.cut(this.cut, this.gone)
     }
     this.dirty = true
+  }
+
+  /**
+   * The words written on each notice board, on each of its faces as the game's widgets place them,
+   * once their font is in. They're cut away with the board, and leave no ghost.
+   */
+  private addText(pieces: Piece[], models: { text?: TextFace[]; layers: number }[], shown: number) {
+    const boards = pieces.flatMap((piece, at) => {
+      const text = this.placed[piece.building].text
+      const faces = models[at].text
+      return text && faces?.length ? [{ piece, text, faces, layers: models[at].layers }] : []
+    })
+    if (!boards.length) return
+    loadSignFont().then(() => {
+      if (shown !== this.shown) return
+      for (const { piece, text, faces, layers } of boards) {
+        const from = this.placed[piece.building].cell[2] + piece.layer
+        const origin = this.origin(piece)
+        for (const size of new Set(faces.map((f) => f.size.join('×')))) {
+          const same = faces.filter((f) => f.size.join('×') === size)
+          const material = new MeshBasicMaterial({ map: signTexture(text, same[0].size), transparent: true, depthWrite: false })
+          this.textMaterials.push(material)
+          const instances = same.map((f): Instance => ({ matrix: origin.clone().multiply(f.matrix), building: piece.building, from, to: from + layers }))
+          const batch = new Batch(this.textGeometry(same[0].size), [material], [this.sliced(material)], this.noText, this.noText, this.noText, instances)
+          this.world.add(...batch.meshes)
+          this.batches.push(batch)
+          batch.cut(this.cut, this.gone)
+        }
+      }
+      this.dirty = true
+    })
+  }
+
+  /** A widget's face, `size` of its pixels across and down, round its middle: see TextFace. */
+  private textGeometry([w, h]: [number, number]): BufferGeometry {
+    const key = `${w}×${h}`
+    let made = this.textGeometries.get(key)
+    if (!made) {
+      // Its top left, top right, bottom left and bottom right corners, as Unreal's face turned into three's.
+      const corners = [w / 2, h / 2, -w / 2, h / 2, w / 2, -h / 2, -w / 2, -h / 2]
+      const points = new Float32Array(12)
+      for (let i = 0; i < 4; i++) points.set([0, corners[i * 2], corners[i * 2 + 1]], i * 3)
+      made = new BufferGeometry()
+        .setAttribute('position', new BufferAttribute(points, 3))
+        .setAttribute('uv', new BufferAttribute(new Float32Array([0, 1, 1, 1, 0, 0, 1, 0]), 2))
+        .setIndex([0, 1, 3, 0, 3, 2])
+      this.textGeometries.set(key, made)
+    }
+    return made
+  }
+
+  /** Where a piece goes: its building's origin (a layer up for each part of a lift below it), and its turn. */
+  private origin(piece: Piece): Matrix4 {
+    const [x, y, z] = this.placed[piece.building].position
+    return new Matrix4()
+      .makeTranslation(x, y, z + piece.layer * CELL)
+      .multiply(new Matrix4().makeRotationZ((piece.rotation * Math.PI) / 2))
   }
 
   /**
@@ -511,10 +570,20 @@ export class BlueprintScene {
     this.dirty = true
   }
 
-  /** Takes the blueprint out. Geometries, materials and textures stay: the models' are cached for the next. */
+  /**
+   * Takes the blueprint out. Geometries, materials and textures stay: the models' are cached for the
+   * next. The notice boards' words were this blueprint's own.
+   */
   private clear() {
     for (const batch of [...this.batches]) this.removeBatch(batch)
     this.placeholders = null
+    for (const material of this.textMaterials) {
+      material.map?.dispose()
+      material.dispose()
+      this.slicedMaterials.get(material)?.dispose()
+      this.slicedMaterials.delete(material)
+    }
+    this.textMaterials = []
     if (this.floor) {
       this.scene.remove(this.floor)
       this.floor.geometry.dispose()

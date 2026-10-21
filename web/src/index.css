@@ -4737,6 +4737,12 @@ a.reference-icon:hover {
   margin: 0 0 4px;
 }
 
+/* A notice board's words, with the lines the player wrote them in. */
+.xray-picked .xray-sign {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .xray-buildings {
   list-style: none;
   margin: 0;

@@ -415,6 +415,7 @@ function Picked({ building, nameOf }: { building: PlacedBuilding | null; nameOf:
           Makes <ItemLabel item={recipe.output.item} />
         </p>
       )}
+      {building.text && <p className="xray-sign">“{building.text}”</p>}
     </div>
   )
 }

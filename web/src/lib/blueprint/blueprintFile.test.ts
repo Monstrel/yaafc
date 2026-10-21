@@ -6,7 +6,7 @@ import { BlueprintError, blueprintLayers, layersOf, readBlueprint, type Blueprin
 const files = import.meta.glob<string>('../../test/blueprints/*.png', { query: '?inline', import: 'default', eager: true })
 const bytes = (dataUrl: string) => Uint8Array.from(atob(dataUrl.slice(dataUrl.indexOf(',') + 1)), (c) => c.charCodeAt(0))
 const fixture = (name: string) => bytes(files[`../../test/blueprints/${name}.png`])
-const FIXTURES = ['steel', 'soap-unit', 'fertile-catalyst', 'color-boxes']
+const FIXTURES = ['steel', 'soap-unit', 'fertile-catalyst', 'color-boxes', 'sign']
 
 describe('readBlueprint', () => {
   test('reads the header the game shows in its blueprint panel', async () => {
@@ -53,6 +53,12 @@ describe('readBlueprint', () => {
       'MetalContainer 3,0,0': [64, 255, 64],
       'SmallContainer 0,1,0': undefined,
     })
+  })
+
+  test('reads the words written on a notice board, and none for other buildings', async () => {
+    const bp = await readBlueprint(fixture('sign'))
+    expect(bp.buildings.map((b) => [b.name, b.text])).toEqual([['NoticeBoard', 'This is a sign']])
+    expect((await readBlueprint(fixture('steel'))).buildings.every((b) => b.text === undefined)).toBe(true)
   })
 
   test('reads a tall blueprint with every layer', async () => {

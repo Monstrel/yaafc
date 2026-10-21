@@ -34,6 +34,8 @@ export interface PlacedBuilding {
   recipe?: string
   /** The colour the player tinted it (a storage box's panels), as sRGB red, green and blue, 0–255. */
   color?: [number, number, number]
+  /** The words the player wrote on it, for a notice board. */
+  text?: string
   /** The buildings it stands on. */
   dependsOn: number[]
   /**
@@ -134,6 +136,8 @@ function placed(b: Properties, origin: number[]): PlacedBuilding {
   // Blue, green, red, alpha; an untinted building's is white with no alpha.
   const [blue, green, red, alpha] = list(b.CustomColor ?? []).map(num)
   if (alpha) out.color = [red, green, blue]
+  // Every building saves a NoticeString; only a notice board's has anything in it.
+  if (b.NoticeString) out.text = str(b.NoticeString)
   // A lift's Extension lists its parts from the bottom, starting with itself; their own positions
   // are left at zero.
   const extension = list(b.Extension ?? []).map(obj)

@@ -68,6 +68,9 @@ in `web/`), about a third of their plain size; and the textures as WebP, colour 
 normals at 192 and roughness at 128. The page downloads what a blueprint uses.
 The game packs its `_ORM` textures' channels differently from model to model, so only roughness
 (green) is used from them.
+A notice board's words (its `NoticeString`) are drawn as the game's widget lays them out, in its
+font, Winky Sans (SIL Open Font License 1.1), which the
+extractor copies out of the game.
 
 ## Running the web app
 
