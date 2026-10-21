@@ -68,6 +68,13 @@ export function XrayPage() {
     setPicked(null)
   }
 
+  /** Puts what was just read on the shelf in place of what was read before: nothing, for one blueprint. */
+  const shelve = (entries: Shelved[]) => {
+    for (const e of keptShelf) if (e.preview !== kept?.preview) URL.revokeObjectURL(e.preview)
+    keptShelf = entries
+    setShelf(entries)
+  }
+
   /**
    * Reads blueprint files the player opened (or dropped): one shows at once; several, from a folder
    * or picked together, go on the shelf to choose from by name, newest first.
@@ -97,15 +104,15 @@ export function XrayPage() {
       return
     }
     if (found.length === 1) {
+      // Before `show`, which then lets go of the preview shown till now, it being off the shelf.
+      shelve([])
       show({ blueprint: found[0].blueprint, fileName: found[0].file.name, preview: URL.createObjectURL(found[0].file) })
       return
     }
     const entries = found
       .map(({ file, blueprint }) => ({ blueprint, fileName: file.name, preview: URL.createObjectURL(file), modified: file.lastModified }))
       .sort((a, b) => b.modified - a.modified)
-    for (const e of keptShelf) if (e.preview !== kept?.preview) URL.revokeObjectURL(e.preview)
-    keptShelf = entries
-    setShelf(entries)
+    shelve(entries)
   }
 
   const onDrop = (e: DragEvent) => {
