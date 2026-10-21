@@ -51,6 +51,8 @@ interface ManifestMaterial {
   normal?: string
   orm?: string
   tint?: [number, number, number]
+  /** Where the building takes the colour the player tints it (white), for a storage box. */
+  mask?: string
   masked?: boolean
   translucent?: boolean
 }
@@ -278,6 +280,13 @@ function material(spec: ManifestMaterial | undefined, name: string): Material {
     m.color = new Color(0xffffff)
     m.map = texture(spec.color, SRGBColorSpace)
   } else if (spec?.tint) m.color = new Color().setRGB(...spec.tint, LinearSRGBColorSpace)
+  // A building's tint comes as its instance's colour, and shows only through its mask (the game's
+  // MaskColorChange multiplies the base colour there); a model without a mask leaves it out.
+  if (spec?.color && spec.mask) {
+    // The game reads its masks as sRGB.
+    const mask = texture(spec.mask, SRGBColorSpace)
+    m.onBeforeCompile = (shader) => tintThroughMask(shader, mask)
+  } else m.onBeforeCompile = untinted
   if (spec?.normal) {
     m.normalMap = texture(spec.normal, LinearSRGBColorSpace)
     // The game's normal maps point green down (DirectX); three.js reads green as up.
@@ -302,7 +311,23 @@ function material(spec: ManifestMaterial | undefined, name: string): Material {
   return made
 }
 
-function texture(file: string, colorSpace: typeof SRGBColorSpace | typeof LinearSRGBColorSpace): Texture {
+type Shader = Parameters<Material['onBeforeCompile']>[0]
+
+function tintThroughMask(shader: Shader, mask: Texture) {
+  shader.uniforms.tintMask = { value: mask }
+  shader.fragmentShader = shader.fragmentShader
+    .replace('#include <color_pars_fragment>', '#include <color_pars_fragment>\nuniform sampler2D tintMask;')
+    .replace(
+      '#include <color_fragment>',
+      '#ifdef USE_COLOR\n\tdiffuseColor.rgb *= mix( vec3( 1.0 ), vColor.rgb, texture2D( tintMask, vMapUv ).r );\n#endif',
+    )
+}
+
+function untinted(shader: Shader) {
+  shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>', '')
+}
+
+function texture(file: string, colorSpace:typeof SRGBColorSpace | typeof LinearSRGBColorSpace): Texture {
   let t = textures.get(file)
   if (!t) {
     t = loader.load(new URL(`textures/${file}`, base()).href, () => textureListeners.forEach((listener) => listener()))

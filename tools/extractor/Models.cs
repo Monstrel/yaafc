@@ -23,7 +23,8 @@ using SkiaSharp;
 ///   page turns the whole scene into three.js's space once. They're written plainly (MeshFile,
 ///   below) and compressed by web/scripts/compressMeshes.mjs, which needs Node and web/'s packages.
 /// - textures/*.webp: base colour, normals and roughness (the green of the game's ORM textures,
-///   as grayscale), scaled down from the game's 2048² (see TextureSizes).
+///   as grayscale), and where a tintable building takes its tint (its Mask), scaled down from the
+///   game's 2048² (see TextureSizes).
 ///
 /// A building's meshes are its row's InstanceMesh, or the static meshes of the Blueprint its
 /// ScriptClass names, placed by its construction script's component tree.
@@ -42,7 +43,7 @@ static class ModelExporter
     // Longest side of each kind of texture: colour carries the look, the rest only shading. Against
     // 512/256/256 at quality 82, these are 58% smaller, and look the same short of a close-up of one
     // machine, where the normal maps' finest dents soften.
-    static readonly Dictionary<string, int> TextureSizes = new() { ["color"] = 384, ["normal"] = 192, ["orm"] = 128 };
+    static readonly Dictionary<string, int> TextureSizes = new() { ["color"] = 384, ["normal"] = 192, ["orm"] = 128, ["mask"] = 256 };
     const int WebpQuality = 75;
 
     public static void Run(DefaultFileProvider provider, Localization strings, string webDir)
@@ -103,6 +104,10 @@ static class ModelExporter
             foreach (var (kind, key) in new[] { ("color", CMaterialParams2.FallbackDiffuse), ("normal", CMaterialParams2.FallbackNormals), ("orm", CMaterialParams2.FallbackSpecularMasks) })
                 if (parameters.TryGetTexture2d(out var texture, key) && Texture(texture, kind) is { } file)
                     entry[kind] = file;
+            // A building the player can tint (MaskColorChange, from its CustomColor) takes the tint
+            // where its Mask is white: a box's panels, not its metal.
+            if (parameters.TryGetLinearColor(out _, "MaskColorChange") && parameters.TryGetTexture2d(out var mask, "Mask") && Texture(mask, "mask") is { } maskFile)
+                entry["mask"] = maskFile;
             if (!entry.ContainsKey("color") && parameters.TryGetLinearColor(out var color, CMaterialParams2.DiffuseColors[0]))
                 entry["tint"] = new JArray(Math.Round(color.R, 3), Math.Round(color.G, 3), Math.Round(color.B, 3));
             if (parameters.BlendMode is EBlendMode.BLEND_Masked) entry["masked"] = true;
@@ -130,6 +135,8 @@ static class ModelExporter
                     if (kind == "normal") RebuildNormalZ(resized);
                     // The page reads only roughness (green) from these: as grayscale, they're half the size.
                     if (kind == "orm") GreenToGray(resized);
+                    // Masks are gray already (stored as colour); written as gray, they're smaller.
+                    if (kind == "mask") GreenToGray(resized);
                     using var webp = SKImage.FromBitmap(resized).Encode(SKEncodedImageFormat.Webp, WebpQuality);
                     file = texture.Name + ".webp";
                     File.WriteAllBytes(Path.Combine(textureDir, file), webp.ToArray());

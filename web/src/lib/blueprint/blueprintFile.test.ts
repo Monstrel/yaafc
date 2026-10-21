@@ -6,7 +6,7 @@ import { BlueprintError, blueprintLayers, layersOf, readBlueprint, type Blueprin
 const files = import.meta.glob<string>('../../test/blueprints/*.png', { query: '?inline', import: 'default', eager: true })
 const bytes = (dataUrl: string) => Uint8Array.from(atob(dataUrl.slice(dataUrl.indexOf(',') + 1)), (c) => c.charCodeAt(0))
 const fixture = (name: string) => bytes(files[`../../test/blueprints/${name}.png`])
-const FIXTURES = ['steel', 'soap-unit', 'fertile-catalyst']
+const FIXTURES = ['steel', 'soap-unit', 'fertile-catalyst', 'color-boxes']
 
 describe('readBlueprint', () => {
   test('reads the header the game shows in its blueprint panel', async () => {
@@ -42,6 +42,17 @@ describe('readBlueprint', () => {
       expect(lift.stack!.slice(0, -1).every((s) => s.name === 'ConveyerLift_Body')).toBe(true)
     }
     expect(bp.buildings.filter((b) => !b.name.startsWith('ConveyerLift')).every((b) => !b.stack)).toBe(true)
+  })
+
+  test('reads the colour each box is tinted, and none for an untinted one', async () => {
+    const bp = await readBlueprint(fixture('color-boxes'))
+    const colors = Object.fromEntries(bp.buildings.map((b) => [`${b.name} ${b.cell}`, b.color]))
+    expect(colors).toEqual({
+      'SmallContainer 4,5,0': [255, 64, 255],
+      'WoodContainer 0,5,0': [255, 64, 64],
+      'MetalContainer 3,0,0': [64, 255, 64],
+      'SmallContainer 0,1,0': undefined,
+    })
   })
 
   test('reads a tall blueprint with every layer', async () => {

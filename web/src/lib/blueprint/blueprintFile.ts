@@ -32,6 +32,8 @@ export interface PlacedBuilding {
   variant?: number
   /** The recipe it's set to, for a machine that has one. */
   recipe?: string
+  /** The colour the player tinted it (a storage box's panels), as sRGB red, green and blue, 0–255. */
+  color?: [number, number, number]
   /** The buildings it stands on. */
   dependsOn: number[]
   /**
@@ -129,6 +131,9 @@ function placed(b: Properties, origin: number[]): PlacedBuilding {
   }
   if (typeof building.BaseActiveIndex === 'number') out.variant = building.BaseActiveIndex
   if (b.RecipeName && b.RecipeName !== 'None') out.recipe = str(b.RecipeName)
+  // Blue, green, red, alpha; an untinted building's is white with no alpha.
+  const [blue, green, red, alpha] = list(b.CustomColor ?? []).map(num)
+  if (alpha) out.color = [red, green, blue]
   // A lift's Extension lists its parts from the bottom, starting with itself; their own positions
   // are left at zero.
   const extension = list(b.Extension ?? []).map(obj)

@@ -26,6 +26,7 @@ import {
   Raycaster,
   Scene,
   ShaderChunk,
+  SRGBColorSpace,
   Vector2,
   Vector3,
   WebGLRenderer,
@@ -350,10 +351,11 @@ export class BlueprintScene {
         .makeTranslation(x, y, z + piece.layer * CELL)
         .multiply(new Matrix4().makeRotationZ((piece.rotation * Math.PI) / 2))
       const from = b.cell[2] + piece.layer
+      const tint = b.color && new Color().setRGB(...(b.color.map((c) => c / 255) as [number, number, number]), SRGBColorSpace)
       for (const part of parts) {
         let batch = batches.get(part.key)
         if (!batch) batches.set(part.key, (batch = { part, instances: [] }))
-        batch.instances.push({ matrix: origin.clone().multiply(part.matrix), building: piece.building, from, to: from + layers })
+        batch.instances.push({ matrix: origin.clone().multiply(part.matrix), building: piece.building, from, to: from + layers, tint })
       }
     })
     for (const { part, instances } of batches.values()) {
@@ -486,6 +488,8 @@ export class BlueprintScene {
     let made = this.slicedMaterials.get(material)
     if (!made) {
       made = material.clone()
+      // Cloning leaves out how the models' shader takes a building's tint.
+      made.onBeforeCompile = material.onBeforeCompile
       made.clippingPlanes = [this.below]
       made.side = FrontSide
       this.slicedMaterials.set(material, made)
@@ -568,7 +572,11 @@ interface Instance {
   from: number
   to: number
   color?: Color
+  /** The colour its building is tinted, for its solid meshes only (not its ghost). */
+  tint?: Color
 }
+
+const UNTINTED = new Color(1, 1, 1)
 
 /**
  * One mesh placed many times, sorted by the cut: whole where it fits below, sliced (solid below
@@ -610,10 +618,13 @@ class Batch {
       else if (i.from >= layers) sorted.get(this.aboveGhost)!.push(i)
       else for (const mesh of this.slicedOnes) sorted.get(mesh)!.push(i)
     }
+    const tinted = this.instances.some((i) => i.tint)
     for (const [mesh, list] of sorted) {
+      const solid = tinted && (mesh === this.whole || mesh === this.slicedSolid)
       list.forEach((i, at) => {
         mesh.setMatrixAt(at, i.matrix)
         if (i.color) mesh.setColorAt(at, i.color)
+        else if (solid) mesh.setColorAt(at, i.tint ?? UNTINTED)
       })
       mesh.count = list.length
       mesh.visible = list.length > 0
