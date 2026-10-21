@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import iconUrl from '../../../public/icons/building_AdvancedAlembic.png?inline'
-import { BlueprintError, readBlueprint, type Blueprint } from './blueprintFile'
+import { BlueprintError, layersOf, readBlueprint, type Blueprint } from './blueprintFile'
 
 // Blueprints saved by the game (v1.1, build 20260527), as it writes them to Saved/Blueprints.
 const files = import.meta.glob<string>('../../test/blueprints/*.png', { query: '?inline', import: 'default', eager: true })
@@ -31,6 +31,19 @@ describe('readBlueprint', () => {
     expect(new Set(belts.map((b) => b.variant))).toEqual(new Set([16, 18, 20, 36, 40]))
   })
 
+  test('stacks a conveyor lift’s parts on it, a layer each', async () => {
+    const bp = await readBlueprint(fixture('fertile-catalyst'))
+    const lifts = bp.buildings.filter((b) => b.name.startsWith('ConveyerLift'))
+    expect(lifts.length).toBeGreaterThan(0)
+    for (const lift of lifts) {
+      const up = lift.name === 'ConveyerLift_Upwards'
+      // Its body sections (none, for a lift two layers high), then its top end.
+      expect(lift.stack!.at(-1)!.name).toBe(up ? 'ConveyerLift_EndUpwards' : 'ConveyerLift_EndDownwards')
+      expect(lift.stack!.slice(0, -1).every((s) => s.name === 'ConveyerLift_Body')).toBe(true)
+    }
+    expect(bp.buildings.filter((b) => !b.name.startsWith('ConveyerLift')).every((b) => !b.stack)).toBe(true)
+  })
+
   test('reads a tall blueprint with every layer', async () => {
     const bp = await readBlueprint(fixture('fertile-catalyst'))
     expect(bp.title).toBe('Fertile Catalyst')
@@ -46,7 +59,7 @@ describe('readBlueprint', () => {
       expect(b.cell.every((c) => c >= 0)).toBe(true)
       expect(b.cell[0] + b.area[0]).toBeLessThanOrEqual(x)
       expect(b.cell[1] + b.area[1]).toBeLessThanOrEqual(y)
-      expect(b.cell[2]).toBeLessThan(z)
+      expect(b.cell[2] + layersOf(b)).toBeLessThanOrEqual(z)
       // Its origin is over its cells, on its layer.
       expect(b.position[0]).toBeGreaterThanOrEqual(b.cell[0] * 25)
       expect(b.position[0]).toBeLessThanOrEqual((b.cell[0] + b.area[0]) * 25)

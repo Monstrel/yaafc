@@ -34,7 +34,15 @@ export interface PlacedBuilding {
   recipe?: string
   /** The buildings it stands on. */
   dependsOn: number[]
+  /**
+   * For a conveyor lift, the parts stacked on it, a layer each going up (its body sections, then
+   * its top end): their building table rows, and their own turns.
+   */
+  stack?: { name: string; rotation: PlacedBuilding['rotation'] }[]
 }
+
+/** How many layers a building fills: one, or a lift's whole stack. */
+export const layersOf = (b: PlacedBuilding) => 1 + (b.stack?.length ?? 0)
 
 export interface Blueprint {
   title: string
@@ -109,6 +117,11 @@ function placed(b: Properties, origin: number[]): PlacedBuilding {
   }
   if (typeof building.BaseActiveIndex === 'number') out.variant = building.BaseActiveIndex
   if (b.RecipeName && b.RecipeName !== 'None') out.recipe = str(b.RecipeName)
+  // A lift's Extension lists its parts from the bottom, starting with itself; their own positions
+  // are left at zero.
+  const extension = list(b.Extension ?? []).map(obj)
+  if (extension.length > 1)
+    out.stack = extension.slice(1).map((e) => ({ name: str(e.BuildingName), rotation: ROTATIONS[str(e.GridRotation)] ?? 0 }))
   return out
 }
 
@@ -119,7 +132,7 @@ function extent(buildings: PlacedBuilding[]): [number, number, number] {
   for (const b of buildings) {
     x = Math.max(x, b.cell[0] + b.area[0])
     y = Math.max(y, b.cell[1] + b.area[1])
-    z = Math.max(z, b.cell[2] + 1)
+    z = Math.max(z, b.cell[2] + layersOf(b))
   }
   return [x, y, z]
 }

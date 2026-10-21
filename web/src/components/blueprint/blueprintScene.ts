@@ -28,7 +28,7 @@ import {
 } from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
-import { CELL, type Blueprint, type PlacedBuilding } from '../../lib/blueprint/blueprintFile'
+import { CELL, layersOf, type Blueprint, type PlacedBuilding } from '../../lib/blueprint/blueprintFile'
 import { buildingColor, buildingKind, type BuildingKind } from './buildingKinds'
 import { buildingParts, type Part } from './models'
 
@@ -140,13 +140,19 @@ export class BlueprintScene {
     this.controls.maxDistance = distance * 4
     this.resetView()
 
+    // Each building, and for a lift the parts stacked on it.
+    const pieces: Piece[] = this.placed.flatMap((b, i) => [
+      { building: i, name: b.name, variant: b.variant, rotation: b.rotation, layer: 0 },
+      ...(b.stack ?? []).map((s, k) => ({ building: i, name: s.name, variant: undefined, rotation: s.rotation, layer: k + 1 })),
+    ])
     this.onModels({ state: 'loading' })
-    Promise.all(this.placed.map((b) => buildingParts(b.name, b.variant))).then(
+    Promise.all(pieces.map((p) => buildingParts(p.name, p.variant))).then(
       (parts) => {
         if (shown !== this.shown) return
         this.remove(boxes)
-        this.addModels(parts)
-        const missing = this.placed.flatMap((_, i) => (parts[i] ? [] : [i]))
+        this.addModels(pieces, parts)
+        // A building without models of its own is a box.
+        const missing = pieces.flatMap((p, at) => (p.layer === 0 && !parts[at] ? [p.building] : []))
         if (missing.length) this.addBoxes(missing)
         this.onModels({ state: 'ready', missing: [...new Set(missing.map((i) => this.placed[i].name))] })
       },
@@ -179,8 +185,9 @@ export class BlueprintScene {
       this.selection.renderOrder = 1
       const [x, y, z] = building.cell
       const [w, d] = building.area
-      this.selection.position.set(x + w / 2, z + 0.5, y + d / 2)
-      this.selection.scale.set(w + 0.04, 1.04, d + 0.04)
+      const h = layersOf(building)
+      this.selection.position.set(x + w / 2, z + h / 2, y + d / 2)
+      this.selection.scale.set(w + 0.04, h + 0.04, d + 0.04)
       this.scene.add(this.selection)
     }
     this.dirty = true
@@ -209,9 +216,10 @@ export class BlueprintScene {
 
   /**
    * The models, one instanced mesh per mesh and set of materials, drawn twice: solid below the
-   * cut, ghost above. Each instance is its building's origin and turn, then its part's place.
+   * cut, ghost above. Each instance is its piece's origin (its building's, a layer up for each
+   * piece of a lift below it) and turn, then its part's place.
    */
-  private addModels(parts: (Part[] | null)[]) {
+  private addModels(pieces: Piece[], parts: (Part[] | null)[]) {
     // Unreal's space to the scene's: x stays, y and z swap, and 25 units make a cell.
     const world = new Group()
     world.matrixAutoUpdate = false
@@ -219,17 +227,18 @@ export class BlueprintScene {
     world.matrixWorldNeedsUpdate = true
 
     const batches = new Map<string, { part: Part; matrices: Matrix4[]; buildings: number[] }>()
-    parts.forEach((list, i) => {
+    parts.forEach((list, at) => {
       if (!list) return
-      const b = this.placed[i]
+      const piece = pieces[at]
+      const [x, y, z] = this.placed[piece.building].position
       const origin = new Matrix4()
-        .makeTranslation(...b.position)
-        .multiply(new Matrix4().makeRotationZ((b.rotation * Math.PI) / 2))
+        .makeTranslation(x, y, z + piece.layer * CELL)
+        .multiply(new Matrix4().makeRotationZ((piece.rotation * Math.PI) / 2))
       for (const part of list) {
         let batch = batches.get(part.key)
         if (!batch) batches.set(part.key, (batch = { part, matrices: [], buildings: [] }))
         batch.matrices.push(origin.clone().multiply(part.matrix))
-        batch.buildings.push(i)
+        batch.buildings.push(piece.building)
       }
     })
     for (const { part, matrices, buildings } of batches.values()) {
@@ -334,6 +343,15 @@ export class BlueprintScene {
   }
 }
 
+/** A building, or a part stacked on a lift (`layer` up from it), to draw with its models. */
+interface Piece {
+  building: number
+  name: string
+  variant: number | undefined
+  rotation: PlacedBuilding['rotation']
+  layer: number
+}
+
 /** The models' own materials, sharing the scene's clipping plane (cached ones are set once). */
 const clipped = (plane: Plane) => (material: Material) => {
   material.clippingPlanes = [plane]
@@ -349,7 +367,7 @@ function isInside(child: Object3D, parent: Object3D): boolean {
 function boxTransform(b: PlacedBuilding, kind: BuildingKind): [Vector3, Quaternion, Vector3] {
   const [x, y, z] = b.cell
   const [w, d] = b.area
-  const height = kind === 'belt' ? 0.14 : kind === 'pipe' ? 0.35 : 1
+  const height = kind === 'belt' ? 0.14 : kind === 'pipe' ? 0.35 : layersOf(b)
   const inset = kind === 'belt' ? 0.04 : 0.08
   const sx = w - inset
   const sz = d - inset
