@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type DragEvent } from 'react'
-import { BlueprintScene, type Above } from '../components/blueprint/blueprintScene'
-import { buildingColor, buildingKind, buildingName, KINDS } from '../components/blueprint/buildingKinds'
+import { BlueprintScene, type Above, type ModelStatus } from '../components/blueprint/blueprintScene'
+import { buildingName } from '../components/blueprint/buildingKinds'
+import { buildingNames } from '../components/blueprint/models'
 import { ItemLabel } from '../components/ItemIcon'
 import { ReferenceLink } from '../components/ReferenceLink'
 import { BlueprintError, readBlueprint, type Blueprint, type PlacedBuilding } from '../lib/blueprint/blueprintFile'
@@ -26,6 +27,13 @@ export function XrayPage() {
   const [layers, setLayers] = useState(() => kept?.blueprint.size[2] ?? 1)
   const [above, setAbove] = useState<Above>('ghost')
   const [picked, setPicked] = useState<PlacedBuilding | null>(null)
+  const [models, setModels] = useState<ModelStatus | null>(null)
+  // The game's names for buildings, from the models' manifest (machines' are in the game data too).
+  const [names, setNames] = useState<Map<string, string>>(new Map())
+  useEffect(() => {
+    buildingNames().then(setNames, () => {})
+  }, [])
+  const nameOf = (key: string) => names.get(key.toLowerCase()) ?? buildingName(key)
   const fileInput = useRef<HTMLInputElement>(null)
 
   const open = async (file: File) => {
@@ -122,10 +130,18 @@ export function XrayPage() {
             above={above}
             onAbove={setAbove}
           />
-          <XrayScene blueprint={opened.blueprint} layers={layers} above={above} picked={picked} onPick={setPicked} />
+          <XrayScene
+            blueprint={opened.blueprint}
+            layers={layers}
+            above={above}
+            picked={picked}
+            onPick={setPicked}
+            onModels={setModels}
+          />
           <div className="xray-side">
-            <Picked building={picked} />
-            <Legend blueprint={opened.blueprint} />
+            <Picked building={picked} nameOf={nameOf} />
+            <BuildingList blueprint={opened.blueprint} nameOf={nameOf} />
+            <ModelNote status={models} nameOf={nameOf} />
           </div>
         </section>
       )}
@@ -177,12 +193,14 @@ function XrayScene({
   above,
   picked,
   onPick,
+  onModels,
 }: {
   blueprint: Blueprint
   layers: number
   above: Above
   picked: PlacedBuilding | null
   onPick: (b: PlacedBuilding | null) => void
+  onModels: (status: ModelStatus) => void
 }) {
   const host = useRef<HTMLDivElement>(null)
   const scene = useRef<BlueprintScene | null>(null)
@@ -197,7 +215,8 @@ function XrayScene({
   }, [])
   useEffect(() => {
     scene.current!.onPick = onPick
-  }, [onPick])
+    scene.current!.onModels = onModels
+  }, [onPick, onModels])
   useEffect(() => scene.current!.show(blueprint), [blueprint])
   // After `show`, so a new blueprint keeps the cut the page has for it.
   useEffect(() => scene.current!.setCut(layers, above), [blueprint, layers, above])
@@ -216,16 +235,13 @@ function XrayScene({
   )
 }
 
-function Picked({ building }: { building: PlacedBuilding | null }) {
+function Picked({ building, nameOf }: { building: PlacedBuilding | null; nameOf: (key: string) => string }) {
   if (!building) return <p className="muted xray-picked">Click a building to see what it is.</p>
   const recipe = building.recipe ? recipesByKey.get(building.recipe) : undefined
-  const name = buildingName(building.name)
+  const name = nameOf(building.name)
   return (
     <div className="xray-picked">
-      <h3>
-        <span className="xray-swatch" style={{ background: buildingColor(building.name) }} />
-        {buildingsByKey.has(building.name) ? <ReferenceLink to={{ machine: building.name }}>{name}</ReferenceLink> : name}
-      </h3>
+      <h3>{buildingsByKey.has(building.name) ? <ReferenceLink to={{ machine: building.name }}>{name}</ReferenceLink> : name}</h3>
       <p className="muted">
         Layer {building.cell[2] + 1} · {building.area[0]} × {building.area[1]} {noun(building.area[0] * building.area[1], 'cell')}
       </p>
@@ -238,20 +254,31 @@ function Picked({ building }: { building: PlacedBuilding | null }) {
   )
 }
 
-function Legend({ blueprint }: { blueprint: Blueprint }) {
+/** What the blueprint is made of: each kind of building and how many, most first. */
+function BuildingList({ blueprint, nameOf }: { blueprint: Blueprint; nameOf: (key: string) => string }) {
   const counts = new Map<string, number>()
-  for (const b of blueprint.buildings) {
-    const kind = buildingKind(b.name)
-    counts.set(kind, (counts.get(kind) ?? 0) + 1)
-  }
+  for (const b of blueprint.buildings) counts.set(nameOf(b.name), (counts.get(nameOf(b.name)) ?? 0) + 1)
+  const rows = [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
   return (
-    <ul className="xray-legend">
-      {KINDS.filter((k) => counts.has(k.kind)).map((k) => (
-        <li key={k.kind}>
-          <span className="xray-swatch" style={{ background: k.color }} />
-          {k.label} <span className="muted">{counts.get(k.kind)}</span>
+    <ul className="xray-buildings">
+      {rows.map(([name, count]) => (
+        <li key={name}>
+          <span>{name}</span> <span className="muted">{count}</span>
         </li>
       ))}
     </ul>
+  )
+}
+
+function ModelNote({ status, nameOf }: { status: ModelStatus | null; nameOf: (key: string) => string }) {
+  if (!status) return null
+  if (status.state === 'loading') return <p className="muted xray-note">Loading the game’s models…</p>
+  if (status.state === 'failed')
+    return <p className="warning xray-note">The game’s models couldn’t be loaded, so buildings are boxes. {status.message}</p>
+  if (!status.missing.length) return null
+  return (
+    <p className="muted xray-note">
+      Shown as boxes, as the game draws them without models: {status.missing.map(nameOf).join(', ')}.
+    </p>
   )
 }

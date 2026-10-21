@@ -11,6 +11,7 @@ using Newtonsoft.Json;
 //   Extractor strings [regex]           search the English text
 //   Extractor schema [regex]            print native class/struct properties from the mappings
 //   Extractor export [webDir]           write game-data.json + icons for the web app
+//   Extractor models [webDir]           write the buildings' 3D models for the Blueprint X-ray
 var mode = args.Length > 0 ? args[0] : "list";
 var paksDir = Environment.GetEnvironmentVariable("AF_PAKS")
     ?? @"C:\Program Files (x86)\Steam\steamapps\common\Alchemy Factory\AlchemyFactory\Content\Paks";
@@ -50,6 +51,13 @@ if (mode == "schema")
     // Enums too, with their values.
     foreach (var (name, values) in provider.MappingsForGame.Enums.Where(e => filterSchema.IsMatch(e.Key)).OrderBy(e => e.Key))
         Console.WriteLine($"enum {name}: {string.Join(", ", values.OrderBy(v => v.Key).Select(v => $"{v.Value}={v.Key}"))}");
+    return;
+}
+
+if (mode == "models")
+{
+    ModelExporter.Run(provider, strings, args.Length > 1 ? args[1]
+        : Path.GetFullPath(Path.Combine(FindProjectDir(), "..", "..", "web")));
     return;
 }
 

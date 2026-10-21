@@ -36,8 +36,8 @@ cauldron recipes as steps in production chains, including self-feeding loops.
   machine.
 
 - **Blueprint X-ray**: open a blueprint file and see it in 3D, cut away from the top layer by layer,
-  to see inside a compact build. Click a building to see what it is. Buildings are coloured boxes
-  for now; the game's own models are to come.
+  to see inside a compact build, drawn with the game's own models and textures. Click a building
+  to see what it is.
 
 Saved recipes and plans live in the browser (localStorage). Use Export/Import to back them up.
 
@@ -49,6 +49,23 @@ preview picture, with the blueprint appended after the image: tagged properties 
 Kraken, then a footer (the length of all that, and a marker) so it's found from the end of the file.
 `web/src/lib/blueprint/` reads it; the Kraken stream is unpacked by
 [ooz-wasm](https://github.com/SnosMe/ooz-wasm) (GPL-3.0), which the X-ray page downloads.
+
+A building's `BuildPos` is its origin, in the game's units (25 to a cell, `ParentGridGroup.Pivot`
+× 25 being the blueprint's corner), and `GridRotation` its quarter turn. A belt's or pipe's
+`BaseActiveIndex` is the shape it takes, relative to its turn. For a belt, the sides belts come in
+from (bits 0–3: right, bottom, left, up) and go out to (bits 4–7, the same order), a row of
+`DT_BeltMeshBuildings`; for a pipe, the sides it joins (right, bottom, left, up, below, above), a
+row of `DT_PipeMeshConfig2`. Each row names a mesh and how it's turned.
+
+The models (`web/public/models`) come from the extractor's `models` command: a manifest of each
+building's meshes (its `InstanceMesh`, or the static meshes its Blueprint's construction script
+adds, with their transforms and material overrides), each belt and pipe shape, and each material's
+textures; the meshes compressed with [meshoptimizer](https://github.com/zeux/meshoptimizer) and
+gzip (`web/scripts/compressMeshes.mjs`, which the extractor runs: it needs Node and `npm install`
+in `web/`), about a third of their plain size; and the textures as WebP, colour at 512 px and
+normals and roughness at 256. The page downloads what a blueprint uses.
+The game packs its `_ORM` textures' channels differently from model to model, so only roughness
+(green) is used from them.
 
 ## Running the web app
 
@@ -75,6 +92,7 @@ Game data is read straight from your install by `tools/extractor` (C#, CUE4Parse
 ```sh
 cd tools/extractor
 dotnet run -- export     # writes web/src/data/game-data.json and web/public/icons/
+dotnet run -- models     # writes web/public/models/ (the Blueprint X-ray's models, ~11 MB)
 ```
 
 - The game is UE 5.7 with unversioned properties, so parsing needs `mappings/Mappings.usmap`.

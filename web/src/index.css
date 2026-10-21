@@ -4627,36 +4627,32 @@ a.reference-icon:hover {
 .xray-picked h3 {
   margin: 0 0 4px;
   font-size: 15px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
 
 .xray-picked p {
   margin: 0 0 4px;
 }
 
-.xray-swatch {
-  display: inline-block;
-  width: 12px;
-  height: 12px;
-  border-radius: 3px;
-  flex: none;
-}
-
-.xray-legend {
+.xray-buildings {
   list-style: none;
   margin: 0;
   padding: 12px 0 0;
   border-top: 1px solid var(--border);
   display: grid;
-  gap: 6px;
+  gap: 4px;
+  max-height: 360px;
+  overflow-y: auto;
 }
 
-.xray-legend li {
+.xray-buildings li {
   display: flex;
-  align-items: center;
+  justify-content: space-between;
   gap: 8px;
+}
+
+.xray-note {
+  margin: 0;
+  font-size: 12px;
 }
 
 @media (max-width: 900px) {

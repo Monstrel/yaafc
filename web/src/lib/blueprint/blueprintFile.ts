@@ -23,6 +23,11 @@ export interface PlacedBuilding {
   area: [number, number]
   /** Quarter turns clockwise, seen from above. */
   rotation: 0 | 1 | 2 | 3
+  /**
+   * Where the game puts the building's origin, in its units (25 to a cell) from the blueprint's
+   * lowest corner: x, y, and height (the bottom of its layer).
+   */
+  position: [number, number, number]
   /** Which shape a belt takes (its row in DT_BeltMeshBuildings), when the building has one. */
   variant?: number
   /** The recipe it's set to, for a machine that has one. */
@@ -46,6 +51,8 @@ export interface Blueprint {
 export class BlueprintError extends Error {}
 
 const FOOTER_MARKER = 0x5042afd5
+/** The game's units across a cell, and up a layer. */
+export const CELL = 25
 const ROTATIONS: Record<string, PlacedBuilding['rotation']> = {
   'EGridRotation::NoRotation': 0,
   'EGridRotation::ClockWise': 1,
@@ -73,7 +80,9 @@ export async function readBlueprint(file: Uint8Array): Promise<Blueprint> {
     throw new BlueprintError('This blueprint’s data couldn’t be unpacked: the file may be damaged.')
   }
   const data = readProperties(new Reader(body))
-  const buildings = list(data.Buildings).map((b) => placed(obj(b)))
+  // Where the blueprint was copied from, in cells: buildings' positions are in the world's units.
+  const origin = list(obj(data.ParentGridGroup).Pivot).map((v) => num(v) * CELL)
+  const buildings = list(data.Buildings).map((b) => placed(obj(b), origin))
   return {
     title: str(header.Title),
     description: str(header.Description),
@@ -84,7 +93,7 @@ export async function readBlueprint(file: Uint8Array): Promise<Blueprint> {
   }
 }
 
-function placed(b: Properties): PlacedBuilding {
+function placed(b: Properties, origin: number[]): PlacedBuilding {
   const group = obj(b.RelativeGridGroup)
   const building = obj(b.building)
   const [x, y, z] = list(group.Pivot).map(num)
@@ -95,6 +104,7 @@ function placed(b: Properties): PlacedBuilding {
     cell: [x, y, z],
     area: [w, d],
     rotation: ROTATIONS[str(building.GridRotation)] ?? 0,
+    position: list(building.BuildPos).map((v, i) => num(v) - origin[i]) as [number, number, number],
     dependsOn: list(b.DependKeys ?? []).map(num),
   }
   if (typeof building.BaseActiveIndex === 'number') out.variant = building.BaseActiveIndex

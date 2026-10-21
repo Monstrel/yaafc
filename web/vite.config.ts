@@ -20,6 +20,8 @@ export default defineConfig({
   },
   // The solver's worker loads HiGHS with a top-level await, which needs an ES module worker.
   worker: { format: 'es' },
+  // The Blueprint X-ray's meshes (public/models/meshes), which the page fetches; tests import them.
+  assetsInclude: ['**/*.mesh'],
   // The heaviest solver tests take seconds here and several times that on GitHub's runners.
   test: { testTimeout: 60_000, setupFiles: ['./src/test/rowsExist.ts'] },
   plugins: [

@@ -12,6 +12,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "meshoptimizer": "^1.3.0",
     "ooz-wasm": "^2.0.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",

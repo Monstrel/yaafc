@@ -20,6 +20,8 @@ describe('readBlueprint', () => {
     expect(bp.buildings).toHaveLength(20)
     const athanor = bp.buildings.find((b) => b.name === 'Athanor')
     expect(athanor).toMatchObject({ cell: [0, 1, 1], area: [2, 2], rotation: 3, recipe: 'SteelIngot' })
+    // Its origin: the middle of its 2×2 cells, at the bottom of layer 1.
+    expect(athanor!.position).toEqual([25, 50, 25])
     // The heater it stands on.
     expect(bp.buildings.find((b) => b.id === athanor!.dependsOn[0])?.name).toBe('SteamHeater')
     // A 2×1 merger turned a quarter covers 1×2 cells.
@@ -45,6 +47,12 @@ describe('readBlueprint', () => {
       expect(b.cell[0] + b.area[0]).toBeLessThanOrEqual(x)
       expect(b.cell[1] + b.area[1]).toBeLessThanOrEqual(y)
       expect(b.cell[2]).toBeLessThan(z)
+      // Its origin is over its cells, on its layer.
+      expect(b.position[0]).toBeGreaterThanOrEqual(b.cell[0] * 25)
+      expect(b.position[0]).toBeLessThanOrEqual((b.cell[0] + b.area[0]) * 25)
+      expect(b.position[1]).toBeGreaterThanOrEqual(b.cell[1] * 25)
+      expect(b.position[1]).toBeLessThanOrEqual((b.cell[1] + b.area[1]) * 25)
+      expect(b.position[2]).toBe(b.cell[2] * 25)
     }
     expect(new Set(bp.buildings.map((b) => b.id)).size).toBe(bp.buildings.length)
   })
