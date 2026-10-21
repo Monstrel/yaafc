@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ChangeEvent, type DragEvent, type ReactNode } from 'react'
-import { BlueprintScene, type Above, type ModelStatus } from '../components/blueprint/blueprintScene'
-import { buildingName } from '../components/blueprint/buildingKinds'
+import { BlueprintScene, type HiddenLook, type ModelStatus } from '../components/blueprint/blueprintScene'
+import { buildingName, isBuildingBlock } from '../components/blueprint/buildingKinds'
 import { buildingInfo } from '../components/blueprint/models'
 import { ItemLabel } from '../components/ItemIcon'
 import { ReferenceLink } from '../components/ReferenceLink'
@@ -43,8 +43,9 @@ export function XrayPage() {
   const [dragging, setDragging] = useState(false)
   // The layers shown, from the bottom: null for all of them.
   const [cut, setCut] = useState<number | null>(null)
-  const [above, setAbove] = useState<Above>('ghost')
+  const [look, setLook] = useState<HiddenLook>('ghost')
   const [arrows, setArrows] = useState(true)
+  const [blocks, setBlocks] = useState(false)
   const [picked, setPicked] = useState<PlacedBuilding | null>(null)
   const [models, setModels] = useState<ModelStatus | null>(null)
   // The game's names for buildings and their heights in layers, from the models' manifest.
@@ -201,12 +202,24 @@ export function XrayPage() {
 
       {opened && (
         <section className="panel xray-view">
-          <CutControls above={above} onAbove={setAbove} arrows={arrows} onArrows={setArrows} />
+          <CutControls
+            look={look}
+            onLook={setLook}
+            arrows={arrows}
+            onArrows={setArrows}
+            blocks={blocks}
+            onBlocks={(hidden) => {
+              setBlocks(hidden)
+              // A hidden building can't be clicked, so it isn't left picked either.
+              if (hidden && picked && isBuildingBlock(picked.name)) setPicked(null)
+            }}
+          />
           <XrayScene
             blueprint={opened.blueprint}
             cut={cut !== null && cut < total ? cut : null}
-            above={above}
+            look={look}
             arrows={arrows}
+            blocks={blocks}
             picked={picked}
             onPick={setPicked}
             onModels={setModels}
@@ -277,25 +290,38 @@ function LayerSlider({ total, layers, onLayers }: { total: number; layers: numbe
 }
 
 function CutControls({
-  above,
-  onAbove,
+  look,
+  onLook,
   arrows,
   onArrows,
+  blocks,
+  onBlocks,
 }: {
-  above: Above
-  onAbove: (a: Above) => void
+  look: HiddenLook
+  onLook: (look: HiddenLook) => void
   arrows: boolean
   onArrows: (shown: boolean) => void
+  blocks: boolean
+  onBlocks: (hidden: boolean) => void
 }) {
   return (
     <div className="xray-controls">
-      <div className="segmented" role="radiogroup" aria-label="Layers above the cut">
-        {(['ghost', 'hidden'] as const).map((a) => (
-          <button key={a} type="button" role="radio" aria-checked={above === a} aria-selected={above === a} onClick={() => onAbove(a)}>
-            {a === 'ghost' ? 'Ghost the layers above' : 'Hide the layers above'}
-          </button>
-        ))}
+      <div className="xray-look" title="How the layers above the cut, and building blocks when hidden, are drawn">
+        <span id="xray-look-label" className="muted">
+          Hidden buildings
+        </span>
+        <div className="segmented" role="radiogroup" aria-labelledby="xray-look-label">
+          {(['ghost', 'gone'] as const).map((l) => (
+            <button key={l} type="button" role="radio" aria-checked={look === l} aria-selected={look === l} onClick={() => onLook(l)}>
+              {l === 'ghost' ? 'Ghosts' : 'Invisible'}
+            </button>
+          ))}
+        </div>
       </div>
+      <label className="xray-toggle" title="Blocks, beams, lab stands, platforms, pillars, floors and walls: there only to take up space">
+        <input type="checkbox" checked={blocks} onChange={(e) => onBlocks(e.target.checked)} />
+        Hide building blocks
+      </label>
       <label className="xray-toggle" title="Arrows on belts, pointing the way items go">
         <input type="checkbox" checked={arrows} onChange={(e) => onArrows(e.target.checked)} />
         Belt directions
@@ -307,8 +333,9 @@ function CutControls({
 function XrayScene({
   blueprint,
   cut,
-  above,
+  look,
   arrows,
+  blocks,
   picked,
   onPick,
   onModels,
@@ -317,8 +344,10 @@ function XrayScene({
   blueprint: Blueprint
   /** The layers shown, from the bottom: null for all of them. */
   cut: number | null
-  above: Above
+  look: HiddenLook
   arrows: boolean
+  /** Whether the building blocks are hidden, looking as `look` says, as the layers above the cut do. */
+  blocks: boolean
   picked: PlacedBuilding | null
   onPick: (b: PlacedBuilding | null) => void
   onModels: (status: ModelStatus) => void
@@ -342,8 +371,10 @@ function XrayScene({
   }, [onPick, onModels])
   useEffect(() => scene.current!.show(blueprint), [blueprint])
   // After `show`, so a new blueprint keeps the cut the page has for it.
-  useEffect(() => scene.current!.setCut(cut, above), [blueprint, cut, above])
+  useEffect(() => scene.current!.setCut(cut, look), [blueprint, cut, look])
   useEffect(() => scene.current!.setArrows(arrows), [arrows])
+  // After `show`, which sorts a new blueprint's buildings by the choice the scene already has.
+  useEffect(() => scene.current!.setBlocks(blocks), [blocks])
   useEffect(() => scene.current!.select(picked), [blueprint, picked])
 
   return (

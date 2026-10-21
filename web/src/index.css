@@ -4625,6 +4625,13 @@ a.reference-icon:hover {
   padding: 6px 12px;
 }
 
+.xray-look {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .xray-toggle {
   display: flex;
   align-items: center;

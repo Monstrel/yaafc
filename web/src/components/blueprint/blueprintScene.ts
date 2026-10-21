@@ -33,11 +33,14 @@ import {
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { CELL, layersOf, type Blueprint, type PlacedBuilding } from '../../lib/blueprint/blueprintFile'
-import { buildingColor, buildingKind, type BuildingKind } from './buildingKinds'
+import { buildingColor, buildingKind, isBuildingBlock, type BuildingKind } from './buildingKinds'
 import { buildingModel, onTextureLoad, type Flow, type Part, type Side } from './models'
 
-/** What the layers above the cut look like: gone, or a faint ghost to keep their place in view. */
-export type Above = 'hidden' | 'ghost'
+/**
+ * What hidden buildings look like, those above the cut and the building blocks when hidden: a faint
+ * ghost to keep their place in view, or gone.
+ */
+export type HiddenLook = 'ghost' | 'gone'
 export type ModelStatus = { state: 'loading' } | { state: 'ready'; missing: string[] } | { state: 'failed'; message: string }
 
 /**
@@ -93,6 +96,9 @@ export class BlueprintScene {
   private home = { position: new Vector3(), target: new Vector3() }
   /** Layers shown: Infinity for all of them. */
   private cut = Infinity
+  private hideBlocks = false
+  /** The buildings drawn as if above the cut, wherever they are: the building blocks, when hidden. */
+  private gone = new Set<number>()
   private shown = 0
 
   /** Called with the building clicked, or null for a click on nothing. */
@@ -152,6 +158,7 @@ export class BlueprintScene {
     const shown = ++this.shown
     this.placed = blueprint.buildings
     this.heights = this.placed.map((b) => layersOf(b))
+    this.gone = this.blocksGone()
     const [w, d, h] = blueprint.size
 
     this.floor = new GridHelper(Math.max(w, d) + 4, Math.max(w, d) + 4, 0x6d6478, 0x3c3645)
@@ -198,15 +205,23 @@ export class BlueprintScene {
     )
   }
 
-  /** Shows the bottom `layers` layers (null: all of them); the rest are ghosts or hidden. */
-  setCut(layers: number | null, above: Above) {
+  /** Shows the bottom `layers` layers (null: all of them); the rest look as `look` says. */
+  setCut(layers: number | null, look: HiddenLook) {
     this.cut = layers ?? Infinity
     // Far above everything rather than Infinity, which shaders needn't take.
     const plane = Math.min(this.cut, 1e6)
     this.below.constant = plane
     this.above.constant = -plane
-    this.ghostWhole.visible = this.ghostSliced.visible = above === 'ghost'
-    for (const batch of this.batches) batch.cut(this.cut)
+    this.ghostWhole.visible = this.ghostSliced.visible = look === 'ghost'
+    for (const batch of this.batches) batch.cut(this.cut, this.gone)
+    this.dirty = true
+  }
+
+  /** Hides the building blocks (or shows them again): ghosts or gone, as hidden buildings look. */
+  setBlocks(hidden: boolean) {
+    this.hideBlocks = hidden
+    this.gone = this.blocksGone()
+    for (const batch of this.batches) batch.cut(this.cut, this.gone)
     this.dirty = true
   }
 
@@ -285,7 +300,7 @@ export class BlueprintScene {
       const batch = new Batch(part.geometry, part.materials, part.materials.map((m) => this.sliced(m)), this.ghostWhole, this.ghostSliced, this.inside, instances)
       this.world.add(...batch.meshes)
       this.batches.push(batch)
-      batch.cut(this.cut)
+      batch.cut(this.cut, this.gone)
     }
     this.dirty = true
   }
@@ -353,7 +368,7 @@ export class BlueprintScene {
       this.arrows.add(...batch.meshes)
       this.batches.push(batch)
       this.arrowBatches.add(batch)
-      batch.cut(this.cut)
+      batch.cut(this.cut, this.gone)
     }
     this.dirty = true
   }
@@ -398,7 +413,7 @@ export class BlueprintScene {
     const batch = new Batch(this.unitBox, [this.boxMaterial], [this.sliced(this.boxMaterial)], this.ghostWhole, this.ghostSliced, this.inside, instances)
     this.scene.add(...batch.meshes)
     this.batches.push(batch)
-    batch.cut(this.cut)
+    batch.cut(this.cut, this.gone)
     this.dirty = true
     return batch
   }
@@ -416,6 +431,10 @@ export class BlueprintScene {
       this.slicedMaterials.set(material, made)
     }
     return made
+  }
+
+  private blocksGone(): Set<number> {
+    return new Set(this.hideBlocks ? this.placed.flatMap((b, i) => (isBuildingBlock(b.name) ? [i] : [])) : [])
   }
 
   private removeBatch(batch: Batch) {
@@ -493,7 +512,8 @@ interface Instance {
 
 /**
  * One mesh placed many times, sorted by the cut: whole where it fits below, sliced (solid below
- * the cut, dark inside, a ghost above) where it crosses it, a ghost where it's all above.
+ * the cut, dark inside, a ghost above) where it crosses it, a ghost where it's all above (or
+ * its building is hidden).
  */
 class Batch {
   readonly whole: InstancedMesh
@@ -521,11 +541,12 @@ class Batch {
     this.meshes = [this.whole, this.aboveGhost, ...this.slicedOnes]
   }
 
-  /** Sorts the instances for the bottom `layers` layers shown (Infinity: all). */
-  cut(layers: number) {
+  /** Sorts the instances for the bottom `layers` layers shown (Infinity: all), those of the `gone` buildings as if above. */
+  cut(layers: number, gone: Set<number>) {
     const sorted = new Map(this.meshes.map((m) => [m, [] as Instance[]]))
     for (const i of this.instances) {
-      if (i.to <= layers) sorted.get(this.whole)!.push(i)
+      if (gone.has(i.building)) sorted.get(this.aboveGhost)!.push(i)
+      else if (i.to <= layers) sorted.get(this.whole)!.push(i)
       else if (i.from >= layers) sorted.get(this.aboveGhost)!.push(i)
       else for (const mesh of this.slicedOnes) sorted.get(mesh)!.push(i)
     }
