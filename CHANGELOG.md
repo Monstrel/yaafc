@@ -8,6 +8,13 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
+## 2026-10-21T19:55Z
+
+- The Blueprint X-ray writes what's on your notice boards, on both faces, in the game's lettering.
+  Click one to read its words beside the view.
+- The small notice board, and a large storage box left open, now show with their models in the
+  X-ray: the notice board was a plain box, and the storage box was missing its base.
+
 ## 2026-10-21T19:26Z
 
 - In the Blueprint X-ray, opening a folder with only one blueprint in it, or a single blueprint
