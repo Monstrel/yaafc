@@ -5,6 +5,7 @@ import {
   BufferAttribute,
   BufferGeometry,
   Color,
+  CustomToneMapping,
   DirectionalLight,
   DoubleSide,
   EdgesGeometry,
@@ -18,13 +19,13 @@ import {
   Matrix4,
   MeshBasicMaterial,
   MeshLambertMaterial,
-  NeutralToneMapping,
   PerspectiveCamera,
   Plane,
   PMREMGenerator,
   Quaternion,
   Raycaster,
   Scene,
+  ShaderChunk,
   Vector2,
   Vector3,
   WebGLRenderer,
@@ -35,6 +36,57 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { CELL, layersOf, type Blueprint, type PlacedBuilding } from '../../lib/blueprint/blueprintFile'
 import { buildingColor, buildingKind, isBuildingBlock, type BuildingKind } from './buildingKinds'
 import { buildingModel, onTextureLoad, type Flow, type Part, type Side } from './models'
+
+/**
+ * The game's look: its colour grade and Unreal's filmic tone curve, with the settings of its
+ * post-process volume (Main2_sub_lighting's PostProcessVolume_0), all in ACEScg (AP1) as Unreal does.
+ *
+ * The grade cools the picture: its gain takes red down and blue up, more so in the midtones, so greys
+ * come out blue-grey. Saturation, then gain, the midtones' (times the global) weighed in by luminance
+ * between Unreal's default shadow and highlight ranges. Its contrast is left out: the midtones' (more
+ * in green, less in blue) tints whites green here.
+ *
+ * The curve is Unreal's FilmToneMap with the game's shoulder, 1 (Unreal's default is 0.26): a hard
+ * one, and it works on each channel, so bright colours wash out towards white. That's why the game's
+ * wood is a pale tan, though its textures are a strong yellowish brown; three's neutral curve keeps
+ * their colour, and they look yellow beside the game.
+ */
+ShaderChunk.tonemapping_pars_fragment = ShaderChunk.tonemapping_pars_fragment.replace(
+  'vec3 CustomToneMapping( vec3 color ) { return color; }',
+  /* glsl */ `
+vec3 CustomToneMapping( vec3 color ) {
+	// Linear sRGB to ACEScg and back: Unreal's sRGB_2_AP1 and AP1_2_sRGB, by rows (as color * m reads them).
+	const mat3 toAP1 = mat3( 0.6131, 0.3395, 0.0474, 0.0702, 0.9164, 0.0134, 0.0206, 0.1096, 0.8698 );
+	const mat3 fromAP1 = mat3( 1.7049, -0.6217, -0.0833, -0.1301, 1.1407, -0.0106, -0.0240, -0.1290, 1.1530 );
+	const vec3 toY = vec3( 0.2722, 0.6741, 0.0537 );
+	color = color * toneMappingExposure * toAP1;
+
+	float luma = dot( color, toY );
+	float midtones = smoothstep( 0.0, 0.09, luma ) - smoothstep( 0.5, 1.0, luma );
+	color = max( vec3( 0.0 ), mix( vec3( luma ), color, 1.15 ) );
+	color *= mix( vec3( 0.95, 1.01, 1.05 ), vec3( 0.95, 0.98, 1.1235 ), midtones );
+
+	const float slope = 0.88, toe = 0.55, shoulder = 1.0, blackClip = 0.0, whiteClip = 0.04;
+	const float toeScale = 1.0 + blackClip - toe, shoulderScale = 1.0 + whiteClip - shoulder;
+	const float bt = 0.18 / toeScale - 1.0;
+	float toeMatch = log( 0.18 ) / log( 10.0 ) - 0.5 * log( ( 1.0 + bt ) / ( 1.0 - bt ) ) * toeScale / slope;
+	float straightMatch = ( 1.0 - toe ) / slope - toeMatch;
+	float shoulderMatch = shoulder / slope - straightMatch;
+	color = mix( vec3( dot( color, toY ) ), color, 0.96 );
+	vec3 logColor = log( max( color, vec3( 1e-10 ) ) ) / log( 10.0 );
+	vec3 straight = slope * ( logColor + straightMatch );
+	vec3 toeColor = - blackClip + 2.0 * toeScale / ( 1.0 + exp( - 2.0 * slope / toeScale * ( logColor - toeMatch ) ) );
+	vec3 shoulderColor = 1.0 + whiteClip - 2.0 * shoulderScale / ( 1.0 + exp( 2.0 * slope / shoulderScale * ( logColor - shoulderMatch ) ) );
+	toeColor = mix( straight, toeColor, step( logColor, vec3( toeMatch ) ) );
+	shoulderColor = mix( straight, shoulderColor, step( vec3( shoulderMatch ), logColor ) );
+	vec3 t = clamp( ( logColor - toeMatch ) / ( shoulderMatch - toeMatch ), 0.0, 1.0 );
+	t = ( 3.0 - 2.0 * t ) * t * t;
+	color = mix( toeColor, shoulderColor, t );
+	color = mix( vec3( dot( color, toY ) ), color, 0.93 );
+
+	return clamp( max( color, vec3( 0.0 ) ) * fromAP1, 0.0, 1.0 );
+}`,
+)
 
 /**
  * What hidden buildings look like, those above the cut and the building blocks when hidden: a faint
@@ -111,19 +163,27 @@ export class BlueprintScene {
     this.renderer = new WebGLRenderer({ antialias: true, alpha: true })
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
     this.renderer.localClippingEnabled = true
-    this.renderer.toneMapping = NeutralToneMapping
+    this.renderer.toneMapping = CustomToneMapping
+    // Bright, as the game is: its tone curve washes the brightest colours out towards white.
+    this.renderer.toneMappingExposure = 2.75
     host.appendChild(this.renderer.domElement)
     this.ghostSliced.clippingPlanes = [this.above]
     this.inside.clippingPlanes = [this.below]
+    // Flat colours of the X-ray's own, kept as they are.
+    this.arrowMaterial.toneMapped = false
+    this.inside.toneMapped = false
 
-    // A soft room's light for the models' metal and gloss, a sun for shape.
+    // A soft room's light for the models' metal and gloss, a sun for shape, and a blue sky's light
+    // filling the shade, as in the game by day: without it, the shade's wood comes out yellow.
     const pmrem = new PMREMGenerator(this.renderer)
     this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture
-    this.scene.environmentIntensity = 0.6
+    this.scene.environmentIntensity = 0.35
     pmrem.dispose()
-    this.scene.add(new HemisphereLight(0xffffff, 0x554a60, 0.8))
-    this.scene.add(new AmbientLight(0xffffff, 0.2))
-    const sun = new DirectionalLight(0xffffff, 1.6)
+    // From below, the game's sky light's lower hemisphere: a cool grey.
+    this.scene.add(new HemisphereLight(0x80a8ff, 0x6d757c, 0.8))
+    this.scene.add(new AmbientLight(0x80a8ff, 0.2))
+    // The game's sun, a warm white.
+    const sun = new DirectionalLight(0xede4d0, 2.3)
     sun.position.set(0.6, 1, 0.35)
     this.scene.add(sun)
 
