@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 
-export type Page = 'home' | 'cauldron' | 'saved' | 'planner' | 'reference' | 'changelog'
+export type Page = 'home' | 'cauldron' | 'saved' | 'planner' | 'reference' | 'xray' | 'changelog'
 
-export const PAGES: readonly Page[] = ['home', 'cauldron', 'saved', 'planner', 'reference', 'changelog']
+export const PAGES: readonly Page[] = ['home', 'cauldron', 'saved', 'planner', 'reference', 'xray', 'changelog']
 
 // Where the app lives: the site serves it from a subfolder, and every page sits one level under it,
 // so the folder of whatever URL the app was opened at is its root. What a page shows within itself

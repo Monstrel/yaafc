@@ -4482,3 +4482,190 @@ a.reference-icon:hover {
   font-family: ui-monospace, monospace;
   font-size: 12px;
 }
+
+/* Blueprint X-ray */
+
+.xray .muted {
+  color: var(--muted);
+}
+
+.xray.dragging .xray-intro {
+  border-color: var(--accent);
+  border-style: dashed;
+}
+
+.xray-intro {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px 24px;
+  justify-content: space-between;
+}
+
+.xray-intro-text {
+  flex: 1 1 420px;
+}
+
+.xray-intro h2 {
+  margin: 0 0 6px;
+  font-size: 18px;
+}
+
+.xray-intro p {
+  margin: 0 0 8px;
+}
+
+.xray-intro code {
+  font-size: 12px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--panel-2);
+  overflow-wrap: anywhere;
+}
+
+.xray-actions {
+  margin-top: 4px;
+}
+
+.xray-summary {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  flex: 0 1 360px;
+}
+
+.xray-summary img {
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  flex: none;
+}
+
+.xray-summary h3 {
+  margin: 0 0 4px;
+  font-size: 15px;
+}
+
+.xray-summary p {
+  margin: 0 0 4px;
+}
+
+.xray-view {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  grid-template-areas: 'controls controls' 'scene side';
+  gap: 12px 16px;
+}
+
+.xray-controls {
+  grid-area: controls;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 20px;
+}
+
+.xray-cut {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.xray-cut span {
+  min-width: 170px;
+  font-variant-numeric: tabular-nums;
+}
+
+.xray-cut input[type='range'] {
+  width: min(260px, 50vw);
+  accent-color: var(--accent);
+}
+
+.xray-cut button {
+  min-width: 32px;
+}
+
+.xray-controls .segmented button {
+  padding: 6px 12px;
+}
+
+.xray-canvas-wrap {
+  grid-area: scene;
+  min-width: 0;
+}
+
+.xray-canvas {
+  height: min(70vh, 720px);
+  min-height: 320px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: radial-gradient(ellipse at 50% 40%, var(--panel-2), var(--bg));
+  overflow: hidden;
+  touch-action: none;
+}
+
+.xray-canvas canvas {
+  display: block;
+}
+
+.xray-hint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 8px 0 0;
+  font-size: 12px;
+}
+
+.xray-side {
+  grid-area: side;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.xray-picked h3 {
+  margin: 0 0 4px;
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.xray-picked p {
+  margin: 0 0 4px;
+}
+
+.xray-swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  flex: none;
+}
+
+.xray-legend {
+  list-style: none;
+  margin: 0;
+  padding: 12px 0 0;
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 6px;
+}
+
+.xray-legend li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+@media (max-width: 900px) {
+  .xray-view {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: 'controls' 'scene' 'side';
+  }
+
+  .xray-cut span {
+    flex-basis: 100%;
+  }
+}

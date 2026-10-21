@@ -42,7 +42,7 @@ import { UndoHistory, useUndo } from './lib/undo'
 import { buildInfo, useUpdateAvailable } from './lib/updateCheck'
 import { PAGES, usePage, type Page } from './lib/router'
 import { PageLink } from './components/PageLink'
-import { CauldronPage, ChangelogPage, HomePage, PlannerPage, ReferencePage, SavedPage } from './pages/lazyPages'
+import { CauldronPage, ChangelogPage, HomePage, PlannerPage, ReferencePage, SavedPage, XrayPage } from './pages/lazyPages'
 import { PageLoading } from './components/PageLoading'
 import { newReferenceView, referenceSearch, sanitizeReferenceView, type ReferenceView } from './lib/reference'
 import { ReferenceNav, type ReferenceEntry } from './lib/referenceNav'
@@ -332,6 +332,9 @@ export default function App() {
           <PageLink page="reference" current={tab === 'reference'} onNavigate={setTab}>
             Reference
           </PageLink>
+          <PageLink page="xray" current={tab === 'xray'} onNavigate={setTab}>
+            X-ray
+          </PageLink>
         </nav>
         <div className="header-actions">
           <button
@@ -442,6 +445,7 @@ export default function App() {
       <Suspense fallback={<PageLoading />}>
       {tab === 'home' && <HomePage onNavigate={setTab} />}
       {tab === 'changelog' && <ChangelogPage />}
+      {tab === 'xray' && <XrayPage />}
       {tab === 'cauldron' && (
         <CauldronPage
           saved={saved}

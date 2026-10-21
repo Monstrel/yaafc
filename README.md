@@ -35,7 +35,20 @@ cauldron recipes as steps in production chains, including self-feeding loops.
   written note, from a Markdown file in [reference/](reference/README.md) named after its item or
   machine.
 
+- **Blueprint X-ray**: open a blueprint file and see it in 3D, cut away from the top layer by layer,
+  to see inside a compact build. Click a building to see what it is. Buildings are coloured boxes
+  for now; the game's own models are to come.
+
 Saved recipes and plans live in the browser (localStorage). Use Export/Import to back them up.
+
+### Blueprint files
+
+The game saves each blueprint (`%LOCALAPPDATA%\AlchemyFactory\Saved\Blueprints\*.png`) as its
+preview picture, with the blueprint appended after the image: tagged properties for the header
+(title, description, icon, sizes), then the buildings as tagged properties compressed with Oodle
+Kraken, then a footer (the length of all that, and a marker) so it's found from the end of the file.
+`web/src/lib/blueprint/` reads it; the Kraken stream is unpacked by
+[ooz-wasm](https://github.com/SnosMe/ooz-wasm) (GPL-3.0), which the X-ray page downloads.
 
 ## Running the web app
 
@@ -154,3 +167,8 @@ Portal's stacks are its row's "Conversion amount" (1–50).
   runs starved. The planner warns and reports how many machines that takes.
 - Factory Efficiency and Logistics Efficiency scale by the same proportion per level. With equal
   levels no recipe is input-starved; starvation only appears when Factory Efficiency is ahead.
+
+## License
+
+[GPL-3.0-or-later](LICENSE). Alchemy Factory and its data belong to its developers; this is an
+unofficial fan tool.

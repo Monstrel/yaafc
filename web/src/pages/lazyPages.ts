@@ -10,6 +10,8 @@ export const CauldronPage = lazyChunk(() => import('./CauldronPage').then((m) =>
 export const SavedPage = lazyChunk(() => import('./SavedPage').then((m) => m.SavedPage), PageFailed)
 export const PlannerPage = lazyChunk(() => import('./PlannerPage').then((m) => m.PlannerPage), PageFailed)
 export const ReferencePage = lazyChunk(() => import('./ReferencePage').then((m) => m.ReferencePage), PageFailed)
+// With three.js, the bulk of its download: no other page needs it.
+export const XrayPage = lazyChunk(() => import('./XrayPage').then((m) => m.XrayPage), PageFailed)
 
 const pages: Record<Page, { preload: () => unknown }> = {
   home: HomePage,
@@ -18,6 +20,7 @@ const pages: Record<Page, { preload: () => unknown }> = {
   saved: SavedPage,
   planner: PlannerPage,
   reference: ReferencePage,
+  xray: XrayPage,
 }
 
 /** Starts downloading a page, and solving the plan for one that shows it, so it's likely there by the time it's opened. */

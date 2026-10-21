@@ -1,6 +1,7 @@
 {
   "name": "alchemy-calculator",
   "private": true,
+  "license": "GPL-3.0-or-later",
   "version": "0.0.0",
   "type": "module",
   "scripts": {
@@ -11,13 +12,16 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "ooz-wasm": "^2.0.0",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "three": "^0.186.1"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
+    "@types/three": "^0.186.0",
     "@vitejs/plugin-react": "^6.1.1",
     "highs": "^1.15.3",
     "oxlint": "^1.81.0",

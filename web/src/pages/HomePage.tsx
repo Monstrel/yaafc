@@ -64,6 +64,16 @@ export function HomePage({ onNavigate }: Props) {
             Open Reference
           </PageLink>
         </article>
+        <article className="panel mode-normal">
+          <h3>Blueprint X-ray</h3>
+          <p>
+            Open one of your blueprints in 3D and cut it away from the top, layer by layer, to see inside a compact
+            build without taking it apart in the game.
+          </p>
+          <PageLink page="xray" className="button" onNavigate={onNavigate}>
+            Open X-ray
+          </PageLink>
+        </article>
       </section>
 
       <section className="panel">
