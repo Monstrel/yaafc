@@ -8,6 +8,11 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
+## 2026-10-21T18:58Z
+
+- The Blueprint X-ray's colours are closer to the game's: wood is a pale tan rather than yellow,
+  and metal a cool grey, lit as by day.
+
 ## 2026-10-21T14:31Z
 
 - The Blueprint X-ray can hide building blocks: blocks, beams, lab stands, platforms, pillars,
