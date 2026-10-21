@@ -8,6 +8,23 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
+## 2026-10-21T14:01Z
+
+- New: the Blueprint X-ray, on its own X-ray tab. Open one of your blueprints and see it in 3D,
+  drawn with the game's own models, then cut it away from the top, layer by layer, to see how a
+  compact build works inside without taking it apart in the game. Turn it, move it and zoom with
+  the mouse (or a finger).
+- Open your blueprints folder and choose a blueprint by its name in the game, not its file's
+  random letters. Copy the folder's address from the page and paste it into the folder dialog to
+  go straight there. Your blueprints are read in your browser and never leave your computer.
+- The layer slider stands at the left of the view. Layers above the cut can be faint ghosts, to
+  keep their place in view, or hidden. Whatever the cut runs through is sliced open, its inside
+  dark.
+- Arrows show which way items go on belts, ramps, drawbridges, tunnels and conveyor lifts. Turn
+  them off with "Belt directions".
+- Click a building to see what it is, which layer it's on and what it makes, with a link to its
+  Reference page. Beside the view is a list of everything the blueprint is made of.
+
 ## 2026-10-20T11:36Z
 
 - In the Planner's flow chart, an item built separately now sits just left of the deepest row
