@@ -1,10 +1,12 @@
 import {
   AmbientLight,
+  BackSide,
   BoxGeometry,
   Color,
   DirectionalLight,
   DoubleSide,
   EdgesGeometry,
+  FrontSide,
   GridHelper,
   Group,
   HemisphereLight,
@@ -12,6 +14,7 @@ import {
   LineBasicMaterial,
   LineSegments,
   Matrix4,
+  MeshBasicMaterial,
   MeshLambertMaterial,
   NeutralToneMapping,
   PerspectiveCamera,
@@ -48,6 +51,10 @@ export type ModelStatus = { state: 'loading' } | { state: 'ready'; missing: stri
  * The cutaway goes by layers: each building (each part of a lift) fills whole layers, its height
  * in the game. Below the cut it shows whole, even where its model pokes a little over its top
  * layer (a cauldron's rim); above, it's a ghost or gone; across the cut, it's sliced at the cut.
+ *
+ * Looking into a sliced model through its cut, the view meets the back of its faces: those are
+ * drawn flat and dark, so the cut reads as solid. (Filling the cut plane itself, by counting faces
+ * in the stencil buffer, needs closed models, and most of the game's have gaps where nothing shows.)
  */
 export class BlueprintScene {
   private host: HTMLElement
@@ -68,6 +75,8 @@ export class BlueprintScene {
   private above = new Plane(new Vector3(0, 1, 0), 0)
   private ghostWhole = new MeshLambertMaterial({ color: 0xb8b0c4, transparent: true, opacity: 0.1, depthWrite: false })
   private ghostSliced = this.ghostWhole.clone()
+  /** The insides of sliced models, seen through their cut. */
+  private inside = new MeshBasicMaterial({ color: 0x1b1a20, side: BackSide })
   private boxMaterial = new MeshLambertMaterial({ side: DoubleSide })
   /** The models' materials as sliced at the cut, by the material they're made from. */
   private slicedMaterials = new Map<Material, Material>()
@@ -92,6 +101,7 @@ export class BlueprintScene {
     this.renderer.toneMapping = NeutralToneMapping
     host.appendChild(this.renderer.domElement)
     this.ghostSliced.clippingPlanes = [this.above]
+    this.inside.clippingPlanes = [this.below]
 
     // A soft room's light for the models' metal and gloss, a sun for shape.
     const pmrem = new PMREMGenerator(this.renderer)
@@ -224,7 +234,7 @@ export class BlueprintScene {
     this.renderer.setAnimationLoop(null)
     this.select(null)
     this.clear()
-    for (const m of [this.ghostWhole, this.ghostSliced, this.boxMaterial, ...this.slicedMaterials.values()]) m.dispose()
+    for (const m of [this.ghostWhole, this.ghostSliced, this.inside, this.boxMaterial, ...this.slicedMaterials.values()]) m.dispose()
     this.unitBox.dispose()
     this.scene.environment?.dispose()
     this.controls.dispose()
@@ -254,7 +264,7 @@ export class BlueprintScene {
       }
     })
     for (const { part, instances } of batches.values()) {
-      const batch = new Batch(part.geometry, part.materials, part.materials.map((m) => this.sliced(m)), this.ghostWhole, this.ghostSliced, instances)
+      const batch = new Batch(part.geometry, part.materials, part.materials.map((m) => this.sliced(m)), this.ghostWhole, this.ghostSliced, this.inside, instances)
       this.world.add(...batch.meshes)
       this.batches.push(batch)
       batch.cut(this.cut)
@@ -276,7 +286,7 @@ export class BlueprintScene {
         color: new Color(buildingColor(b.name, kind)),
       }
     })
-    const batch = new Batch(this.unitBox, [this.boxMaterial], [this.sliced(this.boxMaterial)], this.ghostWhole, this.ghostSliced, instances)
+    const batch = new Batch(this.unitBox, [this.boxMaterial], [this.sliced(this.boxMaterial)], this.ghostWhole, this.ghostSliced, this.inside, instances)
     this.scene.add(...batch.meshes)
     this.batches.push(batch)
     batch.cut(this.cut)
@@ -284,12 +294,16 @@ export class BlueprintScene {
     return batch
   }
 
-  /** A material as sliced at the cut: a copy (sharing its textures) that the cut's plane clips. */
+  /**
+   * A material as sliced at the cut: a copy (sharing its textures) that the cut's plane clips, its
+   * front faces only, as the back ones are the dark inside.
+   */
   private sliced(material: Material): Material {
     let made = this.slicedMaterials.get(material)
     if (!made) {
       made = material.clone()
       made.clippingPlanes = [this.below]
+      made.side = FrontSide
       this.slicedMaterials.set(material, made)
     }
     return made
@@ -369,14 +383,14 @@ interface Instance {
 
 /**
  * One mesh placed many times, sorted by the cut: whole where it fits below, sliced (solid below
- * the cut, a ghost above) where it crosses it, a ghost where it's all above.
+ * the cut, dark inside, a ghost above) where it crosses it, a ghost where it's all above.
  */
 class Batch {
   readonly whole: InstancedMesh
   readonly slicedSolid: InstancedMesh
-  readonly slicedGhost: InstancedMesh
-  readonly aboveGhost: InstancedMesh
   readonly meshes: InstancedMesh[]
+  private aboveGhost: InstancedMesh
+  private slicedOnes: InstancedMesh[]
   private instances: Instance[]
 
   constructor(
@@ -385,15 +399,16 @@ class Batch {
     sliced: Material[],
     ghostWhole: Material,
     ghostSliced: Material,
+    inside: Material,
     instances: Instance[],
   ) {
     const n = instances.length
     this.instances = instances
     this.whole = new InstancedMesh(geometry, solid.length === 1 ? solid[0] : solid, n)
     this.slicedSolid = new InstancedMesh(geometry, sliced.length === 1 ? sliced[0] : sliced, n)
-    this.slicedGhost = new InstancedMesh(geometry, ghostSliced, n)
     this.aboveGhost = new InstancedMesh(geometry, ghostWhole, n)
-    this.meshes = [this.whole, this.slicedSolid, this.slicedGhost, this.aboveGhost]
+    this.slicedOnes = [this.slicedSolid, new InstancedMesh(geometry, inside, n), new InstancedMesh(geometry, ghostSliced, n)]
+    this.meshes = [this.whole, this.aboveGhost, ...this.slicedOnes]
   }
 
   /** Sorts the instances for the bottom `layers` layers shown (Infinity: all). */
@@ -402,10 +417,7 @@ class Batch {
     for (const i of this.instances) {
       if (i.to <= layers) sorted.get(this.whole)!.push(i)
       else if (i.from >= layers) sorted.get(this.aboveGhost)!.push(i)
-      else {
-        sorted.get(this.slicedSolid)!.push(i)
-        sorted.get(this.slicedGhost)!.push(i)
-      }
+      else for (const mesh of this.slicedOnes) sorted.get(mesh)!.push(i)
     }
     for (const [mesh, list] of sorted) {
       list.forEach((i, at) => {
