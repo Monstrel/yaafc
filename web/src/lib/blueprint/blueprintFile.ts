@@ -19,7 +19,7 @@ export interface PlacedBuilding {
   name: string
   /** The cell at its lowest corner: x, y and layer. */
   cell: [number, number, number]
-  /** The cells it covers across x and y, as rotated. */
+  /** The cells it covers across x and y, as rotated (for a retractable one, its whole run). */
   area: [number, number]
   /** Quarter turns clockwise, seen from above. */
   rotation: 0 | 1 | 2 | 3
@@ -43,6 +43,11 @@ export interface PlacedBuilding {
    * its top end): their building table rows, and their own turns.
    */
   stack?: { name: string; rotation: PlacedBuilding['rotation'] }[]
+  /**
+   * For a retractable beam or conveyor passage, the parts laid out from it along the ground, a cell
+   * each (its body sections, then its far end): their building table rows, turns and origins.
+   */
+  run?: { name: string; rotation: PlacedBuilding['rotation']; position: [number, number, number] }[]
 }
 
 /**
@@ -52,6 +57,7 @@ export interface PlacedBuilding {
 export function layersOf(b: PlacedBuilding, rowLayers: (name: string) => number = () => 1): number {
   let top = rowLayers(b.name)
   b.stack?.forEach((s, k) => (top = Math.max(top, k + 1 + rowLayers(s.name))))
+  b.run?.forEach((s) => (top = Math.max(top, rowLayers(s.name))))
   return top
 }
 
@@ -107,6 +113,15 @@ export async function readBlueprint(file: Uint8Array): Promise<Blueprint> {
   // Where the blueprint was copied from, in cells: buildings' positions are in the world's units.
   const origin = list(obj(data.ParentGridGroup).Pivot).map((v) => num(v) * CELL)
   const buildings = list(data.Buildings).map((b) => placed(obj(b), origin))
+  // The game copies only the cells a retractable building starts from, so its run can reach past
+  // the blueprint's lowest corner: that corner moves out to take it in.
+  const shift = [0, 1].map((i) => Math.min(0, ...buildings.map((b) => b.cell[i])))
+  if (shift.some((s) => s < 0))
+    for (const b of buildings) {
+      b.cell = [b.cell[0] - shift[0], b.cell[1] - shift[1], b.cell[2]]
+      b.position = [b.position[0] - shift[0] * CELL, b.position[1] - shift[1] * CELL, b.position[2]]
+      for (const s of b.run ?? []) s.position = [s.position[0] - shift[0] * CELL, s.position[1] - shift[1] * CELL, s.position[2]]
+    }
   return {
     title: str(header.Title),
     description: str(header.Description),
@@ -138,11 +153,22 @@ function placed(b: Properties, origin: number[]): PlacedBuilding {
   if (alpha) out.color = [red, green, blue]
   // Every building saves a NoticeString; only a notice board's has anything in it.
   if (b.NoticeString) out.text = str(b.NoticeString)
-  // A lift's Extension lists its parts from the bottom, starting with itself; their own positions
-  // are left at zero.
+  // Its Extension lists its parts, starting with itself. A lift's go up from the bottom, their own
+  // positions left at zero; a retractable building's (ExpandableH) go along the ground, each at its own.
   const extension = list(b.Extension ?? []).map(obj)
-  if (extension.length > 1)
-    out.stack = extension.slice(1).map((e) => ({ name: str(e.BuildingName), rotation: ROTATIONS[str(e.GridRotation)] ?? 0 }))
+  const part = (e: Properties) => ({ name: str(e.BuildingName), rotation: ROTATIONS[str(e.GridRotation)] ?? 0 })
+  if (extension.length > 1 && b.SettleKeyGroupType === 'ESettleKeyGroupType::ExpandableH') {
+    out.run = extension.slice(1).map((e) => ({
+      ...part(e),
+      position: list(e.BuildPos).map((v, i) => num(v) - origin[i]) as [number, number, number],
+    }))
+    // It covers every cell its parts are in.
+    const cells = out.run.map((s) => s.position.map((v) => Math.floor(v / CELL)))
+    const low = [0, 1].map((i) => Math.min(out.cell[i], ...cells.map((c) => c[i])))
+    const high = [0, 1].map((i) => Math.max(out.cell[i] + out.area[i], ...cells.map((c) => c[i] + 1)))
+    out.cell = [low[0], low[1], z]
+    out.area = [high[0] - low[0], high[1] - low[1]]
+  } else if (extension.length > 1) out.stack = extension.slice(1).map(part)
   return out
 }
 

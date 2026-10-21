@@ -246,10 +246,11 @@ export class BlueprintScene {
     this.controls.maxDistance = distance * 4
     this.resetView()
 
-    // Each building, and for a lift the parts stacked on it.
+    // Each building, for a lift the parts stacked on it, and for a retractable one the parts along its run.
     const pieces: Piece[] = this.placed.flatMap((b, i) => [
       { building: i, name: b.name, variant: b.variant, rotation: b.rotation, layer: 0 },
       ...(b.stack ?? []).map((s, k) => ({ building: i, name: s.name, variant: undefined, rotation: s.rotation, layer: k + 1 })),
+      ...(b.run ?? []).map((s) => ({ building: i, name: s.name, variant: undefined, rotation: s.rotation, layer: 0, position: s.position })),
     ])
     this.onModels({ state: 'loading' })
     Promise.all(pieces.map((p) => buildingModel(p.name, p.variant))).then(
@@ -402,11 +403,20 @@ export class BlueprintScene {
         for (const s of flow.ins) place('in', toSide(s, ARROW_LIFT), piece, layers)
         for (const s of flow.outs) place('out', toSide(s, ARROW_LIFT), piece, layers)
       } else if (flow.kind === 'path') {
+        // A retractable passage's sections make one path, drawn from its first: from where items
+        // come into it to where they leave its last.
+        if (piece.position) return
+        const last = this.placed[piece.building].run ? pieces.findLastIndex((p) => p.building === piece.building) : at
+        const lastFlow = models[last].flow
+        const ends =
+          last !== at && lastFlow?.kind === 'path'
+            ? lastFlow.paths.map((p) => new Vector3(...p.to).applyMatrix4(origin.clone().invert().multiply(this.origin(pieces[last]))))
+            : flow.paths.map((p) => new Vector3(...p.to))
         // From the edge items come in by to the edge they leave by, over its deck, or its roof.
         const lift = flow.roof === undefined ? ARROW_LIFT : flow.roof + 0.8
-        for (const { from, to } of flow.paths) {
+        for (const [k, { from }] of flow.paths.entries()) {
           const start = new Vector3(from[0], from[1], from[2] + lift)
-          const run = new Vector3(...to).sub(new Vector3(...from))
+          const run = ends[k].clone().sub(new Vector3(...from))
           place(`line ${run.length().toFixed(1)}`, along(start, run), piece, layers)
         }
       } else {
@@ -486,9 +496,12 @@ export class BlueprintScene {
     return made
   }
 
-  /** Where a piece goes: its building's origin (a layer up for each part of a lift below it), and its turn. */
+  /**
+   * Where a piece goes: its own origin, or its building's (a layer up for each part of a lift below
+   * it), and its turn.
+   */
   private origin(piece: Piece): Matrix4 {
-    const [x, y, z] = this.placed[piece.building].position
+    const [x, y, z] = piece.position ?? this.placed[piece.building].position
     return new Matrix4()
       .makeTranslation(x, y, z + piece.layer * CELL)
       .multiply(new Matrix4().makeRotationZ((piece.rotation * Math.PI) / 2))
@@ -625,13 +638,17 @@ export class BlueprintScene {
   }
 }
 
-/** A building, or a part stacked on a lift (`layer` up from it), to draw with its models. */
+/**
+ * A building, a part stacked on a lift (`layer` up from it), or a part along a retractable one's
+ * run (at its own `position`), to draw with its models.
+ */
 interface Piece {
   building: number
   name: string
   variant: number | undefined
   rotation: PlacedBuilding['rotation']
   layer: number
+  position?: [number, number, number]
 }
 
 /** One placed mesh: where it goes, whose it is, and the layers it fills (from up to, not including, to). */

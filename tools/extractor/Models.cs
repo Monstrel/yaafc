@@ -184,8 +184,10 @@ static class ModelExporter
             // (a cauldron's rim pokes 1 unit over its two; an athanor stands 2.84 high).
             var top = Top(parts, meshBounds);
             entry["layers"] = Math.Max(1, (int)Math.Round(top / 25));
-            // Where items go through a ramp, drawbridge, tunnel or lift: for the X-ray's arrows.
-            if (secondary is "BeltSlope" or "ConveyerLift" && Ports(row["InOutList"]) is { Count: > 0 } ports)
+            // Where items go through a ramp, drawbridge, tunnel or lift, or each section of a retractable
+            // conveyor passage: for the X-ray's arrows.
+            if ((secondary is "BeltSlope" or "ConveyerLift" || key.StartsWith("ExpandableConveyorTunnel"))
+                && Ports(row["InOutList"]) is { Count: > 0 } ports)
             {
                 entry["ports"] = ports;
                 entry["top"] = Math.Round(top, 1);

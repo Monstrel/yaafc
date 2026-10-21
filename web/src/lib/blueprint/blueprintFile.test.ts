@@ -6,7 +6,7 @@ import { BlueprintError, blueprintLayers, layersOf, readBlueprint, type Blueprin
 const files = import.meta.glob<string>('../../test/blueprints/*.png', { query: '?inline', import: 'default', eager: true })
 const bytes = (dataUrl: string) => Uint8Array.from(atob(dataUrl.slice(dataUrl.indexOf(',') + 1)), (c) => c.charCodeAt(0))
 const fixture = (name: string) => bytes(files[`../../test/blueprints/${name}.png`])
-const FIXTURES = ['steel', 'soap-unit', 'fertile-catalyst', 'color-boxes', 'sign']
+const FIXTURES = ['steel', 'soap-unit', 'fertile-catalyst', 'color-boxes', 'sign', 'retract']
 
 describe('readBlueprint', () => {
   test('reads the header the game shows in its blueprint panel', async () => {
@@ -42,6 +42,23 @@ describe('readBlueprint', () => {
       expect(lift.stack!.slice(0, -1).every((s) => s.name === 'ConveyerLift_Body')).toBe(true)
     }
     expect(bp.buildings.filter((b) => !b.name.startsWith('ConveyerLift')).every((b) => !b.stack)).toBe(true)
+  })
+
+  test('lays a retractable building’s parts along the ground, a cell each, and takes in its whole run', async () => {
+    const bp = await readBlueprint(fixture('retract'))
+    // The game copied only the cells they start from (1 × 3); their runs reach 7 cells across.
+    expect(bp.size).toEqual([8, 3, 1])
+    for (const [name, y] of [['ExpandableBeam', 2], ['ExpandableConveyorTunnel', 0]] as const) {
+      const b = bp.buildings.find((b) => b.name === name)!
+      expect(b).toMatchObject({ cell: [0, y, 0], area: [8, 1], rotation: 1, position: [187.5, y * 25 + 12.5, 0] })
+      expect(b.stack).toBeUndefined()
+      // Its body sections, then its far end, a cell further along each.
+      expect(b.run!.map((s) => s.name)).toEqual([...Array(6).fill(`${name}Body`), name])
+      expect(b.run!.map((s) => s.position)).toEqual([6, 5, 4, 3, 2, 1, 0].map((x) => [x * 25 + 12.5, y * 25 + 12.5, 0]))
+      expect(layersOf(b)).toBe(1)
+    }
+    // The beam's far end faces back the other way.
+    expect(bp.buildings.find((b) => b.name === 'ExpandableBeam')!.run!.at(-1)!.rotation).toBe(3)
   })
 
   test('reads the colour each box is tinted, and none for an untinted one', async () => {

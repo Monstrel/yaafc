@@ -178,6 +178,11 @@ describe('portFlow', () => {
     })
   })
 
+  test('each section of a retractable conveyor passage carries items across its cell, over its roof', () => {
+    for (const name of ['ExpandableConveyorTunnel', 'ExpandableConveyorTunnelBody'])
+      expect(flow(name)).toMatchObject({ kind: 'path', paths: [{ from: [0, -12.5, 0], to: [0, 12.5, 0] }], roof: expect.any(Number) })
+  })
+
   test('a lift goes up or down, and its top end takes items out by, or in from, a side', () => {
     expect(flow('ConveyerLift_Upwards')).toEqual({ kind: 'lift', up: true, top: undefined })
     expect(flow('ConveyerLift_Downwards')).toEqual({ kind: 'lift', up: false, top: undefined })
