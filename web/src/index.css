@@ -4524,6 +4524,56 @@ a.reference-icon:hover {
 
 .xray-actions {
   margin-top: 4px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* The blueprints in the folder the player opened, by name. */
+.xray-shelf {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
+  gap: 6px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.xray-shelf button {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: 10px;
+  align-items: center;
+  padding: 6px 10px;
+  text-align: left;
+  background: var(--panel);
+}
+
+.xray-shelf button[aria-current='true'] {
+  border-color: var(--accent);
+}
+
+.xray-shelf img {
+  grid-row: span 2;
+  border-radius: 4px;
+}
+
+.xray-shelf-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.xray-shelf .muted {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .xray-summary {

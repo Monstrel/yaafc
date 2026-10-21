@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ChangeEvent, type DragEvent, type ReactNode } from 'react'
 import { BlueprintScene, type Above, type ModelStatus } from '../components/blueprint/blueprintScene'
 import { buildingName } from '../components/blueprint/buildingKinds'
 import { buildingInfo } from '../components/blueprint/models'
@@ -15,14 +15,25 @@ interface Opened {
   preview: string
 }
 
-// The blueprint open on the page, kept while the player visits other pages.
+/** A blueprint read from a folder (or several files) the player opened, to choose from by its name. */
+interface Shelved extends Opened {
+  modified: number
+}
+
+// The blueprint open on the page, and those read with it, kept while the player visits other pages.
 let kept: Opened | null = null
+let keptShelf: Shelved[] = []
+
+/** Where the game keeps blueprints, as Windows' file dialogs take it in their address bar. */
+const BLUEPRINT_FOLDER = '%LOCALAPPDATA%\\AlchemyFactory\\Saved\\Blueprints'
 const recipesByKey = new Map(gameRecipes.map((r) => [r.key, r]))
 
 export function XrayPage() {
   const [opened, setOpened] = useState<Opened | null>(kept)
   const [error, setError] = useState<string | null>(null)
   const [reading, setReading] = useState(false)
+  const [shelf, setShelf] = useState<Shelved[]>(keptShelf)
+  const [copied, setCopied] = useState(false)
   const [dragging, setDragging] = useState(false)
   // The layers shown, from the bottom: null for all of them.
   const [cut, setCut] = useState<number | null>(null)
@@ -39,47 +50,94 @@ export function XrayPage() {
   // Its layers counting the full height of what's on top (a drawbridge's towers), once known.
   const total = opened ? blueprintLayers(opened.blueprint, (key) => info.get(key.toLowerCase())?.layers ?? 1) : 1
   const fileInput = useRef<HTMLInputElement>(null)
+  const folder = useRef<HTMLInputElement | null>(null)
 
-  const open = async (file: File) => {
-    setReading(true)
+  const show = (entry: Opened) => {
+    // A preview not on the shelf belonged to the blueprint shown till now only.
+    if (kept && !keptShelf.some((e) => e.preview === kept!.preview)) URL.revokeObjectURL(kept.preview)
+    kept = entry
+    setOpened(entry)
+    setCut(null)
+    setPicked(null)
+  }
+
+  /**
+   * Reads blueprint files the player opened (or dropped): one shows at once; several, from a folder
+   * or picked together, go on the shelf to choose from by name, newest first.
+   */
+  const openFiles = async (files: File[]) => {
+    const pictures = files.filter((f) => /\.png$/i.test(f.name))
     setError(null)
-    try {
-      const blueprint = await readBlueprint(new Uint8Array(await file.arrayBuffer()))
-      if (kept) URL.revokeObjectURL(kept.preview)
-      kept = { blueprint, fileName: file.name, preview: URL.createObjectURL(file) }
-      setOpened(kept)
-      setCut(null)
-      setPicked(null)
-    } catch (e) {
-      setError(e instanceof BlueprintError ? e.message : `This file couldn’t be read: ${(e as Error).message}`)
-    } finally {
-      setReading(false)
+    if (!pictures.length) {
+      setError(files.length ? 'There are no blueprints here: the game saves them as .png files.' : 'No files were opened.')
+      return
     }
+    setReading(true)
+    const read = await Promise.all(
+      pictures.map(async (file) => {
+        try {
+          return { file, blueprint: await readBlueprint(new Uint8Array(await file.arrayBuffer())) }
+        } catch (e) {
+          if (pictures.length === 1) setError(e instanceof BlueprintError ? e.message : `This file couldn’t be read: ${(e as Error).message}`)
+          return null
+        }
+      }),
+    )
+    setReading(false)
+    const found = read.flatMap((r) => (r ? [r] : []))
+    if (!found.length) {
+      if (pictures.length > 1) setError('None of these files is an Alchemy Factory blueprint.')
+      return
+    }
+    if (found.length === 1) {
+      show({ blueprint: found[0].blueprint, fileName: found[0].file.name, preview: URL.createObjectURL(found[0].file) })
+      return
+    }
+    const entries = found
+      .map(({ file, blueprint }) => ({ blueprint, fileName: file.name, preview: URL.createObjectURL(file), modified: file.lastModified }))
+      .sort((a, b) => b.modified - a.modified)
+    for (const e of keptShelf) if (e.preview !== kept?.preview) URL.revokeObjectURL(e.preview)
+    keptShelf = entries
+    setShelf(entries)
   }
 
   const onDrop = (e: DragEvent) => {
     e.preventDefault()
     setDragging(false)
-    const file = e.dataTransfer.files[0]
-    if (file) void open(file)
+    void openFiles([...e.dataTransfer.files])
   }
 
+  const filesChosen = (e: ChangeEvent<HTMLInputElement>) => {
+    void openFiles([...(e.target.files ?? [])])
+    e.target.value = ''
+  }
   const chooser = (
     <>
-      <button type="button" className={opened ? undefined : 'primary'} onClick={() => fileInput.current?.click()} disabled={reading}>
-        {reading ? 'Reading…' : opened ? 'Open another blueprint' : 'Open a blueprint'}
+      <button type="button" className={opened ? undefined : 'primary'} onClick={() => folder.current?.click()} disabled={reading}>
+        {reading ? 'Reading…' : 'Open your blueprints folder'}
       </button>
+      <button type="button" onClick={() => fileInput.current?.click()} disabled={reading}>
+        Open a blueprint file
+      </button>
+      <button
+        type="button"
+        onClick={() => void navigator.clipboard.writeText(BLUEPRINT_FOLDER).then(() => setCopied(true))}
+        title="Paste it into the folder dialog’s address bar to go straight there"
+      >
+        {copied ? 'Copied the folder’s address' : 'Copy the folder’s address'}
+      </button>
+      {/* A folder picker: an ordinary file input that takes a folder. The File System Access API's
+          picker won't open anything under AppData\Local, where the game keeps blueprints. */}
       <input
-        ref={fileInput}
-        type="file"
-        accept="image/png,.png"
-        hidden
-        onChange={(e) => {
-          const file = e.target.files?.[0]
-          if (file) void open(file)
-          e.target.value = ''
+        ref={(input) => {
+          folder.current = input
+          input?.setAttribute('webkitdirectory', '')
         }}
+        type="file"
+        hidden
+        onChange={filesChosen}
       />
+      <input ref={fileInput} type="file" accept="image/png,.png" multiple hidden onChange={filesChosen} />
     </>
   )
 
@@ -103,11 +161,14 @@ export function XrayPage() {
             layer, to see how a compact build is put together.
           </p>
           <p className="muted">
-            The game saves your blueprints as pictures, in <code>%LOCALAPPDATA%\AlchemyFactory\Saved\Blueprints</code>. Their
-            names are random letters, so pick one by its preview. Open it here, or drop it on this page.
+            The game saves your blueprints as pictures with random names, in <code>{BLUEPRINT_FOLDER}</code>. Open that
+            folder to choose one by its name in the game (paste its address into the folder dialog), or open or drop a
+            blueprint file. Your browser may ask to “upload” the folder: its files stay on your computer, read here in the
+            page.
           </p>
           <div className="xray-actions">{chooser}</div>
           {error && <p className="warning">{error}</p>}
+          {shelf.length > 0 && <Shelf entries={shelf} current={opened?.preview} onOpen={show} />}
         </div>
         {opened && (
           <div className="xray-summary">
@@ -146,6 +207,28 @@ export function XrayPage() {
         </section>
       )}
     </div>
+  )
+}
+
+const shelfDate = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+
+/** The blueprints in the folder the player opened, by their names in the game, newest first. */
+function Shelf({ entries, current, onOpen }: { entries: Shelved[]; current?: string; onOpen: (entry: Shelved) => void }) {
+  return (
+    <ul className="xray-shelf" aria-label="Blueprints in the folder">
+      {entries.map((e) => (
+        <li key={e.preview}>
+          <button type="button" aria-current={e.preview === current ? 'true' : undefined} onClick={() => onOpen(e)}>
+            <img src={e.preview} alt="" width={36} height={36} />
+            <span className="xray-shelf-name">{e.blueprint.title || 'Untitled blueprint'}</span>
+            <span className="muted">
+              {e.blueprint.buildings.length} {noun(e.blueprint.buildings.length, 'building')} · {e.blueprint.size[0]} ×{' '}
+              {e.blueprint.size[1]} · {shelfDate.format(e.modified)}
+            </span>
+          </button>
+        </li>
+      ))}
+    </ul>
   )
 }
 
