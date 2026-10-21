@@ -36,8 +36,8 @@ cauldron recipes as steps in production chains, including self-feeding loops.
   machine.
 
 - **Blueprint X-ray**: open a blueprint file and see it in 3D, cut away from the top layer by layer,
-  to see inside a compact build, drawn with the game's own models and textures. Click a building
-  to see what it is.
+  to see inside a compact build, drawn with the game's own models and textures. Arrows on belts,
+  ramps, drawbridges, tunnels and lifts point the way items go. Click a building to see what it is.
 
 Saved recipes and plans live in the browser (localStorage). Use Export/Import to back them up.
 

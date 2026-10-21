@@ -2,6 +2,8 @@ import {
   AmbientLight,
   BackSide,
   BoxGeometry,
+  BufferAttribute,
+  BufferGeometry,
   Color,
   DirectionalLight,
   DoubleSide,
@@ -26,14 +28,13 @@ import {
   Vector2,
   Vector3,
   WebGLRenderer,
-  type BufferGeometry,
   type Material,
 } from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { CELL, layersOf, type Blueprint, type PlacedBuilding } from '../../lib/blueprint/blueprintFile'
 import { buildingColor, buildingKind, type BuildingKind } from './buildingKinds'
-import { buildingModel, onTextureLoad, type Part } from './models'
+import { buildingModel, onTextureLoad, type Flow, type Part, type Side } from './models'
 
 /** What the layers above the cut look like: gone, or a faint ghost to keep their place in view. */
 export type Above = 'hidden' | 'ghost'
@@ -67,6 +68,11 @@ export class BlueprintScene {
   private world = new Group()
   private batches: Batch[] = []
   private placeholders: Batch | null = null
+  /** The belts' direction arrows, in the game's space: a part of `batches` a click doesn't pick. */
+  private arrows = new Group()
+  private arrowBatches = new Set<Batch>()
+  private arrowMaterial = new MeshBasicMaterial({ color: 0xffc845, side: DoubleSide })
+  private arrowGeometries = new Map<string, BufferGeometry>()
   private placed: PlacedBuilding[] = []
   /** Each building's layers, from its own: how high it stands. */
   private heights: number[] = []
@@ -120,6 +126,7 @@ export class BlueprintScene {
     this.world.matrix.set(1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 1).multiply(new Matrix4().makeScale(1 / CELL, 1 / CELL, 1 / CELL))
     this.world.matrixWorldNeedsUpdate = true
     this.scene.add(this.world)
+    this.world.add(this.arrows)
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement)
     this.controls.enableDamping = true
@@ -179,6 +186,7 @@ export class BlueprintScene {
         this.heights = this.placed.map(() => 0)
         pieces.forEach((p, at) => (this.heights[p.building] = Math.max(this.heights[p.building], p.layer + models[at].layers)))
         this.addModels(pieces, models)
+        this.addArrows(pieces, models)
         // A building without models of its own is a box.
         const missing = pieces.flatMap((p, at) => (p.layer === 0 && !models[at].parts ? [p.building] : []))
         if (missing.length) this.addBoxes(missing)
@@ -199,6 +207,12 @@ export class BlueprintScene {
     this.above.constant = -plane
     this.ghostWhole.visible = this.ghostSliced.visible = above === 'ghost'
     for (const batch of this.batches) batch.cut(this.cut)
+    this.dirty = true
+  }
+
+  /** Shows or hides the arrows on belts that point the way items go. */
+  setArrows(shown: boolean) {
+    this.arrows.visible = shown
     this.dirty = true
   }
 
@@ -238,8 +252,8 @@ export class BlueprintScene {
     this.renderer.setAnimationLoop(null)
     this.select(null)
     this.clear()
-    for (const m of [this.ghostWhole, this.ghostSliced, this.inside, this.boxMaterial, ...this.slicedMaterials.values()]) m.dispose()
-    this.unitBox.dispose()
+    for (const m of [this.ghostWhole, this.ghostSliced, this.inside, this.boxMaterial, this.arrowMaterial, ...this.slicedMaterials.values()]) m.dispose()
+    for (const g of [this.unitBox, ...this.arrowGeometries.values()]) g.dispose()
     this.scene.environment?.dispose()
     this.controls.dispose()
     this.renderer.dispose()
@@ -274,6 +288,97 @@ export class BlueprintScene {
       batch.cut(this.cut)
     }
     this.dirty = true
+  }
+
+  /**
+   * An arrow on each belt and ramp, flat on its surface, the way items go: from each side they
+   * come in by to the middle, and from the middle out to each side they leave by, with a head.
+   */
+  private addArrows(pieces: Piece[], models: { flow?: Flow; layers: number }[]) {
+    const instances = new Map<string, Instance[]>()
+    const place = (geometry: string, matrix: Matrix4, piece: Piece, layers: number) => {
+      const from = this.placed[piece.building].cell[2] + piece.layer
+      const list = instances.get(geometry) ?? []
+      list.push({ matrix, building: piece.building, from, to: from + layers })
+      instances.set(geometry, list)
+    }
+    models.forEach(({ flow, layers }, at) => {
+      if (!flow) return
+      const piece = pieces[at]
+      const [x, y, z] = this.placed[piece.building].position
+      const origin = new Matrix4()
+        .makeTranslation(x, y, z + piece.layer * CELL)
+        .multiply(new Matrix4().makeRotationZ((piece.rotation * Math.PI) / 2))
+      // Flat at a height, turned to a side.
+      const toSide = (s: Side, height: number) =>
+        origin.clone().multiply(new Matrix4().makeTranslation(0, 0, height)).multiply(new Matrix4().makeRotationZ(SIDE_TURNS[s]))
+      // Along a line from a point, its face to `normal` (or, unless given, as near up as it can be).
+      const along = (from: Vector3, direction: Vector3, normal?: Vector3) => {
+        const x = direction.clone().normalize()
+        const z = normal ?? x.clone().cross(new Vector3(0, 0, 1).cross(x).normalize())
+        return origin.clone().multiply(new Matrix4().makeBasis(x, z.clone().cross(x), z).setPosition(from))
+      }
+      if (flow.kind === 'flat') {
+        // Just over the belt's top.
+        for (const s of flow.ins) place('in', toSide(s, ARROW_LIFT), piece, layers)
+        for (const s of flow.outs) place('out', toSide(s, ARROW_LIFT), piece, layers)
+      } else if (flow.kind === 'path') {
+        // From the edge items come in by to the edge they leave by, over its deck, or its roof.
+        const lift = flow.roof === undefined ? ARROW_LIFT : flow.roof + 0.8
+        for (const { from, to } of flow.paths) {
+          const start = new Vector3(from[0], from[1], from[2] + lift)
+          const run = new Vector3(...to).sub(new Vector3(...from))
+          place(`line ${run.length().toFixed(1)}`, along(start, run), piece, layers)
+        }
+      } else {
+        // Up or down each side of the lift's bottom and top ends, and across its top's lid.
+        const vertical = new Vector3(0, 0, flow.up ? 1 : -1)
+        for (const s of Object.keys(SIDE_TURNS) as Side[]) {
+          const face = new Vector3(Math.cos(SIDE_TURNS[s]), Math.sin(SIDE_TURNS[s]), 0)
+          const start = face.clone().multiplyScalar(LIFT_FACE).setZ(flow.up ? LIFT_ARROW_FROM : CELL - LIFT_ARROW_FROM)
+          place(`line ${LIFT_ARROW}`, along(start, vertical, face), piece, layers)
+        }
+        if (flow.top?.out) place('out', toSide(flow.top.side, CELL + 0.6), piece, layers)
+        else if (flow.top) {
+          // From the side items come in by to the middle, where they drop.
+          const turn = SIDE_TURNS[flow.top.side]
+          const edge = new Vector3(Math.cos(turn), Math.sin(turn), 0).multiplyScalar(CELL / 2)
+          place(`line ${(CELL / 2).toFixed(1)}`, along(edge.clone().setZ(CELL + 0.6), edge.clone().negate()), piece, layers)
+        }
+      }
+    })
+    for (const [key, list] of instances) {
+      const material = [this.arrowMaterial]
+      const batch = new Batch(this.arrowGeometry(key), material, material.map((m) => this.sliced(m)), this.ghostWhole, this.ghostSliced, this.inside, list)
+      this.arrows.add(...batch.meshes)
+      this.batches.push(batch)
+      this.arrowBatches.add(batch)
+      batch.cut(this.cut)
+    }
+    this.dirty = true
+  }
+
+  /**
+   * An arrow's shape, flat, pointing along +x, in the game's units: "in", a bar from the middle of
+   * a cell to its side; "out", a bar and head from the middle to near the side; "line <length>", a
+   * bar and head that long.
+   */
+  private arrowGeometry(key: string): BufferGeometry {
+    let made = this.arrowGeometries.get(key)
+    if (!made) {
+      const half = ARROW_WIDTH / 2
+      // Bars start a half-width behind the middle, so they meet without a notch at a turn.
+      const bar = (from: number, to: number) => [from, -half, to, -half, to, half, from, -half, to, half, from, half]
+      const head = (at: number) => [at, -ARROW_HEAD, at + ARROW_HEAD * 1.3, 0, at, ARROW_HEAD]
+      const length = key === 'in' ? CELL / 2 : key === 'out' ? CELL / 2 - 1 : Number(key.split(' ')[1])
+      const tip = length - ARROW_HEAD * 1.3
+      const flat = key === 'in' ? bar(-half, length) : key === 'out' ? [...bar(-half, tip), ...head(tip)] : [...bar(0, tip), ...head(tip)]
+      const points = new Float32Array(flat.length / 2 * 3)
+      for (let i = 0; i < flat.length / 2; i++) points.set([flat[i * 2], flat[i * 2 + 1], 0], i * 3)
+      made = new BufferGeometry().setAttribute('position', new BufferAttribute(points, 3))
+      this.arrowGeometries.set(key, made)
+    }
+    return made
   }
 
   /** Boxes over the cells of the buildings at `indices`, for those without models (yet). */
@@ -319,6 +424,7 @@ export class BlueprintScene {
       mesh.dispose()
     }
     this.batches = this.batches.filter((b) => b !== batch)
+    this.arrowBatches.delete(batch)
     this.dirty = true
   }
 
@@ -358,7 +464,7 @@ export class BlueprintScene {
       const sliced = new Set(this.batches.map((b) => b.slicedSolid))
       // Raycasting ignores clipping: on a sliced building, skip what the cut has taken away.
       const hit = raycaster
-        .intersectObjects(this.batches.flatMap((b) => [b.whole, b.slicedSolid]), false)
+        .intersectObjects(this.batches.filter((b) => !this.arrowBatches.has(b)).flatMap((b) => [b.whole, b.slicedSolid]), false)
         .find((h) => !sliced.has(h.object as InstancedMesh) || h.point.y < this.cut)
       const mesh = hit?.object as InstancedMesh | undefined
       const index = hit?.instanceId === undefined ? undefined : (mesh!.userData.buildings as number[])[hit.instanceId]
@@ -439,6 +545,17 @@ class Batch {
 }
 
 /** Where a building's box goes: its layers, a hair smaller so neighbours stay apart, flatter for belts and pipes. */
+/** The arrows' width, their heads' half-width, and how far over a belt's origin they lie, in the game's units. */
+const ARROW_WIDTH = 3.5
+const ARROW_HEAD = 4.5
+const ARROW_LIFT = 6.2
+/** A lift's arrows: their length, how far up a side they start, and how far out of its middle they lie. */
+const LIFT_ARROW = 16
+const LIFT_ARROW_FROM = 4.5
+const LIFT_FACE = 13.6
+/** Each side of a building's cell, as a turn from +x (right). */
+const SIDE_TURNS: Record<Side, number> = { r: 0, b: Math.PI / 2, l: Math.PI, u: -Math.PI / 2 }
+
 function boxTransform(b: PlacedBuilding, kind: BuildingKind, layers: number): [Vector3, Quaternion, Vector3] {
   const [x, y, z] = b.cell
   const [w, d] = b.area

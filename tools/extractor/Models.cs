@@ -170,7 +170,14 @@ static class ModelExporter
             if (secondary != null && ShapeTables.ContainsKey(secondary)) entry["shapes"] = secondary;
             // Its height in whole layers, as the game builds with it: its top, to the nearest layer
             // (a cauldron's rim pokes 1 unit over its two; an athanor stands 2.84 high).
-            entry["layers"] = Math.Max(1, (int)Math.Round(Top(parts, meshBounds) / 25));
+            var top = Top(parts, meshBounds);
+            entry["layers"] = Math.Max(1, (int)Math.Round(top / 25));
+            // Where items go through a ramp, drawbridge, tunnel or lift: for the X-ray's arrows.
+            if (secondary is "BeltSlope" or "ConveyerLift" && Ports(row["InOutList"]) is { Count: > 0 } ports)
+            {
+                entry["ports"] = ports;
+                entry["top"] = Math.Round(top, 1);
+            }
             buildings[key] = entry;
         }
 
@@ -209,6 +216,26 @@ static class ModelExporter
         long Size(string dir) => new DirectoryInfo(dir).GetFiles().Sum(f => f.Length);
         Console.WriteLine($"Wrote {buildings.Count} buildings, {shapes.Properties().Sum(t => ((JObject)t.Value).Count)} belt and pipe shapes, {meshes.Count} meshes " +
             $"({Size(meshDir) / 1024} KB), {textures.Count(t => t.Value != null)} textures ({Size(textureDir) / 1024} KB) to {outDir}");
+    }
+
+    /// <summary>
+    /// A building's belt ports: the cell (from its origin, before its turn) items come in at, the
+    /// sides of it they come in by (`in`) and go out by (`out`: r(ight, +x), b(ottom, +y), l(eft),
+    /// u(p)), and the cell they go out from, `offset` from it (a ramp's one along and one up).
+    /// </summary>
+    static JArray Ports(JToken? inOutList)
+    {
+        var ports = new JArray();
+        foreach (var p in inOutList ?? new JArray())
+        {
+            string Sides(string way) => string.Concat(new[] { ("Right", "r"), ("Bottom", "b"), ("Left", "l"), ("Up", "u") }
+                .Where(s => p[s.Item1]?[way]?.Value<bool>() == true).Select(s => s.Item2));
+            var (ins, outs) = (Sides("IsInput"), Sides("IsOutput"));
+            if (ins.Length + outs.Length == 0) continue;
+            JArray Cell(JToken? c) => new(c?["X"] ?? 0, c?["Y"] ?? 0, c?["Z"] ?? 0);
+            ports.Add(new JObject { ["at"] = Cell(p["position"]), ["in"] = ins, ["out"] = outs, ["offset"] = Cell(p["OffsetOutput"]) });
+        }
+        return ports;
     }
 
     /// The highest point of a building's parts, placed, in the game's units above its origin.

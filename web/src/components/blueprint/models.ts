@@ -22,12 +22,20 @@ import {
 
 interface Manifest {
   /** `shapes`: the table of shapes it takes as it joins its neighbours, for a belt or a pipe. */
-  /** `layers`: its height, in whole layers. */
-  buildings: Record<string, { name: string; parts: ManifestPart[]; layers: number; shapes?: string }>
+  /** `layers`: its height, in whole layers; `ports` and `top`, for a ramp, drawbridge, tunnel or lift. */
+  buildings: Record<string, { name: string; parts: ManifestPart[]; layers: number; shapes?: string; ports?: Port[]; top?: number }>
   /** By SecondaryType (Belt, Pipeline), then by a placed one's BaseActiveIndex. */
   shapes: Record<string, Record<string, ManifestPart & { sides?: string }>>
   meshes: Record<string, { materials: (string | null)[] }>
   materials: Record<string, ManifestMaterial>
+}
+
+/** Where items go through a building: see Models.cs. */
+export interface Port {
+  at: Point
+  in: string
+  out: string
+  offset: Point
 }
 
 interface ManifestPart {
@@ -89,12 +97,75 @@ export async function buildingInfo(): Promise<Map<string, { name: string; layers
  * names), and its height in layers. No parts for a building the game draws without static meshes,
  * which the X-ray shows as a box.
  */
-export async function buildingModel(name: string, variant: number | undefined): Promise<{ parts: Part[] | null; layers: number }> {
+export async function buildingModel(
+  name: string,
+  variant: number | undefined,
+): Promise<{ parts: Part[] | null; layers: number; flow?: Flow }> {
   const m = await loadManifest()
   // Rows are matched without case: the game saves its Catapult row's buildings as "catapult".
   const building = m.buildings[name] ?? Object.entries(m.buildings).find(([key]) => key.toLowerCase() === name.toLowerCase())?.[1]
   if (!building) return { parts: null, layers: 1 }
-  return { parts: await buildingParts(m, building, variant), layers: building.layers }
+  return { parts: await buildingParts(m, building, variant), layers: building.layers, flow: flowOf(m, name, variant) }
+}
+
+/** The sides of a building's cell, before its turn: right (+x), bottom (+y), left (−x), up (−y). */
+export type Side = 'r' | 'b' | 'l' | 'u'
+
+/** A point from a building's origin, before its turn, in the game's units. */
+export type Point = [number, number, number]
+
+/**
+ * Which way items go through a building, for the X-ray's arrows:
+ * - `flat`, a belt: in from some sides of its cell, out to others;
+ * - `path`, a ramp, drawbridge or tunnel: along each path, from the edge of the cell items come in
+ *   at to the edge of the one they leave from, on its deck (`roof`: over it, as a tunnel's is hidden);
+ * - `lift`, the bottom or top end of a conveyor lift, `up` or down, and for its top end the side of
+ *   it items leave by (going up) or come in by (going down).
+ */
+export type Flow =
+  | { kind: 'flat'; ins: Side[]; outs: Side[] }
+  | { kind: 'path'; paths: { from: Point; to: Point }[]; roof?: number }
+  | { kind: 'lift'; up: boolean; top?: { side: Side; out: boolean } }
+
+/** Each side, as a step to the next cell. */
+const SIDE_STEPS: Record<Side, Point> = { r: [1, 0, 0], b: [0, 1, 0], l: [-1, 0, 0], u: [0, -1, 0] }
+
+function flowOf(m: Manifest, name: string, variant: number | undefined): Flow | undefined {
+  if (name === 'Belt') {
+    const belts = m.shapes.Belt
+    const sides = variant === undefined ? undefined : belts[beltShape(variant, (k) => k in belts)]?.sides
+    return sides ? { kind: 'flat', ...beltSides(sides) } : undefined
+  }
+  const building = m.buildings[name]
+  return building?.ports ? portFlow(name, building.ports, building.top ?? 0) : undefined
+}
+
+/** A ramp's, drawbridge's, tunnel's or lift's flow, from its ports (see Models.cs). */
+export function portFlow(name: string, ports: Port[], top: number): Flow | undefined {
+  if (name.startsWith('ConveyerLift_')) {
+    const up = name.includes('Upwards')
+    const port = ports[0]
+    const side = (port?.out || port?.in) as Side | undefined
+    return { kind: 'lift', up, top: name.includes('_End') && side ? { side, out: Boolean(port.out) } : undefined }
+  }
+  const half = 12.5
+  const edge = (cell: Point, side: Side): Point => cell.map((c, i) => c * 25 + SIDE_STEPS[side][i] * half) as Point
+  const paths = ports
+    .filter((p) => p.in && p.out)
+    .map((p) => ({
+      from: edge(p.at, p.in[0] as Side),
+      to: edge(p.at.map((c, i) => c + p.offset[i]) as Point, p.out[0] as Side),
+    }))
+  if (!paths.length) return undefined
+  return { kind: 'path', paths, roof: /tunnel/i.test(name) ? top : undefined }
+}
+
+/** A belt shape's sides from its row's Desc: "bliro" is in from the bottom and left, out to the right. */
+export function beltSides(desc: string): { ins: Side[]; outs: Side[] } {
+  const ins: Side[] = []
+  const outs: Side[] = []
+  for (const [, sides, way] of desc.matchAll(/([lrub]+)([io])/g)) (way === 'i' ? ins : outs).push(...([...sides] as Side[]))
+  return { ins, outs }
 }
 
 async function buildingParts(m: Manifest, building: Manifest['buildings'][string], variant: number | undefined): Promise<Part[] | null> {

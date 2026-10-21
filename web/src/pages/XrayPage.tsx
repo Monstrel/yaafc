@@ -27,6 +27,7 @@ export function XrayPage() {
   // The layers shown, from the bottom: null for all of them.
   const [cut, setCut] = useState<number | null>(null)
   const [above, setAbove] = useState<Above>('ghost')
+  const [arrows, setArrows] = useState(true)
   const [picked, setPicked] = useState<PlacedBuilding | null>(null)
   const [models, setModels] = useState<ModelStatus | null>(null)
   // The game's names for buildings and their heights in layers, from the models' manifest.
@@ -131,11 +132,14 @@ export function XrayPage() {
             onLayers={(n) => setCut(n >= total ? null : n)}
             above={above}
             onAbove={setAbove}
+            arrows={arrows}
+            onArrows={setArrows}
           />
           <XrayScene
             blueprint={opened.blueprint}
             cut={cut !== null && cut < total ? cut : null}
             above={above}
+            arrows={arrows}
             picked={picked}
             onPick={setPicked}
             onModels={setModels}
@@ -157,12 +161,16 @@ function CutControls({
   onLayers,
   above,
   onAbove,
+  arrows,
+  onArrows,
 }: {
   total: number
   layers: number
   onLayers: (n: number) => void
   above: Above
   onAbove: (a: Above) => void
+  arrows: boolean
+  onArrows: (shown: boolean) => void
 }) {
   return (
     <div className="xray-controls">
@@ -185,6 +193,10 @@ function CutControls({
           </button>
         ))}
       </div>
+      <label className="xray-toggle" title="Arrows on belts, pointing the way items go">
+        <input type="checkbox" checked={arrows} onChange={(e) => onArrows(e.target.checked)} />
+        Belt directions
+      </label>
     </div>
   )
 }
@@ -193,6 +205,7 @@ function XrayScene({
   blueprint,
   cut,
   above,
+  arrows,
   picked,
   onPick,
   onModels,
@@ -201,6 +214,7 @@ function XrayScene({
   /** The layers shown, from the bottom: null for all of them. */
   cut: number | null
   above: Above
+  arrows: boolean
   picked: PlacedBuilding | null
   onPick: (b: PlacedBuilding | null) => void
   onModels: (status: ModelStatus) => void
@@ -223,6 +237,7 @@ function XrayScene({
   useEffect(() => scene.current!.show(blueprint), [blueprint])
   // After `show`, so a new blueprint keeps the cut the page has for it.
   useEffect(() => scene.current!.setCut(cut, above), [blueprint, cut, above])
+  useEffect(() => scene.current!.setArrows(arrows), [arrows])
   useEffect(() => scene.current!.select(picked), [blueprint, picked])
 
   return (

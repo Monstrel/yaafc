@@ -4588,6 +4588,17 @@ a.reference-icon:hover {
   padding: 6px 12px;
 }
 
+.xray-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.xray-toggle input {
+  accent-color: var(--accent);
+}
+
 .xray-canvas-wrap {
   grid-area: scene;
   min-width: 0;

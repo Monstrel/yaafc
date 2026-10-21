@@ -3,7 +3,7 @@ import { describe, expect, test } from 'vitest'
 import manifest from '../../../public/models/manifest.json'
 import frameUrl from '../../../public/models/meshes/SM_FrameSingle.mesh?inline'
 import { readBlueprint } from '../../lib/blueprint/blueprintFile'
-import { beltShape, readMesh } from './models'
+import { beltShape, beltSides, portFlow, readMesh, type Port } from './models'
 
 const bytes = (dataUrl: string) => Uint8Array.from(atob(dataUrl.slice(dataUrl.indexOf(',') + 1)), (c) => c.charCodeAt(0))
 const blueprints = import.meta.glob<string>('../../test/blueprints/*.png', { query: '?inline', import: 'default', eager: true })
@@ -131,5 +131,57 @@ describe('pipe shapes', () => {
       if (Number(key) & (1 << bit)) expect(reach, `side ${bit}`).toBeGreaterThan(12)
       else expect(reach, `side ${bit}`).toBeLessThan(5)
     })
+  })
+})
+
+describe('beltSides', () => {
+  test('reads which sides a belt shape takes items in from and sends them out to', () => {
+    expect(beltSides('liro')).toEqual({ ins: ['l'], outs: ['r'] })
+    expect(beltSides('bliro')).toEqual({ ins: ['b', 'l'], outs: ['r'] })
+    // A splitter's shape: one way in, three out.
+    expect(beltSides('irbluo')).toEqual({ ins: [], outs: ['r', 'b', 'l', 'u'] })
+    expect(beltSides('lirbuo')).toEqual({ ins: ['l'], outs: ['r', 'b', 'u'] })
+  })
+
+  test('every belt shape names its sides', () => {
+    // Some name only ways in (all four, "rbluio") or only ways out (all four, "irbluo").
+    for (const belt of Object.values(belts)) {
+      const { ins, outs } = beltSides(belt.sides)
+      expect(ins.length + outs.length, belt.sides).toBeGreaterThan(0)
+    }
+  })
+})
+
+describe('portFlow', () => {
+  const flow = (name: string) => {
+    const b = (manifest.buildings as unknown as Record<string, { ports?: Port[]; top?: number }>)[name]
+    return portFlow(name, b.ports!, b.top!)
+  }
+
+  test('a ramp runs from its low edge to its high one, a layer up over two cells', () => {
+    expect(flow('BeltSlopeUp')).toEqual({ kind: 'path', paths: [{ from: [-12.5, 0, 0], to: [37.5, 0, 25] }], roof: undefined })
+    // The way down: the same slope, the other way.
+    expect(flow('BeltSlopeDown')).toEqual({ kind: 'path', paths: [{ from: [37.5, 0, 25], to: [-12.5, 0, 0] }], roof: undefined })
+    expect(flow('BeltInclinedUp')).toMatchObject({ paths: [{ from: [-12.5, 0, 0], to: [62.5, 0, 75] }] })
+  })
+
+  test('a drawbridge spans its four cells; a tunnel’s arrow goes over its roof', () => {
+    expect(flow('DrawBridge')).toMatchObject({ paths: [{ from: [0, 12.5, 0], to: [0, -87.5, 0] }] })
+    expect(flow('DrawBridgeR')).toMatchObject({ paths: [{ from: [0, -87.5, 0], to: [0, 12.5, 0] }] })
+    expect(flow('ConveyorTunnel')).toMatchObject({ paths: [{ from: [0, -12.5, 0], to: [0, 87.5, 0] }], roof: 26.4 })
+    // Two ways through, crossing in its middle cell.
+    expect(flow('CrossTunnel')).toMatchObject({
+      paths: [
+        { from: [-37.5, 0, 0], to: [37.5, 0, 0] },
+        { from: [0, -37.5, 0], to: [0, 37.5, 0] },
+      ],
+    })
+  })
+
+  test('a lift goes up or down, and its top end takes items out by, or in from, a side', () => {
+    expect(flow('ConveyerLift_Upwards')).toEqual({ kind: 'lift', up: true, top: undefined })
+    expect(flow('ConveyerLift_Downwards')).toEqual({ kind: 'lift', up: false, top: undefined })
+    expect(flow('ConveyerLift_EndUpwards')).toEqual({ kind: 'lift', up: true, top: { side: 'b', out: true } })
+    expect(flow('ConveyerLift_EndDownwards')).toEqual({ kind: 'lift', up: false, top: { side: 'b', out: false } })
   })
 })
