@@ -4598,6 +4598,14 @@ a.reference-icon:hover {
   margin: 0 0 4px;
 }
 
+/* A blueprint's description, as its author wrote it: line by line, scrolling when it's long. */
+.xray-description {
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  max-height: 9.5em;
+  overflow-y: auto;
+}
+
 .xray-view {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 260px;

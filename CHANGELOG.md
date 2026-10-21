@@ -8,6 +8,13 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
+## 2026-10-21T14:14Z
+
+- The Blueprint X-ray opens blueprints from the Steam Workshop too. Steam downloads the ones you
+  subscribe to into a folder of their own, not the game's Blueprints folder. Copy its address from
+  the page and open it to choose from all of them by name.
+- A blueprint's description now keeps its author's line breaks, and scrolls when it's long.
+
 ## 2026-10-21T14:01Z
 
 - New: the Blueprint X-ray, on its own X-ray tab. Open one of your blueprints and see it in 3D,

@@ -26,6 +26,11 @@ let keptShelf: Shelved[] = []
 
 /** Where the game keeps blueprints, as Windows' file dialogs take it in their address bar. */
 const BLUEPRINT_FOLDER = '%LOCALAPPDATA%\\AlchemyFactory\\Saved\\Blueprints'
+/**
+ * Where Steam puts the blueprints a player subscribes to on the Workshop, a folder each (3669570 is
+ * the game's app id), in a default Steam install.
+ */
+const WORKSHOP_FOLDER = '%ProgramFiles(x86)%\\Steam\\steamapps\\workshop\\content\\3669570'
 const recipesByKey = new Map(gameRecipes.map((r) => [r.key, r]))
 
 export function XrayPage() {
@@ -33,7 +38,8 @@ export function XrayPage() {
   const [error, setError] = useState<string | null>(null)
   const [reading, setReading] = useState(false)
   const [shelf, setShelf] = useState<Shelved[]>(keptShelf)
-  const [copied, setCopied] = useState(false)
+  // The folder whose address was copied last.
+  const [copied, setCopied] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
   // The layers shown, from the bottom: null for all of them.
   const [cut, setCut] = useState<number | null>(null)
@@ -119,13 +125,19 @@ export function XrayPage() {
       <button type="button" onClick={() => fileInput.current?.click()} disabled={reading}>
         Open a blueprint file
       </button>
-      <button
-        type="button"
-        onClick={() => void navigator.clipboard.writeText(BLUEPRINT_FOLDER).then(() => setCopied(true))}
-        title="Paste it into the folder dialog’s address bar to go straight there"
-      >
-        {copied ? 'Copied the folder’s address' : 'Copy the folder’s address'}
-      </button>
+      {[
+        { folder: BLUEPRINT_FOLDER, label: 'your blueprints folder' },
+        { folder: WORKSHOP_FOLDER, label: 'the Workshop folder' },
+      ].map(({ folder, label }) => (
+        <button
+          key={folder}
+          type="button"
+          onClick={() => void navigator.clipboard.writeText(folder).then(() => setCopied(folder))}
+          title={`${folder}: paste it into the folder dialog’s address bar to go straight there`}
+        >
+          {copied === folder ? `Copied ${label}’s address` : `Copy ${label}’s address`}
+        </button>
+      ))}
       {/* A folder picker: an ordinary file input that takes a folder. The File System Access API's
           picker won't open anything under AppData\Local, where the game keeps blueprints. */}
       <input
@@ -163,8 +175,10 @@ export function XrayPage() {
           <p className="muted">
             The game saves your blueprints as pictures with random names, in <code>{BLUEPRINT_FOLDER}</code>. Open that
             folder to choose one by its name in the game (paste its address into the folder dialog), or open or drop a
-            blueprint file. Your browser may ask to “upload” the folder: its files stay on your computer, read here in the
-            page.
+            blueprint file. Blueprints you subscribe to on the Steam Workshop download elsewhere, a folder each, in{' '}
+            <code>{WORKSHOP_FOLDER}</code> (in your Steam library’s <code>steamapps</code> if it’s on another drive): open
+            that folder to choose from all of them. Your browser may ask to “upload” a folder: its files stay on your
+            computer, read here in the page.
           </p>
           <div className="xray-actions">{chooser}</div>
           {error && <p className="warning">{error}</p>}
@@ -175,7 +189,7 @@ export function XrayPage() {
             <img src={opened.preview} alt="" width={96} height={96} />
             <div>
               <h3>{opened.blueprint.title || 'Untitled blueprint'}</h3>
-              {opened.blueprint.description && <p>{opened.blueprint.description}</p>}
+              {opened.blueprint.description && <p className="xray-description">{opened.blueprint.description}</p>}
               <p className="muted">
                 {opened.blueprint.buildings.length} {noun(opened.blueprint.buildings.length, 'building')} ·{' '}
                 {opened.blueprint.size[0]} × {opened.blueprint.size[1]} cells · {total} {noun(total, 'layer')}
