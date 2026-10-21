@@ -8,6 +8,11 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
+## 2026-10-21T19:21Z
+
+- The Blueprint X-ray shows storage boxes in the colours you tinted them, on their wooden panels
+  as in the game.
+
 ## 2026-10-21T18:58Z
 
 - The Blueprint X-ray's colours are closer to the game's: wood is a pale tan rather than yellow,
