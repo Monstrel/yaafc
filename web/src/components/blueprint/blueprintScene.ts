@@ -33,7 +33,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { CELL, layersOf, type Blueprint, type PlacedBuilding } from '../../lib/blueprint/blueprintFile'
 import { buildingColor, buildingKind, type BuildingKind } from './buildingKinds'
-import { buildingModel, type Part } from './models'
+import { buildingModel, onTextureLoad, type Part } from './models'
 
 /** What the layers above the cut look like: gone, or a faint ghost to keep their place in view. */
 export type Above = 'hidden' | 'ghost'
@@ -83,6 +83,7 @@ export class BlueprintScene {
   private unitBox = new BoxGeometry(1, 1, 1)
   private dirty = true
   private resize: ResizeObserver
+  private stopTextures: () => void
   private home = { position: new Vector3(), target: new Vector3() }
   /** Layers shown: Infinity for all of them. */
   private cut = Infinity
@@ -129,6 +130,8 @@ export class BlueprintScene {
     this.resize = new ResizeObserver(() => this.fit())
     this.resize.observe(host)
     this.listenForClicks()
+    // The models show before their textures have downloaded: draw again as each one arrives.
+    this.stopTextures = onTextureLoad(() => (this.dirty = true))
     this.renderer.setAnimationLoop(() => {
       if (this.controls.update()) this.dirty = true
       if (!this.dirty) return
@@ -231,6 +234,7 @@ export class BlueprintScene {
     // Models still loading have nowhere to go.
     this.shown++
     this.resize.disconnect()
+    this.stopTextures()
     this.renderer.setAnimationLoop(null)
     this.select(null)
     this.clear()

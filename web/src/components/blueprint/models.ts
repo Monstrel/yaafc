@@ -62,6 +62,14 @@ const geometries = new Map<string, Promise<BufferGeometry>>()
 const materials = new Map<string, Material>()
 const textures = new Map<string, Texture>()
 const loader = new TextureLoader()
+/** Told each time a texture has downloaded, so a scene that draws only on change draws again. */
+const textureListeners = new Set<() => void>()
+
+/** Calls `listener` whenever a texture finishes loading; returns a function that stops it. */
+export function onTextureLoad(listener: () => void): () => void {
+  textureListeners.add(listener)
+  return () => textureListeners.delete(listener)
+}
 
 function loadManifest(): Promise<Manifest> {
   return (manifest ??= fetch(new URL('manifest.json', base())).then((r) => {
@@ -226,7 +234,7 @@ function material(spec: ManifestMaterial | undefined, name: string): Material {
 function texture(file: string, colorSpace: typeof SRGBColorSpace | typeof LinearSRGBColorSpace): Texture {
   let t = textures.get(file)
   if (!t) {
-    t = loader.load(new URL(`textures/${file}`, base()).href)
+    t = loader.load(new URL(`textures/${file}`, base()).href, () => textureListeners.forEach((listener) => listener()))
     t.colorSpace = colorSpace
     // Unreal's UVs start at the top of the picture, and run past it to repeat it.
     t.flipY = false
