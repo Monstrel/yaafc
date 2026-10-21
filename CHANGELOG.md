@@ -8,6 +8,12 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
+## 2026-10-21T20:25Z
+
+- The Blueprint X-ray lays retractable beams and retractable conveyor passages along the ground,
+  as you built them: they stood on end like towers. With belt directions on, an arrow runs along
+  each passage the way items go through it.
+
 ## 2026-10-21T19:55Z
 
 - The Blueprint X-ray writes what's on your notice boards, on both faces, in the game's lettering.
