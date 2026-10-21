@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import iconUrl from '../../../public/icons/building_AdvancedAlembic.png?inline'
-import { BlueprintError, layersOf, readBlueprint, type Blueprint } from './blueprintFile'
+import { BlueprintError, blueprintLayers, layersOf, readBlueprint, type Blueprint } from './blueprintFile'
 
 // Blueprints saved by the game (v1.1, build 20260527), as it writes them to Saved/Blueprints.
 const files = import.meta.glob<string>('../../test/blueprints/*.png', { query: '?inline', import: 'default', eager: true })
@@ -82,5 +82,24 @@ describe('readBlueprint', () => {
     const at = garbled.length - 400
     garbled.fill(0x55, at, at + 64)
     await expect(readBlueprint(garbled)).rejects.toThrow(BlueprintError)
+  })
+})
+
+describe('layers', () => {
+  test('a building fills its height in layers; a lift, its whole stack', async () => {
+    const bp = await readBlueprint(fixture('fertile-catalyst'))
+    const heights: Record<string, number> = { cauldron: 2, conveyerlift_endupwards: 1 }
+    const rowLayers = (name: string) => heights[name.toLowerCase()] ?? 1
+    const cauldron = bp.buildings.find((b) => b.name === 'Cauldron')!
+    expect(layersOf(cauldron, rowLayers)).toBe(2)
+    const lift = bp.buildings.find((b) => b.stack)!
+    expect(layersOf(lift, rowLayers)).toBe(1 + lift.stack!.length)
+  })
+
+  test('a blueprint counts the full height of what stands on its top layer', async () => {
+    const bp = await readBlueprint(fixture('steel'))
+    expect(blueprintLayers(bp, () => 1)).toBe(bp.size[2])
+    // Its Athanor stands on layer 2 (the top one), three layers high.
+    expect(blueprintLayers(bp, (name) => (name === 'Athanor' ? 3 : 1))).toBe(4)
   })
 })

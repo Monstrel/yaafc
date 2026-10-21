@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState, type DragEvent } from 'react'
 import { BlueprintScene, type Above, type ModelStatus } from '../components/blueprint/blueprintScene'
 import { buildingName } from '../components/blueprint/buildingKinds'
-import { buildingNames } from '../components/blueprint/models'
+import { buildingInfo } from '../components/blueprint/models'
 import { ItemLabel } from '../components/ItemIcon'
 import { ReferenceLink } from '../components/ReferenceLink'
-import { BlueprintError, readBlueprint, type Blueprint, type PlacedBuilding } from '../lib/blueprint/blueprintFile'
+import { BlueprintError, blueprintLayers, readBlueprint, type Blueprint, type PlacedBuilding } from '../lib/blueprint/blueprintFile'
 import { buildingsByKey, gameRecipes } from '../lib/gameData'
 import { noun } from '../lib/plural'
 
@@ -24,16 +24,19 @@ export function XrayPage() {
   const [error, setError] = useState<string | null>(null)
   const [reading, setReading] = useState(false)
   const [dragging, setDragging] = useState(false)
-  const [layers, setLayers] = useState(() => kept?.blueprint.size[2] ?? 1)
+  // The layers shown, from the bottom: null for all of them.
+  const [cut, setCut] = useState<number | null>(null)
   const [above, setAbove] = useState<Above>('ghost')
   const [picked, setPicked] = useState<PlacedBuilding | null>(null)
   const [models, setModels] = useState<ModelStatus | null>(null)
-  // The game's names for buildings, from the models' manifest (machines' are in the game data too).
-  const [names, setNames] = useState<Map<string, string>>(new Map())
+  // The game's names for buildings and their heights in layers, from the models' manifest.
+  const [info, setInfo] = useState<Map<string, { name: string; layers: number }>>(new Map())
   useEffect(() => {
-    buildingNames().then(setNames, () => {})
+    buildingInfo().then(setInfo, () => {})
   }, [])
-  const nameOf = (key: string) => names.get(key.toLowerCase()) ?? buildingName(key)
+  const nameOf = (key: string) => info.get(key.toLowerCase())?.name ?? buildingName(key)
+  // Its layers counting the full height of what's on top (a drawbridge's towers), once known.
+  const total = opened ? blueprintLayers(opened.blueprint, (key) => info.get(key.toLowerCase())?.layers ?? 1) : 1
   const fileInput = useRef<HTMLInputElement>(null)
 
   const open = async (file: File) => {
@@ -44,7 +47,7 @@ export function XrayPage() {
       if (kept) URL.revokeObjectURL(kept.preview)
       kept = { blueprint, fileName: file.name, preview: URL.createObjectURL(file) }
       setOpened(kept)
-      setLayers(blueprint.size[2])
+      setCut(null)
       setPicked(null)
     } catch (e) {
       setError(e instanceof BlueprintError ? e.message : `This file couldn’t be read: ${(e as Error).message}`)
@@ -113,8 +116,7 @@ export function XrayPage() {
               {opened.blueprint.description && <p>{opened.blueprint.description}</p>}
               <p className="muted">
                 {opened.blueprint.buildings.length} {noun(opened.blueprint.buildings.length, 'building')} ·{' '}
-                {opened.blueprint.size[0]} × {opened.blueprint.size[1]} cells · {opened.blueprint.size[2]}{' '}
-                {noun(opened.blueprint.size[2], 'layer')}
+                {opened.blueprint.size[0]} × {opened.blueprint.size[1]} cells · {total} {noun(total, 'layer')}
               </p>
             </div>
           </div>
@@ -124,15 +126,15 @@ export function XrayPage() {
       {opened && (
         <section className="panel xray-view">
           <CutControls
-            total={opened.blueprint.size[2]}
-            layers={layers}
-            onLayers={setLayers}
+            total={total}
+            layers={Math.min(cut ?? total, total)}
+            onLayers={(n) => setCut(n >= total ? null : n)}
             above={above}
             onAbove={setAbove}
           />
           <XrayScene
             blueprint={opened.blueprint}
-            layers={layers}
+            cut={cut !== null && cut < total ? cut : null}
             above={above}
             picked={picked}
             onPick={setPicked}
@@ -189,14 +191,15 @@ function CutControls({
 
 function XrayScene({
   blueprint,
-  layers,
+  cut,
   above,
   picked,
   onPick,
   onModels,
 }: {
   blueprint: Blueprint
-  layers: number
+  /** The layers shown, from the bottom: null for all of them. */
+  cut: number | null
   above: Above
   picked: PlacedBuilding | null
   onPick: (b: PlacedBuilding | null) => void
@@ -219,7 +222,7 @@ function XrayScene({
   }, [onPick, onModels])
   useEffect(() => scene.current!.show(blueprint), [blueprint])
   // After `show`, so a new blueprint keeps the cut the page has for it.
-  useEffect(() => scene.current!.setCut(layers, above), [blueprint, layers, above])
+  useEffect(() => scene.current!.setCut(cut, above), [blueprint, cut, above])
   useEffect(() => scene.current!.select(picked), [blueprint, picked])
 
   return (

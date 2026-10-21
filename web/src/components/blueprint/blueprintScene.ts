@@ -23,14 +23,14 @@ import {
   Vector2,
   Vector3,
   WebGLRenderer,
+  type BufferGeometry,
   type Material,
-  type Object3D,
 } from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { CELL, layersOf, type Blueprint, type PlacedBuilding } from '../../lib/blueprint/blueprintFile'
 import { buildingColor, buildingKind, type BuildingKind } from './buildingKinds'
-import { buildingParts, type Part } from './models'
+import { buildingModel, type Part } from './models'
 
 /** What the layers above the cut look like: gone, or a faint ghost to keep their place in view. */
 export type Above = 'hidden' | 'ghost'
@@ -43,9 +43,11 @@ export type ModelStatus = { state: 'loading' } | { state: 'ready'; missing: stri
  * Unreal's left-handed space right-handed, so nothing is mirrored.
  *
  * Until the models are in, and for buildings the game draws without static meshes, each building
- * is a box over its cells. The cutaway is a horizontal clipping plane: solids keep what's below
- * it, and ghosts (the same shapes, faint) what's above, so a building taller than a layer is
- * sliced where the cut runs.
+ * is a box over its cells.
+ *
+ * The cutaway goes by layers: each building (each part of a lift) fills whole layers, its height
+ * in the game. Below the cut it shows whole, even where its model pokes a little over its top
+ * layer (a cauldron's rim); above, it's a ghost or gone; across the cut, it's sliced at the cut.
  */
 export class BlueprintScene {
   private host: HTMLElement
@@ -53,26 +55,28 @@ export class BlueprintScene {
   private scene = new Scene()
   private camera = new PerspectiveCamera(40, 1, 0.1, 1000)
   private controls: OrbitControls
-  private content: Object3D[] = []
-  /** The meshes a click can pick, each with the building behind each of its instances. */
-  private pickable: InstancedMesh[] = []
+  private floor: GridHelper | null = null
+  /** The models, in the game's space. */
+  private world = new Group()
+  private batches: Batch[] = []
+  private placeholders: Batch | null = null
   private placed: PlacedBuilding[] = []
+  /** Each building's layers, from its own: how high it stands. */
+  private heights: number[] = []
   private selection: LineSegments | null = null
   private below = new Plane(new Vector3(0, -1, 0), 0)
   private above = new Plane(new Vector3(0, 1, 0), 0)
-  private ghost = new MeshLambertMaterial({
-    color: 0xb8b0c4,
-    transparent: true,
-    opacity: 0.1,
-    depthWrite: false,
-    clippingPlanes: [this.above],
-  })
-  private boxMaterial = new MeshLambertMaterial({ side: DoubleSide, clippingPlanes: [this.below] })
+  private ghostWhole = new MeshLambertMaterial({ color: 0xb8b0c4, transparent: true, opacity: 0.1, depthWrite: false })
+  private ghostSliced = this.ghostWhole.clone()
+  private boxMaterial = new MeshLambertMaterial({ side: DoubleSide })
+  /** The models' materials as sliced at the cut, by the material they're made from. */
+  private slicedMaterials = new Map<Material, Material>()
   private unitBox = new BoxGeometry(1, 1, 1)
   private dirty = true
   private resize: ResizeObserver
   private home = { position: new Vector3(), target: new Vector3() }
-  private cutHeight = Infinity
+  /** Layers shown: Infinity for all of them. */
+  private cut = Infinity
   private shown = 0
 
   /** Called with the building clicked, or null for a click on nothing. */
@@ -87,6 +91,7 @@ export class BlueprintScene {
     this.renderer.localClippingEnabled = true
     this.renderer.toneMapping = NeutralToneMapping
     host.appendChild(this.renderer.domElement)
+    this.ghostSliced.clippingPlanes = [this.above]
 
     // A soft room's light for the models' metal and gloss, a sun for shape.
     const pmrem = new PMREMGenerator(this.renderer)
@@ -98,6 +103,12 @@ export class BlueprintScene {
     const sun = new DirectionalLight(0xffffff, 1.6)
     sun.position.set(0.6, 1, 0.35)
     this.scene.add(sun)
+
+    // Unreal's space to the scene's: x stays, y and z swap, and 25 units make a cell.
+    this.world.matrixAutoUpdate = false
+    this.world.matrix.set(1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 1).multiply(new Matrix4().makeScale(1 / CELL, 1 / CELL, 1 / CELL))
+    this.world.matrixWorldNeedsUpdate = true
+    this.scene.add(this.world)
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement)
     this.controls.enableDamping = true
@@ -120,12 +131,13 @@ export class BlueprintScene {
     this.clear()
     const shown = ++this.shown
     this.placed = blueprint.buildings
+    this.heights = this.placed.map((b) => layersOf(b))
     const [w, d, h] = blueprint.size
 
-    const floor = new GridHelper(Math.max(w, d) + 4, Math.max(w, d) + 4, 0x6d6478, 0x3c3645)
-    floor.position.set(w / 2, 0, d / 2)
-    this.add(floor)
-    const boxes = this.addBoxes(this.placed.map((_, i) => i))
+    this.floor = new GridHelper(Math.max(w, d) + 4, Math.max(w, d) + 4, 0x6d6478, 0x3c3645)
+    this.floor.position.set(w / 2, 0, d / 2)
+    this.scene.add(this.floor)
+    this.placeholders = this.addBoxes(this.placed.map((_, i) => i))
 
     // Looking down at it from a corner, far enough back to see all of it across the narrower of
     // the view's width and height (a phone's view is taller than it's wide).
@@ -146,13 +158,16 @@ export class BlueprintScene {
       ...(b.stack ?? []).map((s, k) => ({ building: i, name: s.name, variant: undefined, rotation: s.rotation, layer: k + 1 })),
     ])
     this.onModels({ state: 'loading' })
-    Promise.all(pieces.map((p) => buildingParts(p.name, p.variant))).then(
-      (parts) => {
+    Promise.all(pieces.map((p) => buildingModel(p.name, p.variant))).then(
+      (models) => {
         if (shown !== this.shown) return
-        this.remove(boxes)
-        this.addModels(pieces, parts)
+        if (this.placeholders) this.removeBatch(this.placeholders)
+        this.placeholders = null
+        this.heights = this.placed.map(() => 0)
+        pieces.forEach((p, at) => (this.heights[p.building] = Math.max(this.heights[p.building], p.layer + models[at].layers)))
+        this.addModels(pieces, models)
         // A building without models of its own is a box.
-        const missing = pieces.flatMap((p, at) => (p.layer === 0 && !parts[at] ? [p.building] : []))
+        const missing = pieces.flatMap((p, at) => (p.layer === 0 && !models[at].parts ? [p.building] : []))
         if (missing.length) this.addBoxes(missing)
         this.onModels({ state: 'ready', missing: [...new Set(missing.map((i) => this.placed[i].name))] })
       },
@@ -162,17 +177,19 @@ export class BlueprintScene {
     )
   }
 
-  /** Shows the layers below `layers` (all of them for Infinity); the rest are hidden or ghosts. */
-  setCut(layers: number, above: Above) {
-    // Just under the layer line, so a building's top isn't cut where it meets the next layer.
-    this.cutHeight = layers - 0.001
-    this.below.constant = this.cutHeight
-    this.above.constant = -this.cutHeight
-    this.ghost.visible = above === 'ghost'
+  /** Shows the bottom `layers` layers (null: all of them); the rest are ghosts or hidden. */
+  setCut(layers: number | null, above: Above) {
+    this.cut = layers ?? Infinity
+    // Far above everything rather than Infinity, which shaders needn't take.
+    const plane = Math.min(this.cut, 1e6)
+    this.below.constant = plane
+    this.above.constant = -plane
+    this.ghostWhole.visible = this.ghostSliced.visible = above === 'ghost'
+    for (const batch of this.batches) batch.cut(this.cut)
     this.dirty = true
   }
 
-  /** Outlines a building's cells (or none), as picked. */
+  /** Outlines a building's layers (or none), as picked. */
   select(building: PlacedBuilding | null) {
     if (this.selection) {
       this.scene.remove(this.selection)
@@ -185,7 +202,7 @@ export class BlueprintScene {
       this.selection.renderOrder = 1
       const [x, y, z] = building.cell
       const [w, d] = building.area
-      const h = layersOf(building)
+      const h = this.heights[this.placed.indexOf(building)] ?? 1
       this.selection.position.set(x + w / 2, z + h / 2, y + d / 2)
       this.selection.scale.set(w + 0.04, h + 0.04, d + 0.04)
       this.scene.add(this.selection)
@@ -201,12 +218,13 @@ export class BlueprintScene {
   }
 
   dispose() {
+    // Models still loading have nowhere to go.
+    this.shown++
     this.resize.disconnect()
     this.renderer.setAnimationLoop(null)
     this.select(null)
     this.clear()
-    this.ghost.dispose()
-    this.boxMaterial.dispose()
+    for (const m of [this.ghostWhole, this.ghostSliced, this.boxMaterial, ...this.slicedMaterials.values()]) m.dispose()
     this.unitBox.dispose()
     this.scene.environment?.dispose()
     this.controls.dispose()
@@ -215,101 +233,87 @@ export class BlueprintScene {
   }
 
   /**
-   * The models, one instanced mesh per mesh and set of materials, drawn twice: solid below the
-   * cut, ghost above. Each instance is its piece's origin (its building's, a layer up for each
-   * piece of a lift below it) and turn, then its part's place.
+   * The models, one batch per mesh and set of materials. Each instance is its piece's origin (its
+   * building's, a layer up for each part of a lift below it) and turn, then its part's place.
    */
-  private addModels(pieces: Piece[], parts: (Part[] | null)[]) {
-    // Unreal's space to the scene's: x stays, y and z swap, and 25 units make a cell.
-    const world = new Group()
-    world.matrixAutoUpdate = false
-    world.matrix.set(1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 1).multiply(new Matrix4().makeScale(1 / CELL, 1 / CELL, 1 / CELL))
-    world.matrixWorldNeedsUpdate = true
-
-    const batches = new Map<string, { part: Part; matrices: Matrix4[]; buildings: number[] }>()
-    parts.forEach((list, at) => {
-      if (!list) return
+  private addModels(pieces: Piece[], models: { parts: Part[] | null; layers: number }[]) {
+    const batches = new Map<string, { part: Part; instances: Instance[] }>()
+    models.forEach(({ parts, layers }, at) => {
+      if (!parts) return
       const piece = pieces[at]
-      const [x, y, z] = this.placed[piece.building].position
+      const b = this.placed[piece.building]
+      const [x, y, z] = b.position
       const origin = new Matrix4()
         .makeTranslation(x, y, z + piece.layer * CELL)
         .multiply(new Matrix4().makeRotationZ((piece.rotation * Math.PI) / 2))
-      for (const part of list) {
+      const from = b.cell[2] + piece.layer
+      for (const part of parts) {
         let batch = batches.get(part.key)
-        if (!batch) batches.set(part.key, (batch = { part, matrices: [], buildings: [] }))
-        batch.matrices.push(origin.clone().multiply(part.matrix))
-        batch.buildings.push(piece.building)
+        if (!batch) batches.set(part.key, (batch = { part, instances: [] }))
+        batch.instances.push({ matrix: origin.clone().multiply(part.matrix), building: piece.building, from, to: from + layers })
       }
     })
-    for (const { part, matrices, buildings } of batches.values()) {
-      const solid = new InstancedMesh(part.geometry, part.materials.map(clipped(this.below)), matrices.length)
-      const ghost = new InstancedMesh(part.geometry, this.ghost, matrices.length)
-      matrices.forEach((m, at) => {
-        solid.setMatrixAt(at, m)
-        ghost.setMatrixAt(at, m)
-      })
-      solid.userData.buildings = buildings
-      solid.computeBoundingSphere()
-      ghost.computeBoundingSphere()
-      this.pickable.push(solid)
-      world.add(solid, ghost)
+    for (const { part, instances } of batches.values()) {
+      const batch = new Batch(part.geometry, part.materials, part.materials.map((m) => this.sliced(m)), this.ghostWhole, this.ghostSliced, instances)
+      this.world.add(...batch.meshes)
+      this.batches.push(batch)
+      batch.cut(this.cut)
     }
-    this.add(world)
+    this.dirty = true
   }
 
   /** Boxes over the cells of the buildings at `indices`, for those without models (yet). */
-  private addBoxes(indices: number[]): Object3D[] {
-    if (!indices.length) return []
-    const solid = new InstancedMesh(this.unitBox, this.boxMaterial, indices.length)
-    const ghost = new InstancedMesh(this.unitBox, this.ghost, indices.length)
-    const m = new Matrix4()
-    const color = new Color()
-    indices.forEach((i, at) => {
+  private addBoxes(indices: number[]): Batch | null {
+    if (!indices.length) return null
+    const instances = indices.map((i): Instance => {
       const b = this.placed[i]
       const kind = buildingKind(b.name)
-      m.compose(...boxTransform(b, kind))
-      solid.setMatrixAt(at, m)
-      ghost.setMatrixAt(at, m)
-      solid.setColorAt(at, color.set(buildingColor(b.name, kind)))
+      return {
+        matrix: new Matrix4().compose(...boxTransform(b, kind, this.heights[i])),
+        building: i,
+        from: b.cell[2],
+        to: b.cell[2] + this.heights[i],
+        color: new Color(buildingColor(b.name, kind)),
+      }
     })
-    solid.userData.buildings = indices
-    this.pickable.push(solid)
-    this.add(solid, ghost)
-    return [solid, ghost]
+    const batch = new Batch(this.unitBox, [this.boxMaterial], [this.sliced(this.boxMaterial)], this.ghostWhole, this.ghostSliced, instances)
+    this.scene.add(...batch.meshes)
+    this.batches.push(batch)
+    batch.cut(this.cut)
+    this.dirty = true
+    return batch
   }
 
-  private add(...objects: Object3D[]) {
-    for (const o of objects) {
-      this.scene.add(o)
-      this.content.push(o)
+  /** A material as sliced at the cut: a copy (sharing its textures) that the cut's plane clips. */
+  private sliced(material: Material): Material {
+    let made = this.slicedMaterials.get(material)
+    if (!made) {
+      made = material.clone()
+      made.clippingPlanes = [this.below]
+      this.slicedMaterials.set(material, made)
     }
+    return made
+  }
+
+  private removeBatch(batch: Batch) {
+    for (const mesh of batch.meshes) {
+      mesh.removeFromParent()
+      mesh.dispose()
+    }
+    this.batches = this.batches.filter((b) => b !== batch)
     this.dirty = true
   }
 
-  /**
-   * Takes objects out of the scene. Geometries, materials and textures stay: the models' are
-   * cached for the next blueprint, and the boxes' and ghosts' belong to the scene.
-   */
-  private remove(objects: Object3D[]) {
-    for (const o of objects) {
-      this.scene.remove(o)
-      o.traverse((x) => {
-        if (x instanceof InstancedMesh) x.dispose()
-        if (x instanceof GridHelper) {
-          x.geometry.dispose()
-          ;(x.material as Material).dispose()
-        }
-      })
-    }
-    const gone = new Set(objects)
-    this.content = this.content.filter((o) => !gone.has(o))
-    this.pickable = this.pickable.filter((m) => !gone.has(m) && !objects.some((o) => o !== m && isInside(m, o)))
-    this.dirty = true
-  }
-
+  /** Takes the blueprint out. Geometries, materials and textures stay: the models' are cached for the next. */
   private clear() {
-    this.remove([...this.content])
-    this.pickable = []
+    for (const batch of [...this.batches]) this.removeBatch(batch)
+    this.placeholders = null
+    if (this.floor) {
+      this.scene.remove(this.floor)
+      this.floor.geometry.dispose()
+      ;(this.floor.material as Material).dispose()
+      this.floor = null
+    }
   }
 
   private fit() {
@@ -333,9 +337,11 @@ export class BlueprintScene {
       const rect = canvas.getBoundingClientRect()
       const pointer = new Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1)
       raycaster.setFromCamera(pointer, this.camera)
-      // Raycasting ignores clipping: skip what the cut has taken away, down to the underside of a
-      // building that sits on the cut line.
-      const hit = raycaster.intersectObjects(this.pickable, false).find((h) => h.point.y < this.cutHeight)
+      const sliced = new Set(this.batches.map((b) => b.slicedSolid))
+      // Raycasting ignores clipping: on a sliced building, skip what the cut has taken away.
+      const hit = raycaster
+        .intersectObjects(this.batches.flatMap((b) => [b.whole, b.slicedSolid]), false)
+        .find((h) => !sliced.has(h.object as InstancedMesh) || h.point.y < this.cut)
       const mesh = hit?.object as InstancedMesh | undefined
       const index = hit?.instanceId === undefined ? undefined : (mesh!.userData.buildings as number[])[hit.instanceId]
       this.onPick(index === undefined ? null : this.placed[index])
@@ -352,22 +358,75 @@ interface Piece {
   layer: number
 }
 
-/** The models' own materials, sharing the scene's clipping plane (cached ones are set once). */
-const clipped = (plane: Plane) => (material: Material) => {
-  material.clippingPlanes = [plane]
-  return material
+/** One placed mesh: where it goes, whose it is, and the layers it fills (from up to, not including, to). */
+interface Instance {
+  matrix: Matrix4
+  building: number
+  from: number
+  to: number
+  color?: Color
 }
 
-function isInside(child: Object3D, parent: Object3D): boolean {
-  for (let o = child.parent; o; o = o.parent) if (o === parent) return true
-  return false
+/**
+ * One mesh placed many times, sorted by the cut: whole where it fits below, sliced (solid below
+ * the cut, a ghost above) where it crosses it, a ghost where it's all above.
+ */
+class Batch {
+  readonly whole: InstancedMesh
+  readonly slicedSolid: InstancedMesh
+  readonly slicedGhost: InstancedMesh
+  readonly aboveGhost: InstancedMesh
+  readonly meshes: InstancedMesh[]
+  private instances: Instance[]
+
+  constructor(
+    geometry: BufferGeometry,
+    solid: Material[],
+    sliced: Material[],
+    ghostWhole: Material,
+    ghostSliced: Material,
+    instances: Instance[],
+  ) {
+    const n = instances.length
+    this.instances = instances
+    this.whole = new InstancedMesh(geometry, solid.length === 1 ? solid[0] : solid, n)
+    this.slicedSolid = new InstancedMesh(geometry, sliced.length === 1 ? sliced[0] : sliced, n)
+    this.slicedGhost = new InstancedMesh(geometry, ghostSliced, n)
+    this.aboveGhost = new InstancedMesh(geometry, ghostWhole, n)
+    this.meshes = [this.whole, this.slicedSolid, this.slicedGhost, this.aboveGhost]
+  }
+
+  /** Sorts the instances for the bottom `layers` layers shown (Infinity: all). */
+  cut(layers: number) {
+    const sorted = new Map(this.meshes.map((m) => [m, [] as Instance[]]))
+    for (const i of this.instances) {
+      if (i.to <= layers) sorted.get(this.whole)!.push(i)
+      else if (i.from >= layers) sorted.get(this.aboveGhost)!.push(i)
+      else {
+        sorted.get(this.slicedSolid)!.push(i)
+        sorted.get(this.slicedGhost)!.push(i)
+      }
+    }
+    for (const [mesh, list] of sorted) {
+      list.forEach((i, at) => {
+        mesh.setMatrixAt(at, i.matrix)
+        if (i.color) mesh.setColorAt(at, i.color)
+      })
+      mesh.count = list.length
+      mesh.visible = list.length > 0
+      mesh.userData.buildings = list.map((i) => i.building)
+      mesh.instanceMatrix.needsUpdate = true
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
+      mesh.computeBoundingSphere()
+    }
+  }
 }
 
-/** Where a building's box goes: its cells, a hair smaller so neighbours stay apart, flatter for belts and pipes. */
-function boxTransform(b: PlacedBuilding, kind: BuildingKind): [Vector3, Quaternion, Vector3] {
+/** Where a building's box goes: its layers, a hair smaller so neighbours stay apart, flatter for belts and pipes. */
+function boxTransform(b: PlacedBuilding, kind: BuildingKind, layers: number): [Vector3, Quaternion, Vector3] {
   const [x, y, z] = b.cell
   const [w, d] = b.area
-  const height = kind === 'belt' ? 0.14 : kind === 'pipe' ? 0.35 : layersOf(b)
+  const height = kind === 'belt' ? 0.14 : kind === 'pipe' ? 0.35 : layers
   const inset = kind === 'belt' ? 0.04 : 0.08
   const sx = w - inset
   const sz = d - inset

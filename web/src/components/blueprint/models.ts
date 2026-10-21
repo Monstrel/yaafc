@@ -22,7 +22,8 @@ import {
 
 interface Manifest {
   /** `shapes`: the table of shapes it takes as it joins its neighbours, for a belt or a pipe. */
-  buildings: Record<string, { name: string; parts: ManifestPart[]; shapes?: string }>
+  /** `layers`: its height, in whole layers. */
+  buildings: Record<string, { name: string; parts: ManifestPart[]; layers: number; shapes?: string }>
   /** By SecondaryType (Belt, Pipeline), then by a placed one's BaseActiveIndex. */
   shapes: Record<string, Record<string, ManifestPart & { sides?: string }>>
   meshes: Record<string, { materials: (string | null)[] }>
@@ -69,21 +70,26 @@ function loadManifest(): Promise<Manifest> {
   }))
 }
 
-/** The game's name for a building, once the models are in. */
-export async function buildingNames(): Promise<Map<string, string>> {
+/** Each building table row's name in the game and height in layers, by its row name in lower case. */
+export async function buildingInfo(): Promise<Map<string, { name: string; layers: number }>> {
   const m = await loadManifest()
-  return new Map(Object.entries(m.buildings).map(([key, b]) => [key.toLowerCase(), b.name]))
+  return new Map(Object.entries(m.buildings).map(([key, b]) => [key.toLowerCase(), { name: b.name, layers: b.layers }]))
 }
 
 /**
- * The meshes a building is made of, from its origin; for a belt or a pipe, the shape `variant`
- * names. Null for a building the game draws without static meshes, which the X-ray shows as a box.
+ * The meshes a building is made of, from its origin (for a belt or a pipe, the shape `variant`
+ * names), and its height in layers. No parts for a building the game draws without static meshes,
+ * which the X-ray shows as a box.
  */
-export async function buildingParts(name: string, variant: number | undefined): Promise<Part[] | null> {
+export async function buildingModel(name: string, variant: number | undefined): Promise<{ parts: Part[] | null; layers: number }> {
   const m = await loadManifest()
   // Rows are matched without case: the game saves its Catapult row's buildings as "catapult".
   const building = m.buildings[name] ?? Object.entries(m.buildings).find(([key]) => key.toLowerCase() === name.toLowerCase())?.[1]
-  if (!building) return null
+  if (!building) return { parts: null, layers: 1 }
+  return { parts: await buildingParts(m, building, variant), layers: building.layers }
+}
+
+async function buildingParts(m: Manifest, building: Manifest['buildings'][string], variant: number | undefined): Promise<Part[] | null> {
   const table = building.shapes && variant !== undefined ? m.shapes[building.shapes] : undefined
   const shape = table && table[building.shapes === 'Belt' ? beltShape(variant!, (k) => k in table) : variant!]
   const parts: ManifestPart[] = shape ? [shape] : building.parts

@@ -9,7 +9,7 @@ const bytes = (dataUrl: string) => Uint8Array.from(atob(dataUrl.slice(dataUrl.in
 const blueprints = import.meta.glob<string>('../../test/blueprints/*.png', { query: '?inline', import: 'default', eager: true })
 
 // The models as the extractor wrote them (`dotnet run -- models`).
-const buildings = manifest.buildings as Record<string, { name: string; parts: { mesh: string; materials?: (string | null)[] }[]; shapes?: string }>
+const buildings = manifest.buildings as Record<string, { name: string; parts: { mesh: string; materials?: (string | null)[] }[]; layers: number; shapes?: string }>
 const meshes = manifest.meshes as Record<string, { materials: (string | null)[] }>
 const shapes = manifest.shapes as Record<string, Record<string, { mesh: string; sides?: string }>>
 const belts = shapes.Belt as Record<string, { mesh: string; sides: string }>
@@ -60,6 +60,13 @@ describe('the models manifest', () => {
     expect(buildings.Belt.shapes).toBe('Belt')
     expect(buildings.Pipe.shapes).toBe('Pipeline')
     expect(buildings.Pipe_Vertical.shapes).toBe('Pipeline')
+  })
+
+  test('gives each building its height in whole layers, as the game builds with it', () => {
+    for (const b of Object.values(buildings)) expect(Number.isInteger(b.layers) && b.layers >= 1).toBe(true)
+    // A cauldron's rim pokes a hair over its two layers; an athanor stands 2.84 high.
+    expect([buildings.Cauldron.layers, buildings.Athanor.layers, buildings.DrawBridge.layers]).toEqual([2, 3, 3])
+    expect([buildings.Belt.layers, buildings.SteamHeater.layers, buildings.FrameDuo.layers]).toEqual([1, 1, 2])
   })
 
   test.each(Object.keys(blueprints))('has a model for every building in %s', async (path) => {

@@ -41,8 +41,20 @@ export interface PlacedBuilding {
   stack?: { name: string; rotation: PlacedBuilding['rotation'] }[]
 }
 
-/** How many layers a building fills: one, or a lift's whole stack. */
-export const layersOf = (b: PlacedBuilding) => 1 + (b.stack?.length ?? 0)
+/**
+ * How many layers a building fills, given each building table row's height in layers (one each
+ * when not known): its own, or a lift's whole stack, each part a layer above the last.
+ */
+export function layersOf(b: PlacedBuilding, rowLayers: (name: string) => number = () => 1): number {
+  let top = rowLayers(b.name)
+  b.stack?.forEach((s, k) => (top = Math.max(top, k + 1 + rowLayers(s.name))))
+  return top
+}
+
+/** How many layers a blueprint fills, counting the full height of what stands on its top layer. */
+export function blueprintLayers(bp: Blueprint, rowLayers: (name: string) => number): number {
+  return Math.max(1, ...bp.buildings.map((b) => b.cell[2] + layersOf(b, rowLayers)))
+}
 
 export interface Blueprint {
   title: string

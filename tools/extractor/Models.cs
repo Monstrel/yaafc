@@ -16,7 +16,7 @@ using SkiaSharp;
 /// The buildings' 3D models for the Blueprint X-ray, into web/public/models:
 ///
 /// - manifest.json: each building (DT_Buildings row) as the meshes it's made of, each with its
-///   transform from the building's origin and its materials; the shapes a belt or pipe takes as
+///   transform from the building's origin and its materials, and its height in layers; the shapes a belt or pipe takes as
 ///   it joins its neighbours (DT_BeltMeshBuildings, DT_PipeMeshConfig2); each material's textures;
 ///   each mesh's file.
 /// - meshes/*.mesh: one per mesh, in Unreal's own space and units, as the game places them; the
@@ -60,6 +60,8 @@ static class ModelExporter
         Directory.CreateDirectory(textureDir);
 
         var meshes = new JObject();
+        // Each mesh's bounds, in its own space, for buildings' heights.
+        var meshBounds = new Dictionary<string, (Vector3 Min, Vector3 Max)>();
         var materials = new JObject();
         var textures = new Dictionary<string, string?>();
 
@@ -76,6 +78,8 @@ static class ModelExporter
                     return null;
                 }
                 File.WriteAllBytes(Path.Combine(plainDir, name + ".bin"), MeshFile(dto.LODs[0]));
+                var points = dto.LODs[0].Vertices.Select(v => new Vector3((float)v.Position.X, (float)v.Position.Y, (float)v.Position.Z)).ToList();
+                meshBounds[name] = (points.Aggregate(Vector3.Min), points.Aggregate(Vector3.Max));
                 meshes[name] = new JObject
                 {
                     ["materials"] = new JArray(mesh.StaticMaterials!.Select(m => Material(m.MaterialInterface?.ResolvedObject?.Load<UMaterialInterface>()))),
@@ -164,6 +168,9 @@ static class ModelExporter
             };
             var secondary = row["SecondaryType"]?.ToString().Split("::").Last();
             if (secondary != null && ShapeTables.ContainsKey(secondary)) entry["shapes"] = secondary;
+            // Its height in whole layers, as the game builds with it: its top, to the nearest layer
+            // (a cauldron's rim pokes 1 unit over its two; an athanor stands 2.84 high).
+            entry["layers"] = Math.Max(1, (int)Math.Round(Top(parts, meshBounds) / 25));
             buildings[key] = entry;
         }
 
@@ -202,6 +209,26 @@ static class ModelExporter
         long Size(string dir) => new DirectoryInfo(dir).GetFiles().Sum(f => f.Length);
         Console.WriteLine($"Wrote {buildings.Count} buildings, {shapes.Properties().Sum(t => ((JObject)t.Value).Count)} belt and pipe shapes, {meshes.Count} meshes " +
             $"({Size(meshDir) / 1024} KB), {textures.Count(t => t.Value != null)} textures ({Size(textureDir) / 1024} KB) to {outDir}");
+    }
+
+    /// The highest point of a building's parts, placed, in the game's units above its origin.
+    static float Top(JArray parts, Dictionary<string, (Vector3 Min, Vector3 Max)> bounds)
+    {
+        var top = 0f;
+        foreach (var part in parts)
+        {
+            if (!bounds.TryGetValue(part["mesh"]!.ToString(), out var b)) continue;
+            var m = part["matrix"] is JArray a ? new Matrix4x4(
+                a[0].Value<float>(), a[1].Value<float>(), a[2].Value<float>(), a[3].Value<float>(),
+                a[4].Value<float>(), a[5].Value<float>(), a[6].Value<float>(), a[7].Value<float>(),
+                a[8].Value<float>(), a[9].Value<float>(), a[10].Value<float>(), a[11].Value<float>(),
+                a[12].Value<float>(), a[13].Value<float>(), a[14].Value<float>(), a[15].Value<float>()) : Matrix4x4.Identity;
+            foreach (var x in new[] { b.Min.X, b.Max.X })
+                foreach (var y in new[] { b.Min.Y, b.Max.Y })
+                    foreach (var z in new[] { b.Min.Z, b.Max.Z })
+                        top = Math.Max(top, Vector3.Transform(new Vector3(x, y, z), m).Z);
+        }
+        return top;
     }
 
     static void CompressMeshes(string webDir, string plainDir, string meshDir)
