@@ -8,6 +8,11 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
+## 2026-10-21T19:26Z
+
+- In the Blueprint X-ray, opening a folder with only one blueprint in it, or a single blueprint
+  file, no longer leaves the list of blueprints from the folder you opened before.
+
 ## 2026-10-21T19:21Z
 
 - The Blueprint X-ray shows storage boxes in the colours you tinted them, on their wooden panels
