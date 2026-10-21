@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type DragEvent } from 'react'
+import { useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react'
 import { BlueprintScene, type Above, type ModelStatus } from '../components/blueprint/blueprintScene'
 import { buildingName } from '../components/blueprint/buildingKinds'
 import { buildingInfo } from '../components/blueprint/models'
@@ -126,15 +126,7 @@ export function XrayPage() {
 
       {opened && (
         <section className="panel xray-view">
-          <CutControls
-            total={total}
-            layers={Math.min(cut ?? total, total)}
-            onLayers={(n) => setCut(n >= total ? null : n)}
-            above={above}
-            onAbove={setAbove}
-            arrows={arrows}
-            onArrows={setArrows}
-          />
+          <CutControls above={above} onAbove={setAbove} arrows={arrows} onArrows={setArrows} />
           <XrayScene
             blueprint={opened.blueprint}
             cut={cut !== null && cut < total ? cut : null}
@@ -143,7 +135,9 @@ export function XrayPage() {
             picked={picked}
             onPick={setPicked}
             onModels={setModels}
-          />
+          >
+            <LayerSlider total={total} layers={Math.min(cut ?? total, total)} onLayers={(n) => setCut(n >= total ? null : n)} />
+          </XrayScene>
           <div className="xray-side">
             <Picked building={picked} nameOf={nameOf} />
             <BuildingList blueprint={opened.blueprint} nameOf={nameOf} />
@@ -155,18 +149,42 @@ export function XrayPage() {
   )
 }
 
+/**
+ * The layers shown, as a vertical slider over the view: up for more, as the blueprint stands, with
+ * a button above to put back a layer and one below to peel one off.
+ */
+function LayerSlider({ total, layers, onLayers }: { total: number; layers: number; onLayers: (n: number) => void }) {
+  const label = `Showing layers 1–${layers} of ${total}`
+  return (
+    <div className="xray-layers" role="group" aria-label="Layers shown" title={label}>
+      <span className="xray-layers-count" aria-hidden>
+        {layers}
+        <small>/{total}</small>
+      </span>
+      <button type="button" onClick={() => onLayers(Math.min(total, layers + 1))} disabled={layers >= total} title="Put back a layer">
+        +
+      </button>
+      <input
+        type="range"
+        min={1}
+        max={total}
+        value={layers}
+        aria-label={label}
+        onChange={(e) => onLayers(Number(e.target.value))}
+      />
+      <button type="button" onClick={() => onLayers(Math.max(1, layers - 1))} disabled={layers <= 1} title="Peel off the top layer">
+        −
+      </button>
+    </div>
+  )
+}
+
 function CutControls({
-  total,
-  layers,
-  onLayers,
   above,
   onAbove,
   arrows,
   onArrows,
 }: {
-  total: number
-  layers: number
-  onLayers: (n: number) => void
   above: Above
   onAbove: (a: Above) => void
   arrows: boolean
@@ -174,18 +192,6 @@ function CutControls({
 }) {
   return (
     <div className="xray-controls">
-      <label className="xray-cut">
-        <span>
-          Showing layers 1–{layers} of {total}
-        </span>
-        <button type="button" onClick={() => onLayers(Math.max(1, layers - 1))} disabled={layers <= 1} title="Peel off the top layer">
-          −
-        </button>
-        <input type="range" min={1} max={total} value={layers} onChange={(e) => onLayers(Number(e.target.value))} />
-        <button type="button" onClick={() => onLayers(Math.min(total, layers + 1))} disabled={layers >= total} title="Put back a layer">
-          +
-        </button>
-      </label>
       <div className="segmented" role="radiogroup" aria-label="Layers above the cut">
         {(['ghost', 'hidden'] as const).map((a) => (
           <button key={a} type="button" role="radio" aria-checked={above === a} aria-selected={above === a} onClick={() => onAbove(a)}>
@@ -209,6 +215,7 @@ function XrayScene({
   picked,
   onPick,
   onModels,
+  children,
 }: {
   blueprint: Blueprint
   /** The layers shown, from the bottom: null for all of them. */
@@ -218,6 +225,8 @@ function XrayScene({
   picked: PlacedBuilding | null
   onPick: (b: PlacedBuilding | null) => void
   onModels: (status: ModelStatus) => void
+  /** Controls laid over the view. */
+  children?: ReactNode
 }) {
   const host = useRef<HTMLDivElement>(null)
   const scene = useRef<BlueprintScene | null>(null)
@@ -242,7 +251,10 @@ function XrayScene({
 
   return (
     <div className="xray-canvas-wrap">
-      <div ref={host} className="xray-canvas" />
+      <div className="xray-stage">
+        <div ref={host} className="xray-canvas" />
+        {children}
+      </div>
       <p className="xray-hint muted">
         Drag to turn · right-drag or Shift-drag to move · scroll to zoom · click a building to see what it is
         <button type="button" onClick={() => scene.current?.resetView()}>

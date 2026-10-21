@@ -4563,27 +4563,6 @@ a.reference-icon:hover {
   gap: 10px 20px;
 }
 
-.xray-cut {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.xray-cut span {
-  min-width: 170px;
-  font-variant-numeric: tabular-nums;
-}
-
-.xray-cut input[type='range'] {
-  width: min(260px, 50vw);
-  accent-color: var(--accent);
-}
-
-.xray-cut button {
-  min-width: 32px;
-}
-
 .xray-controls .segmented button {
   padding: 6px 12px;
 }
@@ -4602,6 +4581,55 @@ a.reference-icon:hover {
 .xray-canvas-wrap {
   grid-area: scene;
   min-width: 0;
+}
+
+.xray-stage {
+  position: relative;
+}
+
+/* The layer slider, standing over the view's left edge: up for more layers. */
+.xray-layers {
+  position: absolute;
+  left: 10px;
+  top: 12px;
+  bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--panel) 82%, transparent);
+  backdrop-filter: blur(4px);
+}
+
+.xray-layers-count {
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.xray-layers-count small {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.xray-layers button {
+  min-width: 32px;
+  padding: 2px 0;
+}
+
+.xray-layers input[type='range'] {
+  flex: 1;
+  min-height: 80px;
+  width: 28px;
+  margin: 0;
+  writing-mode: vertical-lr;
+  direction: rtl;
+  accent-color: var(--accent);
 }
 
 .xray-canvas {
@@ -4670,9 +4698,5 @@ a.reference-icon:hover {
   .xray-view {
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas: 'controls' 'scene' 'side';
-  }
-
-  .xray-cut span {
-    flex-basis: 100%;
   }
 }
