@@ -8,6 +8,12 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
+## 2026-10-21T14:31Z
+
+- The Blueprint X-ray can hide building blocks: blocks, beams, lab stands, platforms, pillars,
+  floors and walls. Tick "Hide building blocks" to see the machines they hold up. "Hidden
+  buildings" sets whether they, and the layers above the cut, show as ghosts or are invisible.
+
 ## 2026-10-21T14:14Z
 
 - The Blueprint X-ray opens blueprints from the Steam Workshop too. Steam downloads the ones you
