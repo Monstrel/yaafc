@@ -8,6 +8,14 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
+## 2026-10-22T14:13Z
+
+- Click a machine in the Blueprint X-ray to see how it's set up: the recipe it's set to, with
+  what goes in and comes out each craft; a cauldron's ingredient filters, and what they mix into;
+  the seed a nursery grows and its harvest; what a filter lets through; what a purchasing portal
+  buys.
+- Nurseries in the X-ray grow their plants, as in the game.
+
 ## 2026-10-21T20:25Z
 
 - The Blueprint X-ray lays retractable beams and retractable conveyor passages along the ground,
