@@ -18,7 +18,8 @@ using SkiaSharp;
 /// - manifest.json: each building (DT_Buildings row) as the meshes it's made of, each with its
 ///   transform from the building's origin and its materials, and its height in layers; the shapes a belt or pipe takes as
 ///   it joins its neighbours (DT_BeltMeshBuildings, DT_PipeMeshConfig2); each material's textures;
-///   each mesh's file; for a notice board, where it shows its words (see TextFaces).
+///   each mesh's file; for a notice board, where it shows its words (see TextFaces); for a nursery,
+///   where it grows its plant (see PlantSlot), and the plant each seed grows (DT_PlantSeedConfig).
 /// - meshes/*.mesh: one per mesh, in Unreal's own space and units, as the game places them; the
 ///   page turns the whole scene into three.js's space once. They're written plainly (MeshFile,
 ///   below) and compressed by web/scripts/compressMeshes.mjs, which needs Node and web/'s packages.
@@ -33,6 +34,7 @@ using SkiaSharp;
 static class ModelExporter
 {
     const string BuildingsTable = "AlchemyFactory/Content/DataTables/DT_Buildings.uasset";
+    const string SeedsTable = "AlchemyFactory/Content/DataTables/DT_PlantSeedConfig.uasset";
     /// The tables of shapes a building of a SecondaryType takes, by the sides it joins (a placed
     /// one's BaseActiveIndex).
     static readonly Dictionary<string, string> ShapeTables = new()
@@ -157,6 +159,7 @@ static class ModelExporter
         {
             var parts = new JArray();
             JArray? text = null;
+            JArray? plant = null;
             if (ObjectPath(row["InstanceMesh"]) is { } instanceMesh)
             {
                 // A building drawn as one instanced mesh, as it stands. (A ramp's BeltRotation is its
@@ -170,6 +173,7 @@ static class ModelExporter
                     if (Mesh(meshPath) is { } mesh)
                         parts.Add(Part(mesh, transform, overrides.Select(o => o is null ? null : Material(LoadMaterial(provider, o))).ToList()));
                 text = TextFaces(provider, scriptClass);
+                plant = PlantSlot(provider, scriptClass);
             }
             if (parts.Count == 0) Console.WriteLine($"building {key}: no meshes");
             var entry = new JObject
@@ -180,6 +184,7 @@ static class ModelExporter
             var secondary = row["SecondaryType"]?.ToString().Split("::").Last();
             if (secondary != null && ShapeTables.ContainsKey(secondary)) entry["shapes"] = secondary;
             if (text is { Count: > 0 }) entry["text"] = text;
+            if (plant != null) entry["plant"] = plant;
             // Its height in whole layers, as the game builds with it: its top, to the nearest layer
             // (a cauldron's rim pokes 1 unit over its two; an athanor stands 2.84 high).
             var top = Top(parts, meshBounds);
@@ -215,10 +220,18 @@ static class ModelExporter
             shapes[type] = rows;
         }
 
+        // The plant each seed grows in a nursery, grown. (The table's TreeStage rows are the World
+        // Tree Nursery's, which goes through them by itself: a blueprint doesn't save one.)
+        var seeds = new JObject();
+        foreach (var (key, row) in Rows(provider, SeedsTable))
+            if (!key.StartsWith("TreeStage") && ObjectPath(row["PlantMesh"]) is { } plantMesh && Mesh(plantMesh) is { } mesh)
+                seeds[key] = mesh;
+
         var manifest = new JObject
         {
             ["buildings"] = buildings,
             ["shapes"] = shapes,
+            ["seeds"] = seeds,
             ["meshes"] = meshes,
             ["materials"] = materials,
         };
@@ -338,6 +351,18 @@ static class ModelExporter
             });
         }
         return faces;
+    }
+
+    /// <summary>
+    /// Where a nursery grows its plant: the transform from the actor of its empty mesh component
+    /// tagged PlantMesh, which the game fills with the planted seed's PlantMesh (null: it has none).
+    /// </summary>
+    static JArray? PlantSlot(DefaultFileProvider provider, string classPath)
+    {
+        foreach (var (props, transform) in BlueprintComponents(provider, classPath))
+            if (props["ComponentTags"]?.Any(t => t.ToString() == "PlantMesh") == true)
+                return MatrixJson(transform);
+        return null;
     }
 
     /// <summary>

@@ -22,13 +22,27 @@ import {
 
 interface Manifest {
   /** `shapes`: the table of shapes it takes as it joins its neighbours, for a belt or a pipe. */
-  /** `layers`: its height, in whole layers; `ports` and `top`, for a ramp, drawbridge, tunnel or lift; `text`, for a notice board. */
+  /**
+   * `layers`: its height, in whole layers; `ports` and `top`, for a ramp, drawbridge, tunnel or lift; `text`, for a notice board;
+   * `plant`, for a nursery, where it grows its plant, from its origin (a matrix, as a part's).
+   */
   buildings: Record<
     string,
-    { name: string; parts: ManifestPart[]; layers: number; shapes?: string; ports?: Port[]; top?: number; text?: ManifestTextFace[] }
+    {
+      name: string
+      parts: ManifestPart[]
+      layers: number
+      shapes?: string
+      ports?: Port[]
+      top?: number
+      text?: ManifestTextFace[]
+      plant?: number[]
+    }
   >
   /** By SecondaryType (Belt, Pipeline), then by a placed one's BaseActiveIndex. */
   shapes: Record<string, Record<string, ManifestPart & { sides?: string }>>
+  /** The mesh of the plant each seed grows (DT_PlantSeedConfig's PlantMesh), by the seed. */
+  seeds: Record<string, string>
   meshes: Record<string, { materials: (string | null)[] }>
   materials: Record<string, ManifestMaterial>
 }
@@ -114,19 +128,20 @@ export async function buildingInfo(): Promise<Map<string, { name: string; layers
 
 /**
  * The meshes a building is made of, from its origin (for a belt or a pipe, the shape `variant`
- * names), and its height in layers. No parts for a building the game draws without static meshes,
- * which the X-ray shows as a box.
+ * names; for a nursery, with the plant `seed` grows in it), and its height in layers. No parts for
+ * a building the game draws without static meshes, which the X-ray shows as a box.
  */
 export async function buildingModel(
   name: string,
   variant: number | undefined,
+  seed?: string,
 ): Promise<{ parts: Part[] | null; layers: number; flow?: Flow; text?: TextFace[] }> {
   const m = await loadManifest()
   // Rows are matched without case: the game saves its Catapult row's buildings as "catapult".
   const building = m.buildings[name] ?? Object.entries(m.buildings).find(([key]) => key.toLowerCase() === name.toLowerCase())?.[1]
   if (!building) return { parts: null, layers: 1 }
   return {
-    parts: await buildingParts(m, building, variant),
+    parts: await buildingParts(m, building, variant, seed),
     layers: building.layers,
     flow: flowOf(m, name, variant),
     text: building.text?.map((f) => ({ matrix: new Matrix4().fromArray(f.matrix), size: f.size })),
@@ -193,11 +208,19 @@ export function beltSides(desc: string): { ins: Side[]; outs: Side[] } {
   return { ins, outs }
 }
 
-async function buildingParts(m: Manifest, building: Manifest['buildings'][string], variant: number | undefined): Promise<Part[] | null> {
+async function buildingParts(
+  m: Manifest,
+  building: Manifest['buildings'][string],
+  variant: number | undefined,
+  seed: string | undefined,
+): Promise<Part[] | null> {
   const table = building.shapes && variant !== undefined ? m.shapes[building.shapes] : undefined
   const shape = table && table[building.shapes === 'Belt' ? beltShape(variant!, (k) => k in table) : variant!]
-  const parts: ManifestPart[] = shape ? [shape] : building.parts
+  let parts: ManifestPart[] = shape ? [shape] : building.parts
   if (!parts.length) return null
+  // The game sets the planted seed's mesh on the nursery's empty PlantMesh component: there, grown.
+  const plant = seed && building.plant && m.seeds[seed]
+  if (plant) parts = [...parts, { mesh: plant, matrix: building.plant }]
   return Promise.all(
     parts.map(async (part) => {
       const slots = m.meshes[part.mesh]?.materials ?? []

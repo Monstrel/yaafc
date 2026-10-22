@@ -38,8 +38,9 @@ cauldron recipes as steps in production chains, including self-feeding loops.
 - **Blueprint X-ray**: open a blueprint file and see it in 3D, cut away from the top layer by layer,
   to see inside a compact build, drawn with the game's own models and textures. Arrows on belts,
   ramps, drawbridges, tunnels and lifts point the way items go. Building blocks (blocks, beams, lab
-  stands, platforms, floors and walls) can be hidden to see the machines they hold up. Click a
-  building to see what it is.
+  stands, platforms, floors and walls) can be hidden to see the machines they hold up. Nurseries
+  grow the plant they're set to. Click a building to see what it is and how it's set up: its
+  recipe, a cauldron's ingredient filters and what they make, a nursery's seed, a filter's item.
 
 Saved recipes and plans live in the browser (localStorage). Use Export/Import to back them up.
 

@@ -78,6 +78,28 @@ describe('readBlueprint', () => {
     expect((await readBlueprint(fixture('steel'))).buildings.every((b) => b.text === undefined)).toBe(true)
   })
 
+  test('reads what each machine is set to: its recipe, seed, filter or cauldron slots', async () => {
+    const bp = await readBlueprint(fixture('fertile-catalyst'))
+    const count = (list: string[]) => list.reduce<Record<string, number>>((n, k) => ({ ...n, [k]: (n[k] ?? 0) + 1 }), {})
+    expect(count(bp.buildings.flatMap((b) => (b.seed ? [`${b.name} ${b.seed}`] : [])))).toEqual({
+      'AutoNursery LavenderSeed': 3,
+      'AutoNursery ChamomileSeed': 1,
+      'AutoNursery GentianSeed': 1,
+      'AutoNursery RedcurrantSeed': 1,
+      'AutoNursery FlaxSeed': 2,
+    })
+    expect(count(bp.buildings.flatMap((b) => (b.cauldronFilters ? [`${b.name} ${b.cauldronFilters}`] : [])))).toEqual({
+      'Cauldron Lavender,Lavender,Chamomile': 4,
+      'Cauldron Redcurrant,Gentian,GentianNectar': 3,
+    })
+    expect(bp.buildings.flatMap((b) => (b.filter ? [[b.name, b.filter]] : []))).toEqual([['Filter_Vert', 'Gentian']])
+    expect(bp.buildings.every((b) => !b.supply)).toBe(true)
+    // A machine's recipe, and nothing else set on the rest.
+    const steel = await readBlueprint(fixture('steel'))
+    expect(steel.buildings.filter((b) => b.recipe).map((b) => [b.name, b.recipe])).toEqual([['Athanor', 'SteelIngot']])
+    expect(steel.buildings.every((b) => !b.seed && !b.filter && !b.supply && !b.cauldronFilters)).toBe(true)
+  })
+
   test('reads a tall blueprint with every layer', async () => {
     const bp = await readBlueprint(fixture('fertile-catalyst'))
     expect(bp.title).toBe('Fertile Catalyst')

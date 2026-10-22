@@ -5,7 +5,8 @@ import { buildingInfo } from '../components/blueprint/models'
 import { ItemLabel } from '../components/ItemIcon'
 import { ReferenceLink } from '../components/ReferenceLink'
 import { BlueprintError, blueprintLayers, readBlueprint, type Blueprint, type PlacedBuilding } from '../lib/blueprint/blueprintFile'
-import { buildingsByKey, gameRecipes } from '../lib/gameData'
+import { evaluate } from '../lib/cauldron'
+import { ADVANCED_CAULDRON, buildingsByKey, gameRecipes, seeds, type Stack } from '../lib/gameData'
 import { noun } from '../lib/plural'
 
 interface Opened {
@@ -32,6 +33,7 @@ const BLUEPRINT_FOLDER = '%LOCALAPPDATA%\\AlchemyFactory\\Saved\\Blueprints'
  */
 const WORKSHOP_FOLDER = '%ProgramFiles(x86)%\\Steam\\steamapps\\workshop\\content\\3669570'
 const recipesByKey = new Map(gameRecipes.map((r) => [r.key, r]))
+const seedsByKey = new Map(seeds.map((s) => [s.seed, s]))
 
 export function XrayPage() {
   const [opened, setOpened] = useState<Opened | null>(kept)
@@ -402,7 +404,6 @@ function XrayScene({
 
 function Picked({ building, nameOf }: { building: PlacedBuilding | null; nameOf: (key: string) => string }) {
   if (!building) return <p className="muted xray-picked">Click a building to see what it is.</p>
-  const recipe = building.recipe ? recipesByKey.get(building.recipe) : undefined
   const name = nameOf(building.name)
   return (
     <div className="xray-picked">
@@ -410,13 +411,131 @@ function Picked({ building, nameOf }: { building: PlacedBuilding | null; nameOf:
       <p className="muted">
         Layer {building.cell[2] + 1} · {building.area[0]} × {building.area[1]} {noun(building.area[0] * building.area[1], 'cell')}
       </p>
-      {recipe && (
-        <p className="note-line">
-          Makes <ItemLabel item={recipe.output.item} />
-        </p>
-      )}
+      <Settings building={building} />
       {building.text && <p className="xray-sign">“{building.text}”</p>}
     </div>
+  )
+}
+
+/**
+ * What a machine is set to, as the blueprint saved it: its recipe, the seed a nursery grows, the
+ * ingredient each of a cauldron's slots takes and what they mix into, what a filter lets through, or
+ * what a purchasing portal buys.
+ */
+function Settings({ building }: { building: PlacedBuilding }) {
+  const recipe = building.recipe ? recipesByKey.get(building.recipe) : undefined
+  const seed = building.seed ? seedsByKey.get(building.seed) : undefined
+  const cauldron = building.name === 'Cauldron' || building.name === ADVANCED_CAULDRON
+  return (
+    <dl className="xray-settings">
+      {building.recipe && (
+        <>
+          <dt>Recipe, each craft</dt>
+          <dd>
+            {recipe ? (
+              <>
+                <Stacks list={recipe.inputs} />
+                <span className="xray-makes muted">makes</span>
+                <Stacks list={[recipe.output, ...(recipe.side ? [recipe.side] : [])]} />
+              </>
+            ) : (
+              building.recipe
+            )}
+          </dd>
+        </>
+      )}
+      {building.seed && (
+        <>
+          <dt>Grows, each harvest</dt>
+          <dd>
+            {seed?.plant ? (
+              <>
+                <Stacks list={[{ item: seed.plant, count: seed.count }, ...(seed.side ? [{ item: seed.side, count: seed.sideCount }] : [])]} />
+                <span className="xray-makes muted">
+                  from <ItemName item={building.seed} />
+                </span>
+              </>
+            ) : (
+              <ItemName item={building.seed} />
+            )}
+          </dd>
+        </>
+      )}
+      {cauldron && <CauldronSettings building={building} />}
+      {building.filter && (
+        <>
+          <dt>Lets through</dt>
+          <dd>
+            <ItemName item={building.filter} />
+          </dd>
+        </>
+      )}
+      {building.supply && (
+        <>
+          <dt>Buys</dt>
+          <dd>
+            <ItemName item={building.supply} />
+          </dd>
+        </>
+      )}
+    </dl>
+  )
+}
+
+/** A cauldron's slots, each taking one ingredient or any, and what the three (an advanced one's two) mix into. */
+function CauldronSettings({ building }: { building: PlacedBuilding }) {
+  const advanced = building.name === ADVANCED_CAULDRON
+  const capacity = buildingsByKey.get(building.name)?.components.find((c) => typeof c.CauldronCapacity === 'number')?.CauldronCapacity
+  const filters = building.cauldronFilters ?? []
+  const slots = [0, 1, 2].slice(0, typeof capacity === 'number' ? capacity : 3).map((k) => filters[k] ?? null)
+  const set = slots.filter((s): s is string => Boolean(s))
+  let output: string | undefined
+  try {
+    if (set.length === slots.length) output = evaluate(advanced ? 'advanced' : 'normal', set)?.output.key
+  } catch {
+    // An ingredient the game data doesn't know: what it makes isn't known either.
+  }
+  return (
+    <>
+      <dt>Ingredient filters</dt>
+      <dd>
+        <ol className="xray-stacks">
+          {slots.map((item, k) => (
+            <li key={k}>{item ? <ItemName item={item} /> : <span className="muted">Any ingredient</span>}</li>
+          ))}
+        </ol>
+      </dd>
+      <dt>Makes</dt>
+      <dd>
+        {output ? (
+          <ItemName item={output} />
+        ) : (
+          <span className="muted">{set.length < slots.length ? 'What its ingredients mix into' : 'Not known'}</span>
+        )}
+      </dd>
+    </>
+  )
+}
+
+/** Items, a line each, with their amounts. */
+function Stacks({ list }: { list: Stack[] }) {
+  return (
+    <ul className="xray-stacks">
+      {list.map((s) => (
+        <li key={s.item}>
+          <ItemName item={s.item} count={s.count} />
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+/** An item's icon and name, opening its Reference page. */
+function ItemName({ item, count }: { item: string; count?: number }) {
+  return (
+    <ReferenceLink to={{ item }}>
+      <ItemLabel item={item} count={count} size={18} />
+    </ReferenceLink>
   )
 }
 

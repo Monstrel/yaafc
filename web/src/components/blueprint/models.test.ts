@@ -69,6 +69,16 @@ describe('the models manifest', () => {
     expect([buildings.Belt.layers, buildings.SteamHeater.layers, buildings.FrameDuo.layers]).toEqual([1, 1, 2])
   })
 
+  test('grows each seed’s plant in a nursery, on its soil', () => {
+    const seeds = manifest.seeds as Record<string, string>
+    const nursery = (manifest.buildings as Record<string, { plant?: number[] }>).AutoNursery
+    // Its PlantMesh component: 26 units up, at 0.8 scale.
+    expect(new Matrix4().fromArray(nursery.plant!).elements).toEqual([0.8, 0, 0, 0, 0, 0.8, 0, 0, 0, 0, 0.8, 0, 0, 0, 26, 1])
+    expect(Object.keys(seeds).sort()).toEqual(['ChamomileSeed', 'FlaxSeed', 'GentianSeed', 'LavenderSeed', 'RedcurrantSeed', 'SageSeed'])
+    for (const mesh of Object.values(seeds))
+      for (const material of meshes[mesh].materials) expect(materials[material!], `${mesh}: ${material}`).toBeDefined()
+  })
+
   test.each(Object.keys(blueprints))('has a model for every building in %s', async (path) => {
     const bp = await readBlueprint(bytes(blueprints[path]))
     const keys = new Set(Object.keys(buildings).map((k) => k.toLowerCase()))

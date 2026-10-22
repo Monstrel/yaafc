@@ -248,12 +248,12 @@ export class BlueprintScene {
 
     // Each building, for a lift the parts stacked on it, and for a retractable one the parts along its run.
     const pieces: Piece[] = this.placed.flatMap((b, i) => [
-      { building: i, name: b.name, variant: b.variant, rotation: b.rotation, layer: 0 },
+      { building: i, name: b.name, variant: b.variant, seed: b.seed, rotation: b.rotation, layer: 0 },
       ...(b.stack ?? []).map((s, k) => ({ building: i, name: s.name, variant: undefined, rotation: s.rotation, layer: k + 1 })),
       ...(b.run ?? []).map((s) => ({ building: i, name: s.name, variant: undefined, rotation: s.rotation, layer: 0, position: s.position })),
     ])
     this.onModels({ state: 'loading' })
-    Promise.all(pieces.map((p) => buildingModel(p.name, p.variant))).then(
+    Promise.all(pieces.map((p) => buildingModel(p.name, p.variant, p.seed))).then(
       (models) => {
         if (shown !== this.shown) return
         if (this.placeholders) this.removeBatch(this.placeholders)
@@ -646,6 +646,8 @@ interface Piece {
   building: number
   name: string
   variant: number | undefined
+  /** What a nursery grows, drawn growing in it. */
+  seed?: string
   rotation: PlacedBuilding['rotation']
   layer: number
   position?: [number, number, number]

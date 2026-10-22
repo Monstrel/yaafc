@@ -32,6 +32,17 @@ export interface PlacedBuilding {
   variant?: number
   /** The recipe it's set to, for a machine that has one. */
   recipe?: string
+  /** The seed it's set to grow, for a nursery. */
+  seed?: string
+  /**
+   * The ingredient each of a cauldron's slots takes (null: any), when any of them is set. The game
+   * saves three; an advanced cauldron uses the first two.
+   */
+  cauldronFilters?: (string | null)[]
+  /** The item it lets through, for a filter. */
+  filter?: string
+  /** The item it buys, for a purchasing portal. */
+  supply?: string
   /** The colour the player tinted it (a storage box's panels), as sRGB red, green and blue, 0–255. */
   color?: [number, number, number]
   /** The words the player wrote on it, for a notice board. */
@@ -147,7 +158,18 @@ function placed(b: Properties, origin: number[]): PlacedBuilding {
     dependsOn: list(b.DependKeys ?? []).map(num),
   }
   if (typeof building.BaseActiveIndex === 'number') out.variant = building.BaseActiveIndex
-  if (b.RecipeName && b.RecipeName !== 'None') out.recipe = str(b.RecipeName)
+  // Every building saves each of these, "None" where it hasn't one.
+  const name = (v: PropertyValue | undefined) => (v === undefined || v === 'None' ? null : str(v))
+  const recipe = name(b.RecipeName)
+  if (recipe) out.recipe = recipe
+  const seed = name(b.SeedName)
+  if (seed) out.seed = seed
+  const filter = name(b.FilterName)
+  if (filter) out.filter = filter
+  const supply = name(b.SupplyName)
+  if (supply) out.supply = supply
+  const slots = [b.CauldronFilterName, b['CauldronFilterName[1]'], b['CauldronFilterName[2]']].map(name)
+  if (slots.some(Boolean)) out.cauldronFilters = slots
   // Blue, green, red, alpha; an untinted building's is white with no alpha.
   const [blue, green, red, alpha] = list(b.CustomColor ?? []).map(num)
   if (alpha) out.color = [red, green, blue]
