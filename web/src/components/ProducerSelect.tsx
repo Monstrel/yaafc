@@ -165,16 +165,32 @@ export function ProducerSelect({
 
   const popoverId = useId()
   const pop = useRef<HTMLDivElement>(null)
+  const anchor = useRef<HTMLElement | null>(null)
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [everywhere, setEverywhere] = useState(false)
   const showScope = !!branch && (branch.rows > 1 || branch.own)
 
-  // A fixed popover doesn't follow the page: close it when anything outside it scrolls.
+  /** Places the shown popover by the button, at least as wide. */
+  const position = () => {
+    const el = pop.current
+    const button = anchor.current
+    if (!el?.matches(':popover-open') || !button?.isConnected) return
+    const r = button.getBoundingClientRect()
+    el.style.width = `${Math.max(r.width, oneLine ? 240 : 360)}px`
+    placePopover(el, r)
+  }
+
+  // A fixed popover doesn't follow the page: close it when anything outside it scrolls. Except while
+  // typing in its search box: an on-screen keyboard coming up resizes the viewport and scrolls the
+  // page to the box, so it's placed again instead.
   useEffect(() => {
     if (!open) return
     const close = (e: Event) => {
-      if (!(e.target instanceof Node && pop.current?.contains(e.target))) pop.current?.hidePopover()
+      if (e.target instanceof Node && pop.current?.contains(e.target)) return
+      const typing = document.activeElement instanceof HTMLInputElement && pop.current?.contains(document.activeElement)
+      if (typing) position()
+      else pop.current?.hidePopover()
     }
     window.addEventListener('scroll', close, true)
     window.addEventListener('resize', close)
@@ -182,20 +198,16 @@ export function ProducerSelect({
       window.removeEventListener('scroll', close, true)
       window.removeEventListener('resize', close)
     }
-  }, [open])
+  })
 
   /**
-   * Places the popover by the button, at least as wide. The button opens it (as its popover target)
-   * after the click, so this waits for it to show, then places it before it's drawn.
+   * Places the popover by the button. The button opens it (as its popover target) after the click,
+   * so this waits for it to show, then places it before it's drawn.
    */
-  const place = (button: HTMLElement) =>
-    requestAnimationFrame(() => {
-      const el = pop.current
-      if (!el?.matches(':popover-open')) return
-      const r = button.getBoundingClientRect()
-      el.style.width = `${Math.max(r.width, oneLine ? 240 : 360)}px`
-      placePopover(el, r)
-    })
+  const place = (button: HTMLElement) => {
+    anchor.current = button
+    requestAnimationFrame(position)
+  }
 
   const choose = (c: Choice) => {
     pop.current?.hidePopover()
@@ -284,7 +296,9 @@ export function ProducerSelect({
         onToggle={(e) => {
           const isOpen = e.newState === 'open'
           setOpen(isOpen)
-          if (isOpen) pop.current?.querySelector<HTMLElement>('.recipe-search, [aria-selected=true]')?.focus()
+          // Straight to the search box, but not on touch screens: its keyboard would cover the options.
+          const first = matchMedia('(pointer: coarse)').matches ? '[aria-selected=true]' : '.recipe-search, [aria-selected=true]'
+          if (isOpen) pop.current?.querySelector<HTMLElement>(first)?.focus()
           else {
             setQuery('')
             setEverywhere(false)
