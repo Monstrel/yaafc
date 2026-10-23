@@ -8,6 +8,12 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
+## 2026-10-23T09:06Z
+
+- Click a catapult in the Blueprint X-ray to see where it launches to, drawn as a blue arc as in
+  the game; click what it's aimed at to see an arc from each catapult launching into it. The
+  building's details say what it launches into, or how many launch into it.
+
 ## 2026-10-22T14:13Z
 
 - Click a machine in the Blueprint X-ray to see how it's set up: the recipe it's set to, with
