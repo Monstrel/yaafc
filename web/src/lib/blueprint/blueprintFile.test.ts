@@ -100,6 +100,22 @@ describe('readBlueprint', () => {
     expect(steel.buildings.every((b) => !b.seed && !b.filter && !b.supply && !b.cauldronFilters)).toBe(true)
   })
 
+  test('reads what each catapult launches into', async () => {
+    const bp = await readBlueprint(fixture('fertile-catalyst'))
+    const byId = new Map(bp.buildings.map((b) => [b.id, b]))
+    const aimed = bp.buildings.filter((b) => b.target !== undefined)
+    expect(aimed.every((b) => b.name === 'catapult')).toBe(true)
+    expect(aimed.map((b) => byId.get(b.target!)!.name).reduce<Record<string, number>>((n, k) => ({ ...n, [k]: (n[k] ?? 0) + 1 }), {})).toEqual({
+      Hopper: 8,
+      Cauldron: 17,
+    })
+    // Three catapults stacked up a column, each into the same cauldron.
+    const cauldron = bp.buildings.find((b) => b.id === 43195)!
+    const into = bp.buildings.filter((b) => b.target === cauldron.id).map((b) => b.cell)
+    expect(into.sort((a, b) => a[2] - b[2])).toEqual([[5, 17, 0], [5, 17, 2], [5, 17, 4]])
+    expect((await readBlueprint(fixture('steel'))).buildings.every((b) => b.target === undefined)).toBe(true)
+  })
+
   test('reads a tall blueprint with every layer', async () => {
     const bp = await readBlueprint(fixture('fertile-catalyst'))
     expect(bp.title).toBe('Fertile Catalyst')

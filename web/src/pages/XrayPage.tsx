@@ -7,7 +7,7 @@ import { ReferenceLink } from '../components/ReferenceLink'
 import { BlueprintError, blueprintLayers, readBlueprint, type Blueprint, type PlacedBuilding } from '../lib/blueprint/blueprintFile'
 import { evaluate } from '../lib/cauldron'
 import { ADVANCED_CAULDRON, buildingsByKey, gameRecipes, seeds, type Stack } from '../lib/gameData'
-import { noun } from '../lib/plural'
+import { machineNameFor, noun } from '../lib/plural'
 
 interface Opened {
   blueprint: Blueprint
@@ -236,7 +236,7 @@ export function XrayPage() {
             <LayerSlider total={total} layers={Math.min(cut ?? total, total)} onLayers={(n) => setCut(n >= total ? null : n)} />
           </XrayScene>
           <div className="xray-side">
-            <Picked building={picked} nameOf={nameOf} />
+            <Picked building={picked} buildings={opened.blueprint.buildings} nameOf={nameOf} />
             <BuildingList blueprint={opened.blueprint} nameOf={nameOf} />
             <ModelNote status={models} nameOf={nameOf} />
           </div>
@@ -402,7 +402,15 @@ function XrayScene({
   )
 }
 
-function Picked({ building, nameOf }: { building: PlacedBuilding | null; nameOf: (key: string) => string }) {
+function Picked({
+  building,
+  buildings,
+  nameOf,
+}: {
+  building: PlacedBuilding | null
+  buildings: PlacedBuilding[]
+  nameOf: (key: string) => string
+}) {
   if (!building) return <p className="muted xray-picked">Click a building to see what it is.</p>
   const name = nameOf(building.name)
   return (
@@ -412,6 +420,7 @@ function Picked({ building, nameOf }: { building: PlacedBuilding | null; nameOf:
         Layer {building.cell[2] + 1} · {building.area[0]} × {building.area[1]} {noun(building.area[0] * building.area[1], 'cell')}
       </p>
       <Settings building={building} />
+      <Launches building={building} buildings={buildings} nameOf={nameOf} />
       {building.text && <p className="xray-sign">“{building.text}”</p>}
     </div>
   )
@@ -475,6 +484,37 @@ function Settings({ building }: { building: PlacedBuilding }) {
           <dt>Buys</dt>
           <dd>
             <ItemName item={building.supply} />
+          </dd>
+        </>
+      )}
+    </dl>
+  )
+}
+
+/**
+ * What a catapult or cannon launches into, and what launches into a building, by name and layer:
+ * the arcs drawn for it in the view.
+ */
+function Launches({ building, buildings, nameOf }: { building: PlacedBuilding; buildings: PlacedBuilding[]; nameOf: (key: string) => string }) {
+  const target = building.target === undefined ? undefined : buildings.find((b) => b.id === building.target)
+  const from = new Map<string, number>()
+  for (const b of buildings) if (b.target === building.id && b !== building) from.set(nameOf(b.name), (from.get(nameOf(b.name)) ?? 0) + 1)
+  if (!target && !from.size) return null
+  return (
+    <dl className="xray-settings">
+      {target && (
+        <>
+          <dt>Launches into</dt>
+          <dd>
+            {nameOf(target.name)}, layer {target.cell[2] + 1}
+          </dd>
+        </>
+      )}
+      {from.size > 0 && (
+        <>
+          <dt>Launched into by</dt>
+          <dd>
+            {[...from].map(([name, count]) => `${count} ${machineNameFor(name, count)}`).join(', ')}
           </dd>
         </>
       )}

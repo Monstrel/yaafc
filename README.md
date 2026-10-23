@@ -41,6 +41,7 @@ cauldron recipes as steps in production chains, including self-feeding loops.
   stands, platforms, floors and walls) can be hidden to see the machines they hold up. Nurseries
   grow the plant they're set to. Click a building to see what it is and how it's set up: its
   recipe, a cauldron's ingredient filters and what they make, a nursery's seed, a filter's item.
+  Click a catapult or cannon, or what one's aimed at, to see blue arcs along each launch, as in the game.
 
 Saved recipes and plans live in the browser (localStorage). Use Export/Import to back them up.
 

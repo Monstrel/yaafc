@@ -5,6 +5,7 @@ import {
   BufferAttribute,
   BufferGeometry,
   Color,
+  ConeGeometry,
   CustomToneMapping,
   DirectionalLight,
   DoubleSide,
@@ -17,16 +18,19 @@ import {
   LineBasicMaterial,
   LineSegments,
   Matrix4,
+  Mesh,
   MeshBasicMaterial,
   MeshLambertMaterial,
   PerspectiveCamera,
   Plane,
   PMREMGenerator,
+  QuadraticBezierCurve3,
   Quaternion,
   Raycaster,
   Scene,
   ShaderChunk,
   SRGBColorSpace,
+  TubeGeometry,
   Vector2,
   Vector3,
   WebGLRenderer,
@@ -139,6 +143,10 @@ export class BlueprintScene {
   /** Each building's layers, from its own: how high it stands. */
   private heights: number[] = []
   private selection: LineSegments | null = null
+  /** The picked building's launches, as the game shows them: an arc into what it's aimed at, and from each aimed at it. */
+  private launches = new Group()
+  private launchMaterial = new MeshBasicMaterial({ color: 0x3e9bff, depthTest: false })
+  private launchHead = new ConeGeometry(LAUNCH_HEAD, LAUNCH_HEAD * 2.4, 12)
   private below = new Plane(new Vector3(0, -1, 0), 0)
   private above = new Plane(new Vector3(0, 1, 0), 0)
   private ghostWhole = new MeshLambertMaterial({ color: 0xb8b0c4, transparent: true, opacity: 0.1, depthWrite: false })
@@ -179,6 +187,8 @@ export class BlueprintScene {
     // Flat colours of the X-ray's own, kept as they are.
     this.arrowMaterial.toneMapped = false
     this.inside.toneMapped = false
+    this.launchMaterial.toneMapped = false
+    this.scene.add(this.launches)
 
     // A soft room's light for the models' metal and gloss, a sun for shape, and a blue sky's light
     // filling the shade, as in the game by day: without it, the shade's wood comes out yellow.
@@ -300,12 +310,26 @@ export class BlueprintScene {
     this.dirty = true
   }
 
-  /** Outlines a building's layers (or none), as picked. */
+  /**
+   * Outlines a building's layers (or none), as picked. For a catapult or cannon, an arc shows where
+   * it launches to; for a building others launch into, an arc from each of them.
+   */
   select(building: PlacedBuilding | null) {
     if (this.selection) {
       this.scene.remove(this.selection)
       this.selection.geometry.dispose()
       this.selection = null
+    }
+    for (const arc of [...this.launches.children]) {
+      arc.removeFromParent()
+      // The heads share one cone.
+      const geometry = (arc as Mesh).geometry
+      if (geometry !== this.launchHead) geometry.dispose()
+    }
+    if (building) {
+      const target = building.target === undefined ? undefined : this.placed.find((b) => b.id === building.target)
+      if (target) this.addLaunch(building, target)
+      for (const from of this.placed) if (from.target === building.id && from !== building) this.addLaunch(from, building)
     }
     if (building) {
       const edges = new EdgesGeometry(this.unitBox)
@@ -319,6 +343,42 @@ export class BlueprintScene {
       this.scene.add(this.selection)
     }
     this.dirty = true
+  }
+
+  /**
+   * An arc from the top of a building that launches to the top of what it's aimed at, rising over
+   * them both, higher the farther it goes, with heads along it pointing the way. Drawn over
+   * everything, as the game does, so it shows through the buildings it passes.
+   */
+  private addLaunch(from: PlacedBuilding, to: PlacedBuilding) {
+    const start = this.topOf(from)
+    const end = this.topOf(to)
+    const span = Math.hypot(end.x - start.x, end.z - start.z)
+    const peak = Math.max(start.y, end.y) + LAUNCH_RISE + span * 0.3
+    // A quadratic curve reaches halfway to its control point at its middle.
+    const control = start.clone().add(end).multiplyScalar(0.5)
+    control.y = 2 * peak - control.y
+    const curve = new QuadraticBezierCurve3(start, control, end)
+    const arc = new Mesh(new TubeGeometry(curve, 48, LAUNCH_WIDTH / 2, 6), this.launchMaterial)
+    const heads = Math.max(1, Math.round(curve.getLength() / LAUNCH_HEAD_EVERY))
+    const up = new Vector3(0, 1, 0)
+    for (let k = 0; k < heads; k++) {
+      const t = (k + 0.5) / heads
+      const head = new Mesh(this.launchHead, this.launchMaterial)
+      head.position.copy(curve.getPointAt(t))
+      head.quaternion.setFromUnitVectors(up, curve.getTangentAt(t))
+      head.renderOrder = 2
+      this.launches.add(head)
+    }
+    arc.renderOrder = 2
+    this.launches.add(arc)
+  }
+
+  /** The middle of a building's top, in the scene's space. */
+  private topOf(b: PlacedBuilding): Vector3 {
+    const [x, y, z] = b.cell
+    const [w, d] = b.area
+    return new Vector3(x + w / 2, z + (this.heights[this.placed.indexOf(b)] ?? 1), y + d / 2)
   }
 
   resetView() {
@@ -336,9 +396,9 @@ export class BlueprintScene {
     this.renderer.setAnimationLoop(null)
     this.select(null)
     this.clear()
-    for (const m of [this.ghostWhole, this.ghostSliced, this.inside, this.boxMaterial, this.arrowMaterial, this.noText, ...this.slicedMaterials.values()])
+    for (const m of [this.ghostWhole, this.ghostSliced, this.inside, this.boxMaterial, this.arrowMaterial, this.launchMaterial, this.noText, ...this.slicedMaterials.values()])
       m.dispose()
-    for (const g of [this.unitBox, ...this.arrowGeometries.values(), ...this.textGeometries.values()]) g.dispose()
+    for (const g of [this.unitBox, this.launchHead, ...this.arrowGeometries.values(), ...this.textGeometries.values()]) g.dispose()
     this.scene.environment?.dispose()
     this.controls.dispose()
     this.renderer.dispose()
@@ -733,6 +793,14 @@ const ARROW_LIFT = 6.2
 const LIFT_ARROW = 16
 const LIFT_ARROW_FROM = 4.5
 const LIFT_FACE = 13.6
+/**
+ * A launch's arc, in cells: its width, how far over the higher of its ends it rises (and a further
+ * 0.3 of the way it goes across), its heads' radius, and the length of arc to a head.
+ */
+const LAUNCH_WIDTH = 0.09
+const LAUNCH_RISE = 0.6
+const LAUNCH_HEAD = 0.13
+const LAUNCH_HEAD_EVERY = 1.6
 /** Each side of a building's cell, as a turn from +x (right). */
 const SIDE_TURNS: Record<Side, number> = { r: 0, b: Math.PI / 2, l: Math.PI, u: -Math.PI / 2 }
 

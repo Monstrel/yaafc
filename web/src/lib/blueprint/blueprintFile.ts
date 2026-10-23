@@ -49,6 +49,8 @@ export interface PlacedBuilding {
   text?: string
   /** The buildings it stands on. */
   dependsOn: number[]
+  /** For a catapult or cannon, the building it launches what it's fed into, when that's in the blueprint. */
+  target?: number
   /**
    * For a conveyor lift, the parts stacked on it, a layer each going up (its body sections, then
    * its top end): their building table rows, and their own turns.
@@ -124,6 +126,13 @@ export async function readBlueprint(file: Uint8Array): Promise<Blueprint> {
   // Where the blueprint was copied from, in cells: buildings' positions are in the world's units.
   const origin = list(obj(data.ParentGridGroup).Pivot).map((v) => num(v) * CELL)
   const buildings = list(data.Buildings).map((b) => placed(obj(b), origin))
+  // Each catapult's (and cannon's) aim, by its id and the id of the building it launches into.
+  const byId = new Map(buildings.map((b) => [b.id, b]))
+  for (const relation of list(data.RelationCatapults ?? []).map(obj)) {
+    const from = byId.get(num(relation.SelfSettleKey))
+    const to = num(relation.TargetSettleKey)
+    if (from && byId.has(to)) from.target = to
+  }
   // The game copies only the cells a retractable building starts from, so its run can reach past
   // the blueprint's lowest corner: that corner moves out to take it in.
   const shift = [0, 1].map((i) => Math.min(0, ...buildings.map((b) => b.cell[i])))
