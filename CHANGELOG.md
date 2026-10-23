@@ -8,6 +8,12 @@ Each update is a `## ` heading with the time it went live in UTC (`YYYY-MM-DDTHH
 deployment: everything pushed to `main` deploys, so `git log origin/main..HEAD` lists what's going
 out.
 
+## 2026-10-23T11:28Z
+
+- On phones, the menu for picking how a plan makes an item no longer closes as soon as it opens
+  when it has many options (such as lots of saved cauldron recipes). It no longer brings up the
+  keyboard by itself; tap its search box to search, and it stays open while you type.
+
 ## 2026-10-23T09:06Z
 
 - Click a catapult in the Blueprint X-ray to see where it launches to, drawn as a blue arc as in
